@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData
+xcuserdata
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# IDEs and Editors
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Ensure .gitignore is tracked
+!.gitignore
+
