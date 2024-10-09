@@ -9,6 +9,9 @@ xcuserdata
 .build/
 Package.resolved
 
+# Frameworks
+Frameworks/VLCKit.xcframework/
+
 # IDEs and Editors
 .idea/
 *.swp
