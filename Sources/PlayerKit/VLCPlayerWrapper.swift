@@ -1,6 +1,4 @@
-import Foundation
 import VLCKit
-import UIKit
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
@@ -18,140 +16,95 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
                                                selector: #selector(mediaPlayerTimeChanged(_:)),
                                                name: VLCMediaPlayer.timeChangedNotification,
                                                object: player)
-
-        print("VLCPlayer initialized and notifications set up.")
     }
 
     deinit {
-        // Remove observers when deallocating the instance
         NotificationCenter.default.removeObserver(self)
     }
 
-    // Play a video from a given URL and render it on the provided view
-    public func load(url: URL) {
-        let media = VLCMedia(url: url)
-        player.media = media
-        player.play()
-        print("VLCPlayer loaded media from URL: \(url.absoluteString)")
-    }
-
-    // Play the video
-    public func play() {
-        player.play()
-        print("VLCPlayer is playing.")
-    }
-
-    // Pause the video playback
-    public func pause() {
-        player.pause()
-        print("VLCPlayer is paused.")
-    }
-
-    // Stop the video
-    public func stop() {
-        player.stop()
-        print("VLCPlayer is stopped.")
-    }
-
-    // Check if the player is currently playing
+    // PlayerProtocol property implementations
     public var isPlaying: Bool {
         return player.isPlaying
     }
 
-    // Seek to a specific time in the video (in seconds)
     public var currentTime: Double {
         return Double(player.time.intValue) / 1000
     }
 
-    // Get the total duration of the video (in seconds)
     public var duration: Double {
-        guard let media = player.media else { return 0.0 }
-        return Double(media.length.intValue) / 1000
+        return Double(player.media?.length.intValue ?? 0) / 1000
     }
 
-    // Get available embedded audio tracks
+    public var isBuffering: Bool {
+        return player.state == .buffering
+    }
+
     public var availableAudioTracks: [String] {
-        var audioTracks = [String]()
-        guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else {
-            print("No audio tracks found.")
-            return audioTracks
-        }
-
-        for track in tracks {
-            audioTracks.append(track.trackName ?? "Unknown")
-            print("Found audio track: \(track.trackName ?? "Unknown")")
-        }
-        return audioTracks
+        guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return [] }
+        return tracks.map { $0.trackName ?? "Unknown" }
     }
 
-    // Get available embedded subtitle tracks
     public var availableSubtitles: [String] {
-        var subtitleTracks = [String]()
-        guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else {
-            print("No subtitle tracks found.")
-            return subtitleTracks
-        }
-
-        for track in tracks {
-            subtitleTracks.append(track.trackName ?? "Unknown")
-            print("Found subtitle track: \(track.trackName ?? "Unknown")")
-        }
-        return subtitleTracks
+        guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return [] }
+        return tracks.map { $0.trackName ?? "Unknown" }
     }
 
-    // Switch to a specific audio track
+    // Implement PlayerProtocol methods
+    public func play() {
+        player.play()
+    }
+
+    public func pause() {
+        player.pause()
+    }
+
+    public func stop() {
+        player.stop()
+    }
+
+    public func load(url: URL) {
+        let media = VLCMedia(url: url)
+        player.media = media
+        player.play()
+    }
+
+    public func seek(to time: Double) {
+        let position = Double(time / duration)
+        player.position = position
+    }
+
     public func selectAudioTrack(index: Int) {
-        guard index < player.audioTracks.count else {
-            print("Audio track index \(index) out of range.")
-            return
-        }
+        guard index < player.audioTracks.count else { return }
         player.audioTracks[index].isSelected = true
-        print("Selected audio track at index: \(index)")
     }
 
-    // Switch to a specific subtitle track
     public func selectSubtitle(index: Int) {
-        guard index < player.textTracks.count else {
-            print("Subtitle track index \(index) out of range.")
-            return
-        }
+        guard index < player.textTracks.count else { return }
         player.textTracks[index].isSelected = true
-        print("Selected subtitle track at index: \(index)")
     }
 
     // Handle VLCMediaPlayerStateChangedNotification
-    @objc func mediaPlayerStateChanged(_ notification: Notification) {
-        if let player = notification.object as? VLCMediaPlayer {
-            print("VLCPlayer state changed: \(player.state)")
-
-            // Refresh track info when the player is playing or buffering
-            if player.state == .playing || player.state == .buffering {
-                print("VLCPlayer is playing or buffering. Refreshing track info.")
-                refreshTrackInfo()
-            }
+    @objc private func mediaPlayerStateChanged(_ notification: Notification) {
+        guard let player = notification.object as? VLCMediaPlayer else { return }
+        if player.state == .playing || player.state == .buffering {
+            refreshTrackInfo()
         }
     }
 
     // Handle VLCMediaPlayerTimeChangedNotification
-    @objc func mediaPlayerTimeChanged(_ notification: Notification) {
-        if let player = notification.object as? VLCMediaPlayer {
-            print("VLCPlayer time changed: \(player.time.intValue / 1000) seconds")
+    @objc private func mediaPlayerTimeChanged(_ notification: Notification) {
+        guard let player = notification.object as? VLCMediaPlayer else { return }
+        DispatchQueue.main.async {
+            PlayerManager.shared.currentTime = Double(player.time.intValue) / 1000
         }
     }
 
-    // Refresh and log audio and subtitle track info
     private func refreshTrackInfo() {
         let audioTracks = availableAudioTracks
         let subtitleTracks = availableSubtitles
-        print("Track info refreshed. Audio tracks: \(audioTracks), Subtitles: \(subtitleTracks)")
-        
-        // Ensure updates are published on the main thread
         DispatchQueue.main.async {
-            // Update the relevant properties for SwiftUI
-            // Example: If using a PlayerManager that holds this state
             PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks)
         }
     }
-
 }
 
