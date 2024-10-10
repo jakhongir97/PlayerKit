@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
@@ -7,100 +8,114 @@ public struct PlayerView: View {
 
     public var body: some View {
         ZStack {
-            // Rendering the Player (both AVPlayer and VLCPlayer)
+            // Video rendering view for both AVPlayer and VLCPlayer
             renderPlayerView()
+                .edgesIgnoringSafeArea(.all)
 
-            // Controls Layer: Play/Pause, Slider, Audio/Subtitle Tracks
             VStack {
                 Spacer()
 
-                // Play/Pause button in the center of the video
+                // Play/Pause button centered both vertically and horizontally
                 playPauseButton()
-                    .padding(.bottom, 16)
 
                 Spacer()
 
-                // Slider at the bottom with Time Indicators and Audio/Subtitle Menus
-                VStack {
-                    playbackSlider()
-                    audioSubtitleMenu()
-                }
-                .padding([.leading, .trailing], 16)
-                .padding(.bottom)
+                // Slider, current time, and duration in one line
+                playbackSlider()
+                    .padding([.leading, .trailing], 16)
+
+                // Audio and Subtitle buttons below the slider aligned to the left
+                audioSubtitleMenu()
+                    .padding([.leading], 16)
+                    .padding(.bottom, 16)
             }
         }
     }
 }
 
+// MARK: - Player Rendering View
 extension PlayerView {
-
-    // MARK: - Player Rendering View
-    /// Renders the Player's Video view based on AVPlayer or VLCPlayer
     @ViewBuilder
     func renderPlayerView() -> some View {
-        PlayerRenderingView()
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        PlayerRenderingView()  // Video rendering view for both AVPlayer and VLCPlayer
             .background(Color.black)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
 
-    // MARK: - Play/Pause Button
-    /// Displays a centered Play/Pause button
+// MARK: - Play/Pause Button
+extension PlayerView {
     @ViewBuilder
     func playPauseButton() -> some View {
-        Button(action: {
-            playerManager.isPlaying ? playerManager.pause() : playerManager.play()
-        }) {
-            Image(systemName: playerManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                .resizable()
-                .frame(width: 60, height: 60)
-                .foregroundColor(.white)
-                .background(Color.black.opacity(0.5))
-                .clipShape(Circle())
-        }
-    }
+        HStack {
+            Spacer()  // Push button to the center horizontally
 
-    // MARK: - Playback Slider with Time Indicators
-    /// Handles the playback slider and time updates
+            Button(action: {
+                playerManager.isPlaying ? playerManager.pause() : playerManager.play()
+            }) {
+                Image(systemName: playerManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .resizable()
+                    .frame(width: 60, height: 60)
+                    .foregroundColor(.white)
+                    .background(Color.black.opacity(0.5))
+                    .clipShape(Circle())
+            }
+
+            Spacer()  // Push button to the center horizontally
+        }
+        .frame(maxHeight: .infinity)  // Ensures it's vertically centered
+    }
+}
+
+// MARK: - Playback Slider with Time Indicator (Center Dot) in One Line
+extension PlayerView {
     @ViewBuilder
     func playbackSlider() -> some View {
         HStack {
-            Text(TimeFormatter.shared.formatTime(playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime))
+
+            // Slider in the middle
             Slider(
                 value: Binding(
                     get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
                     set: { newValue in
-                        playerManager.seekTime = newValue  // Update the seek time while dragging
-                        playerManager.startSeeking()  // Track that the user is interacting
+                        playerManager.seekTime = newValue
+                        playerManager.startSeeking()
                     }
                 ),
                 in: 0...playerManager.duration,
                 onEditingChanged: { editing in
-                    if !editing {  // User finished dragging
-                        playerManager.stopSeeking()  // Seek to the selected time and reset state
+                    if !editing {
+                        playerManager.stopSeeking()
                     }
                 }
             )
+            .accentColor(.blue)
+            
+            Text(TimeFormatter.shared.formatTime(playerManager.currentTime))
+                .foregroundColor(.white)
+            Text("•")
+                .foregroundColor(.white)
             Text(TimeFormatter.shared.formatTime(playerManager.duration))
+                .foregroundColor(.white)
         }
     }
+}
 
-    // MARK: - Audio and Subtitle Menus
-    /// Shows menus for selecting Audio and Subtitle tracks (if available)
+// MARK: - Audio and Subtitle Menus Below the Slider
+extension PlayerView {
     @ViewBuilder
     func audioSubtitleMenu() -> some View {
-        HStack {
-            if !playerManager.availableSubtitles.isEmpty {
-                subtitleMenu()
-            }
+        HStack(spacing: 16) {  // Aligning buttons side by side with some spacing
+            // Subtitle Menu
+            subtitleMenu()
 
-            if !playerManager.availableAudioTracks.isEmpty {
-                audioMenu()
-            }
+            // Audio Menu
+            audioMenu()
+
+            Spacer()  // Ensures the buttons stay aligned to the left edge
         }
     }
 
-    // MARK: - Subtitle Menu
-    /// Handles the subtitle track selection
     @ViewBuilder
     func subtitleMenu() -> some View {
         Menu {
@@ -112,7 +127,7 @@ extension PlayerView {
                 }
             }
         } label: {
-            Text("Subtitles")
+            Label("Subtitles", systemImage: "captions.bubble")
                 .foregroundColor(.white)
                 .padding()
                 .background(Color.black.opacity(0.7))
@@ -120,8 +135,6 @@ extension PlayerView {
         }
     }
 
-    // MARK: - Audio Menu
-    /// Handles the audio track selection
     @ViewBuilder
     func audioMenu() -> some View {
         Menu {
@@ -133,7 +146,7 @@ extension PlayerView {
                 }
             }
         } label: {
-            Text("Audio Tracks")
+            Label("Audio", systemImage: "speaker.wave.2")
                 .foregroundColor(.white)
                 .padding()
                 .background(Color.black.opacity(0.7))
