@@ -4,6 +4,7 @@ import Combine
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
 
+    // Published properties to reflect the state of the player
     @Published public var availableAudioTracks: [String] = []
     @Published public var availableSubtitles: [String] = []
     @Published public var selectedAudioTrackIndex: Int?
@@ -13,33 +14,44 @@ public class PlayerManager: ObservableObject {
     @Published public var currentTime: Double = 0
     @Published public var duration: Double = 0
 
+    // Seeking-related state
+    @Published public var isSeeking: Bool = false
+    @Published public var seekTime: Double = 0  // Temporarily hold the seek time while dragging
+
     public var currentPlayer: PlayerProtocol?
 
     private var cancellables = Set<AnyCancellable>()
-    
+
     // Singleton initializer
     private init() {}
-    
-    // Set the player type (AVPlayer or VLCPlayer)
+
+    // MARK: - Player Setup
+
+    /// Set the player type (AVPlayer or VLCPlayer)
     public func setPlayer(type: PlayerType) {
         switch type {
         case .vlcPlayer:
-            currentPlayer = VLCPlayerWrapper()
+            currentPlayer = VLCPlayerWrapper()  // Assuming VLCPlayerWrapper exists
         case .avPlayer:
-            currentPlayer = AVPlayerWrapper() // Assume AVPlayerWrapper exists similarly
+            currentPlayer = AVPlayerWrapper()  // Assuming AVPlayerWrapper exists
         }
         
+        // Refresh available tracks and observe player state
         refreshTrackInfo()
         observePlayerState()
     }
 
-    // Load a media URL and refresh track information
+    // MARK: - Load Media
+
+    /// Load a media URL into the player
     public func load(url: URL) {
         currentPlayer?.load(url: url)
         refreshTrackInfo()
     }
-    
-    // Play the media
+
+    // MARK: - Play/Pause Controls
+
+    /// Play the media
     public func play() {
         currentPlayer?.play()
         DispatchQueue.main.async {
@@ -47,7 +59,7 @@ public class PlayerManager: ObservableObject {
         }
     }
 
-    // Pause the media
+    /// Pause the media
     public func pause() {
         currentPlayer?.pause()
         DispatchQueue.main.async {
@@ -55,7 +67,9 @@ public class PlayerManager: ObservableObject {
         }
     }
 
-    // Seek to a specific time in the media
+    // MARK: - Seeking Controls
+
+    /// Seek to a specific time in the media
     public func seek(to time: Double) {
         currentPlayer?.seek(to: time)
         DispatchQueue.main.async {
@@ -63,7 +77,20 @@ public class PlayerManager: ObservableObject {
         }
     }
 
-    // Refresh available audio and subtitle tracks
+    /// Handle the start of seeking interaction
+    public func startSeeking() {
+        isSeeking = true
+    }
+
+    /// Handle the end of seeking interaction
+    public func stopSeeking() {
+        isSeeking = false
+        seek(to: seekTime)  // Seek to the selected seek time
+    }
+
+    // MARK: - Track Management
+
+    /// Refresh the available audio and subtitle tracks
     public func refreshTrackInfo() {
         guard let player = currentPlayer else {
             print("No current player available.")
@@ -77,7 +104,7 @@ public class PlayerManager: ObservableObject {
         }
     }
 
-    // Select an audio track by index
+    /// Select an audio track by index
     public func selectAudioTrack(index: Int) {
         currentPlayer?.selectAudioTrack(index: index)
         DispatchQueue.main.async {
@@ -86,7 +113,7 @@ public class PlayerManager: ObservableObject {
         }
     }
 
-    // Select a subtitle track by index
+    /// Select a subtitle track by index
     public func selectSubtitle(index: Int) {
         currentPlayer?.selectSubtitle(index: index)
         DispatchQueue.main.async {
@@ -95,12 +122,17 @@ public class PlayerManager: ObservableObject {
         }
     }
 
-    // Observe player state such as buffering, play/pause state, current time, and duration
+    // MARK: - Player State Observation
+
+    /// Observe player state (e.g., buffering, play/pause, current time, and duration)
     private func observePlayerState() {
-        Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+        // Regularly poll the player's state every 0.5 seconds
+        Timer.publish(every: 0.5, on: .main, in: .common)
+            .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
                 
+                // Update the published properties
                 self.isPlaying = player.isPlaying
                 self.isBuffering = player.isBuffering
                 self.currentTime = player.currentTime
@@ -109,7 +141,9 @@ public class PlayerManager: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // Update available audio and subtitle tracks
+    // MARK: - Helper Methods
+
+    /// Update available audio and subtitle tracks
     public func updateTrackInfo(audioTracks: [String], subtitles: [String]) {
         DispatchQueue.main.async {
             self.availableAudioTracks = audioTracks
