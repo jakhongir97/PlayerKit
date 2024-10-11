@@ -53,9 +53,12 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         refreshTrackInfo()
     }
 
-    public func seek(to time: Double) {
+    // Updated seek method with optional completion handler
+    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-        player?.seek(to: cmTime)
+        player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+            completion?(finished)  // Call completion when seeking finishes
+        }
     }
 
     public func selectAudioTrack(index: Int) {

@@ -73,41 +73,34 @@ extension PlayerView {
     @ViewBuilder
     func playbackSlider() -> some View {
         HStack {
-
-            // Slider in the middle
             Slider(
                 value: Binding(
                     get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
                     set: { newValue in
                         playerManager.seekTime = newValue
-                        playerManager.startSeeking()
+                        playerManager.startSeeking()  // Start seeking when user interacts
                     }
                 ),
                 in: 0...playerManager.duration,
                 onEditingChanged: { editing in
                     if !editing {
-                        playerManager.stopSeeking()
+                        playerManager.stopSeeking()  // Stop seeking once user finishes dragging
                     }
                 }
             )
             .accentColor(.blue)
 
-            // Current Time
             Text(TimeFormatter.shared.formatTime(playerManager.currentTime))
                 .foregroundColor(.white)
-            // Duration
             Text("•")
                 .foregroundColor(.white)
             Text(TimeFormatter.shared.formatTime(playerManager.duration))
                 .foregroundColor(.white)
 
-            // Buffering Indicator (Shown if buffering is happening)
             if playerManager.isBuffering {
-                HStack {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.8)
-                }
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(0.8)
             }
         }
     }

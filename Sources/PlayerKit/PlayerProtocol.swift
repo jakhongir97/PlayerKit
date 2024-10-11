@@ -13,7 +13,10 @@ public protocol PlayerProtocol: AnyObject {
     func pause()
     func stop()
     func load(url: URL)
-    func seek(to time: Double)
+
+    /// Updated seek method with optional completion handler
+    func seek(to time: Double, completion: ((Bool) -> Void)?)
+    
     func selectAudioTrack(index: Int)
     func selectSubtitle(index: Int)
 }

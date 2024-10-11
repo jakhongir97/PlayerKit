@@ -71,18 +71,24 @@ public class PlayerManager: ObservableObject {
 
     /// Seek to a specific time in the media
     public func seek(to time: Double) {
-        currentPlayer?.seek(to: time)
-        DispatchQueue.main.async {
-            self.currentTime = time
+        isSeeking = true  // Mark that we are seeking
+        currentPlayer?.seek(to: time) { [weak self] success in
+            guard let self = self else { return }
+            if success {
+                DispatchQueue.main.async {
+                    self.currentTime = time
+                    self.isSeeking = false  // Update after seek completes
+                }
+            }
         }
     }
 
-    /// Handle the start of seeking interaction
+    /// Handle the start of seeking interaction (user starts dragging the slider)
     public func startSeeking() {
         isSeeking = true
     }
 
-    /// Handle the end of seeking interaction
+    /// Handle the end of seeking interaction (user stops dragging the slider)
     public func stopSeeking() {
         isSeeking = false
         seek(to: seekTime)  // Seek to the selected seek time
@@ -100,7 +106,6 @@ public class PlayerManager: ObservableObject {
         DispatchQueue.main.async {
             self.availableAudioTracks = player.availableAudioTracks
             self.availableSubtitles = player.availableSubtitles
-            print("Track info refreshed. Audio tracks: \(self.availableAudioTracks), Subtitles: \(self.availableSubtitles)")
         }
     }
 
@@ -109,7 +114,6 @@ public class PlayerManager: ObservableObject {
         currentPlayer?.selectAudioTrack(index: index)
         DispatchQueue.main.async {
             self.selectedAudioTrackIndex = index
-            print("Selected audio track index: \(index)")
         }
     }
 
@@ -118,7 +122,6 @@ public class PlayerManager: ObservableObject {
         currentPlayer?.selectSubtitle(index: index)
         DispatchQueue.main.async {
             self.selectedSubtitleTrackIndex = index
-            print("Selected subtitle index: \(index)")
         }
     }
 
@@ -132,11 +135,13 @@ public class PlayerManager: ObservableObject {
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
                 
-                // Update the published properties
-                self.isPlaying = player.isPlaying
-                self.isBuffering = player.isBuffering
-                self.currentTime = player.currentTime
-                self.duration = player.duration
+                // Do not update currentTime while seeking
+                if !self.isSeeking {
+                    self.isPlaying = player.isPlaying
+                    self.isBuffering = player.isBuffering
+                    self.currentTime = player.currentTime
+                    self.duration = player.duration
+                }
             }
             .store(in: &cancellables)
     }

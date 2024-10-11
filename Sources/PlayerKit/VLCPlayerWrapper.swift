@@ -77,9 +77,10 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
         }
     }
 
-    public func seek(to time: Double) {
+    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
         let position = Double(time / duration)
         player.position = position
+        completion?(true)  // Call the completion immediately since VLC does not have asynchronous seeking
     }
 
     public func selectAudioTrack(index: Int) {
