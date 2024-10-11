@@ -1,10 +1,3 @@
-//
-//  VLCPlayerViewRepresentable.swift
-//  PlayerKitDemo
-//
-//  Created by Jakhongir Nematov on 07/10/24.
-//
-
 import SwiftUI
 import VLCKit
 
@@ -13,18 +6,35 @@ struct VLCPlayerViewRepresentable: UIViewRepresentable {
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
-        player.drawable = view  // Assign the VLC drawable to the view
+
+        // Set the drawable after the view is fully initialized
+        DispatchQueue.main.async {
+            if player.drawable == nil {
+                print("Setting drawable in makeUIView.")
+                self.player.drawable = view
+            }
+        }
+
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        player.drawable = uiView
+        // Ensure the drawable is set during updates
+        DispatchQueue.main.async {
+            if player.drawable == nil {
+                print("Updating drawable in updateUIView.")
+                self.player.drawable = uiView
+            }
+        }
     }
 
     // Handle view removal or player cleanup
     static func dismantleUIView(_ uiView: UIView, coordinator: ()) {
-        if let player = uiView.layer.sublayers?.first as? VLCMediaPlayer {
-            player.stop()
+        DispatchQueue.main.async {
+            if let player = uiView.layer.sublayers?.first as? VLCMediaPlayer {
+                player.stop()
+            }
         }
     }
 }
+

@@ -65,7 +65,16 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public func load(url: URL) {
         let media = VLCMedia(url: url)
         player.media = media
-        player.play()
+
+        // Delay the playback slightly to ensure drawable is ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            if self.player.drawable != nil {
+                print("Starting playback with drawable set.")
+                self.player.play()
+            } else {
+                print("Drawable is still nil after delay.")
+            }
+        }
     }
 
     public func seek(to time: Double) {

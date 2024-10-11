@@ -15,8 +15,9 @@ public struct PlayerView: View {
             VStack {
                 Spacer()
 
-                // Play/Pause button centered both vertically and horizontally
+                // Play/Pause button centered vertically and horizontally
                 playPauseButton()
+                    .padding(.bottom, 16)
 
                 Spacer()
 
@@ -67,7 +68,7 @@ extension PlayerView {
     }
 }
 
-// MARK: - Playback Slider with Time Indicator (Center Dot) in One Line
+// MARK: - Playback Slider with Time Indicator (Center Dot) and Buffering Indicator
 extension PlayerView {
     @ViewBuilder
     func playbackSlider() -> some View {
@@ -90,13 +91,24 @@ extension PlayerView {
                 }
             )
             .accentColor(.blue)
-            
+
+            // Current Time
             Text(TimeFormatter.shared.formatTime(playerManager.currentTime))
                 .foregroundColor(.white)
+            // Duration
             Text("•")
                 .foregroundColor(.white)
             Text(TimeFormatter.shared.formatTime(playerManager.duration))
                 .foregroundColor(.white)
+
+            // Buffering Indicator (Shown if buffering is happening)
+            if playerManager.isBuffering {
+                HStack {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.8)
+                }
+            }
         }
     }
 }
