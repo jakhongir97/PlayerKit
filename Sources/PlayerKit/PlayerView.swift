@@ -90,7 +90,8 @@ extension PlayerView {
             )
             .accentColor(.blue)
 
-            Text(TimeFormatter.shared.formatTime(playerManager.currentTime))
+            // Display current time or seek time
+            Text(TimeFormatter.shared.formatTime(playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime))
                 .foregroundColor(.white)
             Text("•")
                 .foregroundColor(.white)

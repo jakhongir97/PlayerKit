@@ -72,12 +72,18 @@ public class PlayerManager: ObservableObject {
     /// Seek to a specific time in the media
     public func seek(to time: Double) {
         isSeeking = true  // Mark that we are seeking
+        isBuffering = true  // Start showing buffering during seeking
         currentPlayer?.seek(to: time) { [weak self] success in
             guard let self = self else { return }
             if success {
                 DispatchQueue.main.async {
                     self.currentTime = time
                     self.isSeeking = false  // Update after seek completes
+                    self.isBuffering = false  // Hide buffering after seek completes and playback resumes
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.isBuffering = false  // Hide buffering if seek fails
                 }
             }
         }
@@ -134,7 +140,7 @@ public class PlayerManager: ObservableObject {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
-                
+
                 // Do not update currentTime while seeking
                 if !self.isSeeking {
                     self.isPlaying = player.isPlaying
