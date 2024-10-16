@@ -80,7 +80,6 @@ extension PlayerView {
                         get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
                         set: { newValue in
                             playerManager.seekTime = newValue
-                            playerManager.requestThumbnail(at: newValue)  // Request a thumbnail while seeking
                         }
                     ),
                     in: 0...max(playerManager.duration, 0.01),
@@ -94,23 +93,31 @@ extension PlayerView {
                 )
                 .accentColor(.blue)
                 
-                // Display the thumbnail preview while seeking
-                if let thumbnail = thumbnailManager.thumbnailImage {
-                    GeometryReader { geometry in
-                        let sliderWidth = geometry.size.width
-                        let thumbPosition = sliderWidth * CGFloat(playerManager.seekTime / max(playerManager.duration, 0.01))
-                        
-                        Image(uiImage: thumbnail)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 120, height: 67.5)
-                            .background(Color.black.opacity(0.7))
-                            .cornerRadius(8)
-                            .offset(x: min(max(thumbPosition - 60, 0), sliderWidth - 120), y: -80)
-                    }
-                }
             }
             .frame(height: 44)
+
+            // Add current time, duration, and buffering indicator
+            HStack() {
+                // Display current time or seek time
+                Spacer()
+                Text(TimeFormatter.shared.formatTime(playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime))
+                    .foregroundColor(.white)
+                
+                Text("•")
+                    .foregroundColor(.white)
+                
+                // Display total duration
+                Text(TimeFormatter.shared.formatTime(playerManager.duration))
+                    .foregroundColor(.white)
+
+                // Buffering indicator
+                if playerManager.isBuffering {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(0.8)
+                }
+            }
+            .padding(.top, 4)  // Optional padding to create space between the slider and the labels
         }
     }
 }
