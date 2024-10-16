@@ -19,6 +19,9 @@ public class PlayerManager: ObservableObject {
     @Published public var seekTime: Double = 0  // Temporarily hold the seek time while dragging
 
     public var currentPlayer: PlayerProtocol?
+    
+    // Reference to ThumbnailManager
+    public let thumbnailManager = ThumbnailManager.shared
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -159,6 +162,17 @@ public class PlayerManager: ObservableObject {
         DispatchQueue.main.async {
             self.availableAudioTracks = audioTracks
             self.availableSubtitles = subtitles
+        }
+    }
+    
+    // MARK: - Thumbnail Management
+    /// Requests a thumbnail at the specified time
+    public func requestThumbnail(at time: Double) {
+        if let player = currentPlayer {
+            thumbnailManager.requestThumbnail(for: player, at: time)
+            print("PlayerManager: Requested thumbnail at \(time) seconds.")
+        } else {
+            print("PlayerManager: No current player available for thumbnail request.")
         }
     }
 }

@@ -1,4 +1,5 @@
 import AVFoundation
+import UIKit
 
 public class AVPlayerWrapper: NSObject, PlayerProtocol {
     public var player: AVPlayer?
@@ -84,4 +85,18 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         }
     }
 }
+
+extension AVPlayerWrapper {
+    public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
+        guard let asset = player?.currentItem?.asset else {
+            print("AVPlayerWrapper: No asset available for thumbnail generation.")
+            completion(nil)
+            return
+        }
+        
+        let thumbnailGenerator = AVPlayerThumbnailGenerator(asset: asset)
+        thumbnailGenerator.generateThumbnail(at: time, completion: completion)
+    }
+}
+
 

@@ -3,6 +3,7 @@ import AVFoundation
 
 public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject var thumbnailManager = ThumbnailManager.shared
 
     public init() {}
 
@@ -72,37 +73,44 @@ extension PlayerView {
 extension PlayerView {
     @ViewBuilder
     func playbackSlider() -> some View {
-        HStack {
-            Slider(
-                value: Binding(
-                    get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
-                    set: { newValue in
-                        playerManager.seekTime = newValue
-                        playerManager.startSeeking()  // Start seeking when user interacts
+        VStack(spacing: 4) {
+            ZStack(alignment: .leading) {
+                Slider(
+                    value: Binding(
+                        get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
+                        set: { newValue in
+                            playerManager.seekTime = newValue
+                            playerManager.requestThumbnail(at: newValue)  // Request a thumbnail while seeking
+                        }
+                    ),
+                    in: 0...max(playerManager.duration, 0.01),
+                    onEditingChanged: { editing in
+                        if editing {
+                            playerManager.startSeeking()
+                        } else {
+                            playerManager.stopSeeking()
+                        }
                     }
-                ),
-                in: 0...playerManager.duration,
-                onEditingChanged: { editing in
-                    if !editing {
-                        playerManager.stopSeeking()  // Stop seeking once user finishes dragging
+                )
+                .accentColor(.blue)
+                
+                // Display the thumbnail preview while seeking
+                if let thumbnail = thumbnailManager.thumbnailImage {
+                    GeometryReader { geometry in
+                        let sliderWidth = geometry.size.width
+                        let thumbPosition = sliderWidth * CGFloat(playerManager.seekTime / max(playerManager.duration, 0.01))
+                        
+                        Image(uiImage: thumbnail)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 120, height: 67.5)
+                            .background(Color.black.opacity(0.7))
+                            .cornerRadius(8)
+                            .offset(x: min(max(thumbPosition - 60, 0), sliderWidth - 120), y: -80)
                     }
                 }
-            )
-            .accentColor(.blue)
-
-            // Display current time or seek time
-            Text(TimeFormatter.shared.formatTime(playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime))
-                .foregroundColor(.white)
-            Text("•")
-                .foregroundColor(.white)
-            Text(TimeFormatter.shared.formatTime(playerManager.duration))
-                .foregroundColor(.white)
-
-            if playerManager.isBuffering {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(0.8)
             }
+            .frame(height: 44)
         }
     }
 }

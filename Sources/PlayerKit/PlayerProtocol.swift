@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 public protocol PlayerProtocol: AnyObject {
     var isPlaying: Bool { get }
@@ -19,4 +20,6 @@ public protocol PlayerProtocol: AnyObject {
     
     func selectAudioTrack(index: Int)
     func selectSubtitle(index: Int)
+    
+    func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void)
 }
