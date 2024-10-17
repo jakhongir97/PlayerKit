@@ -3,6 +3,13 @@ import UIKit
 
 public class AVPlayerWrapper: NSObject, PlayerProtocol {
     public var player: AVPlayer?
+    
+    // Lazy initialization to create the thumbnail generator only when it's first accessed
+    private lazy var thumbnailGenerator: AVPlayerThumbnailGenerator? = {
+        guard let asset = player?.currentItem?.asset else { return nil }
+        return AVPlayerThumbnailGenerator(asset: asset)
+    }()
+    
 
     // PlayerProtocol property implementations
     public var isPlaying: Bool {
@@ -89,13 +96,12 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
 // MARK: - AVPlayerWrapper Extension
 extension AVPlayerWrapper {
     public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        guard let asset = player?.currentItem?.asset else {
+        guard let generator = thumbnailGenerator else {
             print("AVPlayerWrapper: No asset available for thumbnail generation.")
             completion(nil)
             return
         }
         
-        let thumbnailGenerator = AVPlayerThumbnailGenerator(asset: asset)
-        thumbnailGenerator.generateThumbnail(at: time, completion: completion)
+        generator.generateThumbnail(at: time, completion: completion)
     }
 }

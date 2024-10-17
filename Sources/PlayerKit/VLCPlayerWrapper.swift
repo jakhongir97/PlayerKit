@@ -2,6 +2,7 @@ import VLCKit
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
+    private var thumbnailGenerator: VLCPlayerThumbnailGenerator?
 
     public override init() {
         self.player = VLCMediaPlayer()
@@ -121,10 +122,17 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
 // MARK: - VLCPlayerWrapper Extension
 extension VLCPlayerWrapper {
     public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        // Implement thumbnail generation using VLC if applicable
-        // For now, log to indicate this is not yet supported
-        print("VLCPlayerWrapper: Thumbnail generation not supported for VLC.")
-        completion(nil)
+        guard let media = player.media else {
+            completion(nil)
+            return
+        }
+        
+        // Reuse the same instance of VLCPlayerThumbnailGenerator
+        if thumbnailGenerator == nil {
+            thumbnailGenerator = VLCPlayerThumbnailGenerator(media: media)
+        }
+        
+        thumbnailGenerator?.generateThumbnail(at: time, completion: completion)
     }
 }
 
