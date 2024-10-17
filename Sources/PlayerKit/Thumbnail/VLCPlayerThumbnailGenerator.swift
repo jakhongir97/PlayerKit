@@ -12,31 +12,25 @@ import UIKit
         self.mediaThumbnailer = VLCMediaThumbnailer(media: media, andDelegate: self)
     }
 
-    /// Generates a thumbnail image at the specified time.
     func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
+        print("VLCPlayerThumbnailGenerator: Requesting thumbnail at time \(time)")
         self.thumbnailCompletion = completion
 
-        // Ensure media is parsed
         guard media.length.intValue > 0 else {
-            print("Media length is invalid or media not parsed yet.")
+            print("VLCPlayerThumbnailGenerator: Media length is invalid or not parsed yet.")
             completion(nil)
             return
         }
 
-        // Calculate the snapshot position based on the provided time
         let position = Float(time / Double(media.length.intValue))
-        //self.mediaThumbnailer.snapshotPosition = position
-        print("Requesting thumbnail at position: \(position * 100)%")
-
-        // Fetch thumbnail
-        //self.mediaThumbnailer.fetchThumbnail()
+        self.mediaThumbnailer.snapshotPosition = position
+        print("VLCPlayerThumbnailGenerator: Requesting thumbnail at position \(position * 100)%")
+        self.mediaThumbnailer.fetchThumbnail()
     }
-
-    // MARK: - VLCMediaThumbnailerDelegate Methods
 
     func mediaThumbnailer(_ mediaThumbnailer: VLCMediaThumbnailer, didFinishThumbnail thumbnail: CGImage) {
         let uiImage = UIImage(cgImage: thumbnail)
-        print("Successfully generated thumbnail.")
+        print("VLCPlayerThumbnailGenerator: Successfully generated thumbnail.")
         thumbnailCompletion?(uiImage)
     }
 

@@ -1,53 +1,54 @@
 import AVFoundation
 import UIKit
 
+/// A simple class responsible for generating thumbnail images from an AVAsset at specified times.
 public class AVPlayerThumbnailGenerator {
+    
     private let asset: AVAsset
     private let imageGenerator: AVAssetImageGenerator
-
+    
     public init(asset: AVAsset) {
         self.asset = asset
         self.imageGenerator = AVAssetImageGenerator(asset: asset)
         self.imageGenerator.appliesPreferredTrackTransform = true
-        self.imageGenerator.requestedTimeToleranceBefore = CMTime.zero
-        self.imageGenerator.requestedTimeToleranceAfter = CMTime.zero
+        self.imageGenerator.requestedTimeToleranceBefore = .zero
+        self.imageGenerator.requestedTimeToleranceAfter = .zero
     }
-
+    
     /// Generates a thumbnail image at the specified time.
+    /// - Parameters:
+    ///   - time: The time in seconds at which to generate the thumbnail.
+    ///   - completion: Completion handler called with the generated UIImage or nil if failed.
     public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        // Load the asset asynchronously to ensure it's fully ready.
-        asset.loadValuesAsynchronously(forKeys: ["duration"]) {
-            var error: NSError? = nil
-            let status = self.asset.statusOfValue(forKey: "duration", error: &error)
+        print("Generating thumbnail at time \(time)")
+        
+        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+        
+        // Generate the CGImage asynchronously
+        imageGenerator.generateCGImagesAsynchronously(forTimes: [NSValue(time: cmTime)]) { _, cgImage, _, _, error in
+            if let error = error {
+                print("Error generating thumbnail: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    completion(nil)
+                }
+                return
+            }
             
-            if status == .loaded {
-                // Check if the requested time is within the valid duration.
-                let duration = CMTimeGetSeconds(self.asset.duration)
-                if time > duration {
-                    print("Requested time \(time) exceeds video duration \(duration). Using maximum duration instead.")
-                    let cmTime = CMTime(seconds: duration, preferredTimescale: 600)
-                    self.generateThumbnail(at: CMTimeGetSeconds(cmTime), completion: completion)
-                    return
+            guard let cgImage = cgImage else {
+                print("No image generated at time \(time)")
+                DispatchQueue.main.async {
+                    completion(nil)
                 }
-
-                // Proceed with generating the thumbnail if within bounds.
-                let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-                self.imageGenerator.generateCGImagesAsynchronously(forTimes: [NSValue(time: cmTime)]) { _, image, _, _, error in
-                    if let error = error {
-                        print("AVPlayerThumbnailGenerator: Error generating thumbnail at \(time) seconds: \(error.localizedDescription)")
-                        completion(nil)
-                    } else if let image = image {
-                        let uiImage = UIImage(cgImage: image)
-                        completion(uiImage)
-                    } else {
-                        print("AVPlayerThumbnailGenerator: Failed to generate thumbnail for unknown reasons.")
-                        completion(nil)
-                    }
-                }
-            } else {
-                print("AVPlayerThumbnailGenerator: Asset could not be loaded. Error: \(error?.localizedDescription ?? "Unknown error")")
-                completion(nil)
+                return
+            }
+            
+            let uiImage = UIImage(cgImage: cgImage)
+            print("Successfully generated thumbnail for time \(time)")
+            
+            DispatchQueue.main.async {
+                completion(uiImage)
             }
         }
     }
 }
+

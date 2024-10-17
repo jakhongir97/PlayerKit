@@ -86,6 +86,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     }
 }
 
+// MARK: - AVPlayerWrapper Extension
 extension AVPlayerWrapper {
     public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
         guard let asset = player?.currentItem?.asset else {
@@ -98,5 +99,3 @@ extension AVPlayerWrapper {
         thumbnailGenerator.generateThumbnail(at: time, completion: completion)
     }
 }
-
-

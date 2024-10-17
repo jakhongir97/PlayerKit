@@ -118,17 +118,13 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     }
 }
 
+// MARK: - VLCPlayerWrapper Extension
 extension VLCPlayerWrapper {
     public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        guard let media = player.media else {
-            print("VLCPlayerWrapper: No media available for thumbnail generation.")
-            completion(nil)
-            return
-        }
-
-        // Use the media to create the thumbnail generator
-        let thumbnailGenerator = VLCPlayerThumbnailGenerator(media: media)
-        thumbnailGenerator.generateThumbnail(at: time, completion: completion)
+        // Implement thumbnail generation using VLC if applicable
+        // For now, log to indicate this is not yet supported
+        print("VLCPlayerWrapper: Thumbnail generation not supported for VLC.")
+        completion(nil)
     }
 }
 
