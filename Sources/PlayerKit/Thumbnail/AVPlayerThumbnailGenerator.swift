@@ -1,7 +1,7 @@
 import AVFoundation
 import UIKit
 
-/// A simple class responsible for generating thumbnail images from an AVAsset at specified times.
+/// A class responsible for generating thumbnail images from an AVAsset at specified times.
 public class AVPlayerThumbnailGenerator {
     
     private let asset: AVAsset
@@ -11,11 +11,14 @@ public class AVPlayerThumbnailGenerator {
         self.asset = asset
         self.imageGenerator = AVAssetImageGenerator(asset: asset)
         self.imageGenerator.appliesPreferredTrackTransform = true
-        self.imageGenerator.requestedTimeToleranceBefore = .zero
-        self.imageGenerator.requestedTimeToleranceAfter = .zero
+        // Set looser tolerances to reduce precision and improve performance
+        self.imageGenerator.requestedTimeToleranceBefore = CMTime(seconds: 1, preferredTimescale: 600)
+        self.imageGenerator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
+        // Optionally limit the image size for better performance
+        self.imageGenerator.maximumSize = CGSize(width: 200, height: 112) // 16:9 ratio
     }
     
-    /// Generates a thumbnail image at the specified time.
+    /// Generates a thumbnail image at the specified time asynchronously.
     /// - Parameters:
     ///   - time: The time in seconds at which to generate the thumbnail.
     ///   - completion: Completion handler called with the generated UIImage or nil if failed.
@@ -25,7 +28,7 @@ public class AVPlayerThumbnailGenerator {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         
         // Generate the CGImage asynchronously
-        imageGenerator.generateCGImagesAsynchronously(forTimes: [NSValue(time: cmTime)]) { _, cgImage, _, _, error in
+        imageGenerator.generateCGImagesAsynchronously(forTimes: [NSValue(time: cmTime)]) { requestedTime, cgImage, actualTime, result, error in
             if let error = error {
                 print("Error generating thumbnail: \(error.localizedDescription)")
                 DispatchQueue.main.async {
