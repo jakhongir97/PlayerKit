@@ -39,6 +39,15 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var isBuffering: Bool {
         return player.state == .buffering
     }
+    
+    public var playbackSpeed: Float {
+        get {
+            return player.rate ?? 1.0
+        }
+        set {
+            player.rate = newValue
+        }
+    }
 
     public var availableAudioTracks: [String] {
         guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return [] }

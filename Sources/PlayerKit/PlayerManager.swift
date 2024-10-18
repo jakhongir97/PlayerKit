@@ -143,6 +143,16 @@ public class PlayerManager: ObservableObject {
             self.selectedVideoTrackIndex = index
         }
     }
+    
+    // Playback speed control
+    public var playbackSpeed: Float {
+        get {
+            return currentPlayer?.playbackSpeed ?? 1.0
+        }
+        set {
+            currentPlayer?.playbackSpeed = newValue
+        }
+    }
 
     // MARK: - Player State Observation
 

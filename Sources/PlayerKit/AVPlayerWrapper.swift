@@ -28,6 +28,15 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     public var isBuffering: Bool {
         return player?.timeControlStatus == .waitingToPlayAtSpecifiedRate
     }
+    
+    public var playbackSpeed: Float {
+        get {
+            return player?.rate ?? 1.0
+        }
+        set {
+            player?.rate = newValue 
+        }
+    }
 
     // Audio and Subtitle track management
     public var availableAudioTracks: [String] {

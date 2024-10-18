@@ -10,6 +10,8 @@ public protocol PlayerProtocol: AnyObject {
     var availableAudioTracks: [String] { get }
     var availableSubtitles: [String] { get }
     var availableVideoTracks: [String] { get }
+    
+    var playbackSpeed: Float { get set }
 
     func play()
     func pause()
