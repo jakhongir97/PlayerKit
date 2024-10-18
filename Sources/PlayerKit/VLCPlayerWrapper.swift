@@ -49,6 +49,11 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
         guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return [] }
         return tracks.map { $0.trackName ?? "Unknown" }
     }
+    
+    public var availableVideoTracks: [String] {
+        guard let tracks = player.videoTracks as? [VLCMediaPlayer.Track] else { return [] }
+        return tracks.map { $0.trackName ?? "Unknown" }
+    }
 
     // Implement PlayerProtocol methods
     public func play() {
@@ -93,6 +98,12 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
         guard index < player.textTracks.count else { return }
         player.textTracks[index].isSelected = true
     }
+    
+    // Select video track
+    public func selectVideoTrack(index: Int) {
+        guard index < player.videoTracks.count else { return }
+        player.videoTracks[index].isSelected = true
+    }
 
     // Handle VLCMediaPlayerStateChangedNotification
     @objc private func mediaPlayerStateChanged(_ notification: Notification) {
@@ -113,8 +124,9 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     private func refreshTrackInfo() {
         let audioTracks = availableAudioTracks
         let subtitleTracks = availableSubtitles
+        let videoTracks = availableVideoTracks
         DispatchQueue.main.async {
-            PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks)
+            PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks, videoTracks: videoTracks)
         }
     }
 }

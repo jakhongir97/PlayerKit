@@ -7,8 +7,10 @@ public class PlayerManager: ObservableObject {
     // Published properties to reflect the state of the player
     @Published public var availableAudioTracks: [String] = []
     @Published public var availableSubtitles: [String] = []
+    @Published public var availableVideoTracks: [String] = []
     @Published public var selectedAudioTrackIndex: Int?
     @Published public var selectedSubtitleTrackIndex: Int?
+    @Published public var selectedVideoTrackIndex: Int?
     @Published public var isPlaying: Bool = false
     @Published public var isBuffering: Bool = false
     @Published public var currentTime: Double = 0
@@ -134,6 +136,14 @@ public class PlayerManager: ObservableObject {
         }
     }
 
+    // Switch video track on the active player
+    public func selectVideoTrack(index: Int) {
+        currentPlayer?.selectVideoTrack(index: index)
+        DispatchQueue.main.async {
+            self.selectedVideoTrackIndex = index
+        }
+    }
+
     // MARK: - Player State Observation
 
     /// Observe player state (e.g., buffering, play/pause, current time, and duration)
@@ -158,10 +168,11 @@ public class PlayerManager: ObservableObject {
     // MARK: - Helper Methods
 
     /// Update available audio and subtitle tracks
-    public func updateTrackInfo(audioTracks: [String], subtitles: [String]) {
+    public func updateTrackInfo(audioTracks: [String], subtitles: [String], videoTracks: [String]) {
         DispatchQueue.main.async {
             self.availableAudioTracks = audioTracks
             self.availableSubtitles = subtitles
+            self.availableVideoTracks = videoTracks
         }
     }
     

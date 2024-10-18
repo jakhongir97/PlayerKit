@@ -79,6 +79,8 @@ extension PlayerView {
 
             // Audio Menu
             audioMenu()
+            
+            videoMenu()
 
             Spacer()  // Ensures the buttons stay aligned to the left edge
         }
@@ -121,6 +123,25 @@ extension PlayerView {
                 .cornerRadius(8)
         }
     }
+    
+    @ViewBuilder
+    func videoMenu() -> some View {
+        Menu {
+            ForEach(playerManager.availableVideoTracks.indices, id: \.self) { index in
+                Button(action: {
+                    playerManager.selectVideoTrack(index: index)
+                }) {
+                    Text(playerManager.availableVideoTracks[index])
+                }
+            }
+        } label: {
+            Label("Video", systemImage: "film")
+                .foregroundColor(.white)
+                .padding()
+                .background(Color.black.opacity(0.7))
+                .cornerRadius(8)
+        }
+    }
 }
 
 extension PlayerView {
@@ -134,7 +155,6 @@ extension PlayerView {
                         set: { newValue in
                             playerManager.seekTime = newValue
                             if let player = playerManager.currentPlayer {
-                                print("Requesting thumbnail for time \(newValue)")
                                 ThumbnailManager.shared.requestThumbnail(for: player, at: newValue)
                             }
                         }

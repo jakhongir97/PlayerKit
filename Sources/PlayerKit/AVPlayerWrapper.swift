@@ -41,6 +41,13 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         guard let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return [] }
         return subtitleGroup.options.map { $0.displayName }
     }
+    
+    // Get available video tracks (example for HLS streams)
+    public var availableVideoTracks: [String] {
+        guard let asset = player?.currentItem?.asset else { return [] }
+        guard let videoGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .visual) else { return [] }
+        return videoGroup.options.map { $0.displayName } ?? []
+    }
 
     // Implement PlayerProtocol methods
     public func play() {
@@ -82,13 +89,22 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         guard index < subtitleOptions.count else { return }
         player?.currentItem?.select(subtitleOptions[index], in: subtitleGroup)
     }
+    
+    // Select video track
+    public func selectVideoTrack(index: Int) {
+        guard let videoGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .visual) else { return }
+        let videoOptions = videoGroup.options
+        guard index < videoOptions.count else { return }
+        player?.currentItem?.select(videoOptions[index], in: videoGroup)
+    }
 
     // Refresh available audio and subtitle tracks
     private func refreshTrackInfo() {
         let audioTracks = availableAudioTracks
         let subtitleTracks = availableSubtitles
+        let videoTracks = availableVideoTracks
         DispatchQueue.main.async {
-            PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks)
+            PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks, videoTracks: videoTracks)
         }
     }
 }

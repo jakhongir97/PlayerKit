@@ -9,6 +9,7 @@ public protocol PlayerProtocol: AnyObject {
 
     var availableAudioTracks: [String] { get }
     var availableSubtitles: [String] { get }
+    var availableVideoTracks: [String] { get }
 
     func play()
     func pause()
@@ -20,6 +21,7 @@ public protocol PlayerProtocol: AnyObject {
     
     func selectAudioTrack(index: Int)
     func selectSubtitle(index: Int)
+    func selectVideoTrack(index: Int)
     
     func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void)
 }
