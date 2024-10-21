@@ -3,11 +3,18 @@ import Foundation
 class TimeFormatter {
     static let shared = TimeFormatter()
 
-    // Format time in seconds to MM:SS format
-    func formatTime(_ time: Double) -> String {
-        let minutes = Int(time) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+    /// Formats time in seconds into a readable format
+    /// - Parameters:
+    ///   - time: Time in seconds
+    ///   - unitsStyle: Optional units style to specify the desired format (short, positional)
+    /// - Returns: A formatted time string
+    func formatTime(_ time: Double, unitsStyle: DateComponentsFormatter.UnitsStyle = .positional) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = unitsStyle
+        formatter.allowedUnits = time >= 3600 ? [.hour, .minute, .second] : [.minute, .second]
+        formatter.zeroFormattingBehavior = .pad
+        
+        return formatter.string(from: time) ?? "00:00"
     }
 }
 

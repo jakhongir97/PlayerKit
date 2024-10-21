@@ -44,28 +44,6 @@ struct PlaybackSliderView: View {
                 }
             }
             .frame(height: 44)
-
-            // Add current time, duration, and buffering indicator
-            HStack {
-                Spacer()
-                Text(TimeFormatter.shared.formatTime(playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime))
-                    .foregroundColor(.white)
-
-                Text("•")
-                    .foregroundColor(.white)
-
-                // Display total duration
-                Text(TimeFormatter.shared.formatTime(playerManager.duration))
-                    .foregroundColor(.white)
-
-                // Buffering indicator
-                if playerManager.isBuffering {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.8)
-                }
-            }
-            .padding(.top, 4)
         }
     }
 }

@@ -16,6 +16,8 @@ struct ControlMenuView: View {
 
             // Playback Speed Menu
             playbackSpeedMenu()
+            
+            PlaybackTimeView(playerManager: playerManager)
 
             Spacer()  // Keeps buttons aligned to the left
         }
@@ -28,7 +30,12 @@ struct ControlMenuView: View {
                 Button(action: {
                     playerManager.selectSubtitle(index: index)
                 }) {
-                    Text(playerManager.availableSubtitles[index])
+                    HStack {
+                        Text(playerManager.availableSubtitles[index])
+                        if playerManager.selectedSubtitleTrackIndex == index {
+                            Image(systemName: "checkmark")
+                        }
+                    }
                 }
             }
         } label: {
@@ -47,7 +54,12 @@ struct ControlMenuView: View {
                 Button(action: {
                     playerManager.selectAudioTrack(index: index)
                 }) {
-                    Text(playerManager.availableAudioTracks[index])
+                    HStack {
+                        Text(playerManager.availableAudioTracks[index])
+                        if playerManager.selectedAudioTrackIndex == index {
+                            Image(systemName: "checkmark")
+                        }
+                    }
                 }
             }
         } label: {
@@ -66,11 +78,16 @@ struct ControlMenuView: View {
                 Button(action: {
                     playerManager.selectVideoTrack(index: index)
                 }) {
-                    Text(playerManager.availableVideoTracks[index])
+                    HStack {
+                        Text(playerManager.availableVideoTracks[index])
+                        if playerManager.selectedVideoTrackIndex == index {
+                            Image(systemName: "checkmark")
+                        }
+                    }
                 }
             }
         } label: {
-            Label("Video", systemImage: "film")
+            Label("Video", systemImage: "play.square.stack")
                 .foregroundColor(.white)
                 .padding()
                 .background(Color.black.opacity(0.7))
@@ -81,13 +98,58 @@ struct ControlMenuView: View {
     @ViewBuilder
     func playbackSpeedMenu() -> some View {
         Menu {
-            Button("0.25x") { playerManager.playbackSpeed = 0.25 }
-            Button("0.5x") { playerManager.playbackSpeed = 0.5 }
-            Button("1.0x (Normal)") { playerManager.playbackSpeed = 1.0 }
-            Button("1.25x") { playerManager.playbackSpeed = 1.25 }
-            Button("1.5x") { playerManager.playbackSpeed = 1.5 }
+            Button(action: {
+                playerManager.playbackSpeed = 0.25
+            }) {
+                HStack {
+                    Text("0.25x")
+                    if playerManager.playbackSpeed == 0.25 {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            Button(action: {
+                playerManager.playbackSpeed = 0.5
+            }) {
+                HStack {
+                    Text("0.5x")
+                    if playerManager.playbackSpeed == 0.5 {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            Button(action: {
+                playerManager.playbackSpeed = 1.0
+            }) {
+                HStack {
+                    Text("1.0x (Normal)")
+                    if playerManager.playbackSpeed == 1.0 {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            Button(action: {
+                playerManager.playbackSpeed = 1.25
+            }) {
+                HStack {
+                    Text("1.25x")
+                    if playerManager.playbackSpeed == 1.25 {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            Button(action: {
+                playerManager.playbackSpeed = 1.5
+            }) {
+                HStack {
+                    Text("1.5x")
+                    if playerManager.playbackSpeed == 1.5 {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
         } label: {
-            Label("Speed", systemImage: "tortoise")
+            Label("Speed", systemImage: "play.circle")
                 .foregroundColor(.white)
                 .padding()
                 .background(Color.black.opacity(0.7))

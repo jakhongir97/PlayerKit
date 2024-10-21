@@ -26,7 +26,7 @@ struct PlayerMenuView: View {
                 }
             }
         } label: {
-            Image(systemName: "list.bullet")
+            Image(systemName: "gear")
                 .padding()
                 .background(Color.black.opacity(0.6))
                 .clipShape(Circle())
