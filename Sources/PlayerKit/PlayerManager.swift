@@ -20,6 +20,9 @@ public class PlayerManager: ObservableObject {
     @Published public var isFullscreen: Bool = false  // Track fullscreen state
     @Published public var isMinimized: Bool = false  // Track minimized state
     @Published public var areControlsVisible: Bool = true
+    
+    @Published public var selectedPlayerType: PlayerType = .vlcPlayer  // Player type moved here
+    @Published public var videoURL: URL?  // Video URL moved here
 
     // Seeking-related state
     @Published public var isSeeking: Bool = false
@@ -36,13 +39,13 @@ public class PlayerManager: ObservableObject {
 
     // Singleton initializer
     private init() {
-        setupGestureHandling()
     }
 
     // MARK: - Player Setup
 
     /// Set the player type (AVPlayer or VLCPlayer)
     public func setPlayer(type: PlayerType) {
+        selectedPlayerType = type
         switch type {
         case .vlcPlayer:
             currentPlayer = VLCPlayerWrapper()  // Assuming VLCPlayerWrapper exists
@@ -53,12 +56,23 @@ public class PlayerManager: ObservableObject {
         // Refresh available tracks and observe player state
         refreshTrackInfo()
         observePlayerState()
+        setupGestureHandling()
+    }
+    
+    public func switchPlayer(to type: PlayerType) {
+        let lastPosition = currentTime  // Save the current time before switching
+        setPlayer(type: type)  // Switch player
+        if let url = videoURL {
+            load(url: url)  // Reload the video with the new player
+            seek(to: lastPosition)  // Seek to the saved position after loading
+        }
     }
 
     // MARK: - Load Media
 
     /// Load a media URL into the player
     public func load(url: URL) {
+        videoURL = url
         currentPlayer?.load(url: url)
         refreshTrackInfo()
         userInteracted()

@@ -1,32 +1,43 @@
 import SwiftUI
-import AVFoundation
 
 public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
 
-    public init() {}
+    public init() {
+        playerManager.setPlayer(type: playerManager.selectedPlayerType)
+    }
 
     public var body: some View {
         ZStack {
-            renderPlayerView()  // Video rendering
+            // Full-screen PlayerRenderingView
+            PlayerRenderingView()
+                .id(playerManager.selectedPlayerType)  // Reset on player type change
+                .edgesIgnoringSafeArea(.all)
 
+            // GestureView for handling gestures
             GestureView(gestureManager: playerManager.gestureManager)
-                .allowsHitTesting(true)
-                .zIndex(0)
-
+                .zIndex(0)  // GestureView should be behind other UI elements
+            
+            // Player controls
             if playerManager.areControlsVisible {
-                PlayerControlsView(playerManager: playerManager)  // Separated controls UI block with new name
-                    .transition(.opacity)  // Smoothly show/hide controls
+                PlayerControlsView(playerManager: playerManager)
+                    .transition(.opacity)
                     .zIndex(1)
             }
-        }
-        .edgesIgnoringSafeArea(.all)
-    }
 
-    @ViewBuilder
-    func renderPlayerView() -> some View {
-        PlayerRenderingView()
-            .background(Color.black)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // PlayerMenuView at the top-right corner
+            VStack {
+                HStack {
+                    Spacer()
+                    PlayerMenuView(playerManager: playerManager)
+                        .padding()
+                        .background(Color.black.opacity(0.6))
+                        .clipShape(Circle())
+                        .foregroundColor(.white)
+                }
+                Spacer()
+            }
+            .zIndex(2)
+        }
     }
 }
