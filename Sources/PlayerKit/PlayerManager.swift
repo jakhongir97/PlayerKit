@@ -1,4 +1,6 @@
 import Foundation
+import MediaPlayer
+import UIKit
 import Combine
 
 public class PlayerManager: ObservableObject {
@@ -15,6 +17,9 @@ public class PlayerManager: ObservableObject {
     @Published public var isBuffering: Bool = false
     @Published public var currentTime: Double = 0
     @Published public var duration: Double = 0
+    @Published public var isFullscreen: Bool = false  // Track fullscreen state
+    @Published public var isMinimized: Bool = false  // Track minimized state
+    @Published public var areControlsVisible: Bool = true
 
     // Seeking-related state
     @Published public var isSeeking: Bool = false
@@ -24,11 +29,15 @@ public class PlayerManager: ObservableObject {
     
     // Reference to ThumbnailManager
     public let thumbnailManager = ThumbnailManager.shared
+    public let gestureManager = GestureManager()
 
     private var cancellables = Set<AnyCancellable>()
+    private var autoHideTimer: AnyCancellable?
 
     // Singleton initializer
-    private init() {}
+    private init() {
+        setupGestureHandling()
+    }
 
     // MARK: - Player Setup
 
@@ -52,6 +61,7 @@ public class PlayerManager: ObservableObject {
     public func load(url: URL) {
         currentPlayer?.load(url: url)
         refreshTrackInfo()
+        startAutoHideTimer()
     }
 
     // MARK: - Play/Pause Controls
@@ -198,3 +208,60 @@ public class PlayerManager: ObservableObject {
     }
 }
 
+extension PlayerManager {
+    private func setupGestureHandling() {
+        // Handle seek gesture
+        gestureManager.onSeek = { [weak self] newTime in
+            print("Seek gesture triggered: \(newTime)")
+            self?.currentPlayer?.seek(to: newTime, completion: nil)
+        }
+        
+        // Handle control toggle (tap gesture)
+        gestureManager.onToggleControls = { [weak self] in
+            guard let self = self else { return }
+            
+            if self.areControlsVisible {
+                // Controls are visible, restart the auto-hide timer
+                self.hideControls()
+            } else {
+                // Show controls immediately and start the auto-hide timer
+                self.showControls()  // This will display the controls and start the auto-hide timer
+            }
+        }
+
+    }
+}
+
+extension PlayerManager {
+    // MARK: - Setup Auto-Hide for Controls
+    
+    /// Start the timer to auto-hide controls after a delay
+    private func startAutoHideTimer() {
+        stopAutoHideTimer()  // Ensure no existing timer is running
+        
+        autoHideTimer = Timer.publish(every: 5, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                self?.hideControls()
+            }
+    }
+    
+    /// Stop the auto-hide timer
+    private func stopAutoHideTimer() {
+        autoHideTimer?.cancel()
+        autoHideTimer = nil
+    }
+    
+    /// Show the controls and restart the auto-hide timer
+    public func showControls() {
+        areControlsVisible = true
+        startAutoHideTimer()  // Restart the auto-hide timer
+    }
+    
+    /// Hide the controls
+    private func hideControls() {
+        areControlsVisible = false
+        stopAutoHideTimer()  // Stop the timer after hiding controls
+    }
+    
+}
