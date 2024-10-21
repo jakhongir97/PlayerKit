@@ -61,7 +61,7 @@ public class PlayerManager: ObservableObject {
     public func load(url: URL) {
         currentPlayer?.load(url: url)
         refreshTrackInfo()
-        startAutoHideTimer()
+        userInteracted()
     }
 
     // MARK: - Play/Pause Controls
@@ -72,6 +72,7 @@ public class PlayerManager: ObservableObject {
         DispatchQueue.main.async {
             self.isPlaying = true
         }
+       userInteracted()
     }
 
     /// Pause the media
@@ -80,6 +81,7 @@ public class PlayerManager: ObservableObject {
         DispatchQueue.main.async {
             self.isPlaying = false
         }
+        userInteracted()
     }
 
     // MARK: - Seeking Controls
@@ -102,6 +104,7 @@ public class PlayerManager: ObservableObject {
                 }
             }
         }
+        userInteracted()
     }
 
     /// Handle the start of seeking interaction (user starts dragging the slider)
@@ -233,6 +236,7 @@ extension PlayerManager {
 }
 
 extension PlayerManager {
+    
     // MARK: - Setup Auto-Hide for Controls
     
     /// Start the timer to auto-hide controls after a delay
@@ -263,5 +267,9 @@ extension PlayerManager {
         areControlsVisible = false
         stopAutoHideTimer()  // Stop the timer after hiding controls
     }
-    
+
+    // Call this in each interaction method like play, pause, seek, etc.
+    public func userInteracted() {
+        showControls()  // Show controls and restart the auto-hide timer
+    }
 }
