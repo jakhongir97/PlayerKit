@@ -47,6 +47,10 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var currentTime: Double {
         return Double(player.time.intValue) / 1000
     }
+    
+    public var bufferedDuration: Double {
+        return duration * Double(player.position)
+    }
 
     public var duration: Double {
         return Double(player.media?.length.intValue ?? 0) / 1000
@@ -95,6 +99,7 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
 
     public func load(url: URL) {
         let media = VLCMedia(url: url)
+        media?.addOption(":network-caching=1000")
         player.media = media
 
         // Delay the playback slightly to ensure drawable is ready

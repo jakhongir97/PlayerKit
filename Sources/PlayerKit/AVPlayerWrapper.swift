@@ -33,6 +33,11 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     public var currentTime: Double {
         return player?.currentTime().seconds ?? 0
     }
+    
+    public var bufferedDuration: Double {
+        guard let timeRange = player?.currentItem?.loadedTimeRanges.first?.timeRangeValue else { return 0 }
+        return CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration)
+    }
 
     public var duration: Double {
         guard let duration = player?.currentItem?.duration.seconds, duration.isFinite else { return 0 }

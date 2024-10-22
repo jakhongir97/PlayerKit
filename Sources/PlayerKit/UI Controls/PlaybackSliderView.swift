@@ -6,6 +6,19 @@ struct PlaybackSliderView: View {
     var body: some View {
         VStack(spacing: 4) {
             ZStack(alignment: .leading) {
+                GeometryReader { geometry in
+                    let sliderWidth = geometry.size.width
+                    let bufferProgressWidth = sliderWidth * CGFloat(playerManager.bufferedDuration / max(playerManager.duration, 0.01))
+
+                    // Buffered portion (buffered duration)
+                    Capsule()
+                        .fill(Color.white.opacity(0.6))  // Buffered track color
+                        .frame(width: bufferProgressWidth, height: 3)
+                }
+                .frame(height: 3)
+                .padding(.horizontal, 2)
+
+                // Default Slider to show current progress
                 Slider(
                     value: Binding(
                         get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
@@ -27,7 +40,7 @@ struct PlaybackSliderView: View {
                 )
                 .accentColor(.blue)
 
-                // Display the thumbnail preview while seeking
+                // Thumbnail preview while seeking
                 if let thumbnail = ThumbnailManager.shared.thumbnailImage {
                     GeometryReader { geometry in
                         let sliderWidth = geometry.size.width

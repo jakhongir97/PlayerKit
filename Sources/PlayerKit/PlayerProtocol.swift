@@ -5,6 +5,7 @@ public protocol PlayerProtocol: AnyObject {
     var isPlaying: Bool { get }
     var currentTime: Double { get }
     var duration: Double { get }
+    var bufferedDuration: Double { get }
     var isBuffering: Bool { get }
 
     var availableAudioTracks: [String] { get }

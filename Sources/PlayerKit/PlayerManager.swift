@@ -17,6 +17,7 @@ public class PlayerManager: ObservableObject {
     @Published public var isBuffering: Bool = false
     @Published public var currentTime: Double = 0
     @Published public var duration: Double = 0
+    @Published public var bufferedDuration: Double = 0
     @Published public var isFullscreen: Bool = false  // Track fullscreen state
     @Published public var isMinimized: Bool = false  // Track minimized state
     @Published public var areControlsVisible: Bool = true
@@ -200,6 +201,7 @@ public class PlayerManager: ObservableObject {
                     self.isBuffering = player.isBuffering
                     self.currentTime = player.currentTime
                     self.duration = player.duration
+                    self.bufferedDuration = player.bufferedDuration
                 }
             }
             .store(in: &cancellables)
