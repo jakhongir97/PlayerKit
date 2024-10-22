@@ -1,26 +1,36 @@
-import Foundation
-import SwiftUI
+import UIKit
 
 public class GestureManager: ObservableObject {
     
-    var onSeek: ((Double) -> Void)?  // Closure to handle seeking
-    var onToggleControls: (() -> Void)?  // Closure to handle control visibility toggle
+    @Published var visualFeedback: String?  // Holds the current visual feedback text (e.g., "+10s", "-20s")
+    @Published var showFeedback: Bool = false  // Controls the visibility of the feedback
 
-    init() {}
+    var onSeek: ((_ newTime: Double) -> Void)?
+    var onToggleControls: (() -> Void)?
 
-    // Double tap gesture handler for seeking
-    func handleDoubleTap(isRightSide: Bool) {
-        let skipTime: Double = 10
-        let playerManager = PlayerManager.shared
-        let currentTime = playerManager.currentTime
-        let duration = playerManager.duration
-        
-        let newTime = isRightSide ? min(currentTime + skipTime, duration) : max(currentTime - skipTime, 0)
-        onSeek?(newTime)  // Trigger seek closure
+    // Handles the double-tap action for fast seeking based on tap count
+    func handleDoubleTap(isRightSide: Bool, interval: Double) {
+        if let currentPlayer = PlayerManager.shared.currentPlayer {
+            let currentTime = currentPlayer.currentTime
+            let newTime = isRightSide ? currentTime + interval : currentTime - interval
+            PlayerManager.shared.seek(to: newTime)
+            showVisualFeedback(isRightSide: isRightSide, interval: interval)
+        }
     }
 
-    // Handle control visibility toggle
+    // Handles the single tap action to toggle the controls
     func handleToggleControls() {
-        onToggleControls?()  // Trigger control visibility toggle closure
+        onToggleControls?()
+    }
+
+    func showVisualFeedback(isRightSide: Bool, interval: Double) {
+        let feedbackText = isRightSide ? "+\(Int(interval))s" : "-\(Int(interval))s"
+        visualFeedback = feedbackText
+        showFeedback = true
+        
+        // Hide the feedback after 1 second with animation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.showFeedback = false
+        }
     }
 }
