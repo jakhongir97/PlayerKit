@@ -19,6 +19,9 @@ struct ControlMenuView: View {
             
             PiPButton()
             
+            AirPlayRoutePickerView()
+                .frame(width: 40, height: 40)
+            
             PlaybackTimeView(playerManager: playerManager)
 
             Spacer()  // Keeps buttons aligned to the left

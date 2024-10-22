@@ -88,6 +88,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
 
     public func load(url: URL) {
         player = AVPlayer(url: url)
+        player?.allowsExternalPlayback = true
         refreshTrackInfo()
     }
 
