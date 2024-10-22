@@ -26,4 +26,10 @@ public protocol PlayerProtocol: AnyObject {
     func selectVideoTrack(index: Int)
     
     func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void)
+    
+    // View management and PiP abstraction
+    func getPlayerView() -> UIView  // Return the reusable view for rendering
+    func setupPiP()                 // Setup PiP functionality if supported
+    func startPiP()                 // Start PiP
+    func stopPiP()                  // Stop PiP
 }

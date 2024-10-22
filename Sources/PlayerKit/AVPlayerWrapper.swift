@@ -1,14 +1,28 @@
-import AVFoundation
+import AVKit
 import UIKit
 
 public class AVPlayerWrapper: NSObject, PlayerProtocol {
     public var player: AVPlayer?
+    private var playerView: AVPlayerView?
+    private var pipController: AVPictureInPictureController?
     
     // Lazy initialization to create the thumbnail generator only when it's first accessed
     private lazy var thumbnailGenerator: AVPlayerThumbnailGenerator? = {
         guard let asset = player?.currentItem?.asset else { return nil }
         return AVPlayerThumbnailGenerator(asset: asset)
     }()
+    
+    // Implement getPlayerView to return the cached PlayerUIView
+    public func getPlayerView() -> UIView {
+        if let existingView = playerView {
+            return existingView
+        }
+        
+        let newPlayerView = AVPlayerView()
+        newPlayerView.player = player  // Set the AVPlayer instance
+        playerView = newPlayerView
+        return newPlayerView
+    }
     
 
     // PlayerProtocol property implementations
@@ -128,5 +142,42 @@ extension AVPlayerWrapper {
         }
         
         generator.generateThumbnail(at: time, completion: completion)
+    }
+}
+
+// Implement PiP Delegate Methods for AVPlayerWrapper
+extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
+    // PiP Setup for AVPlayer using AVPictureInPictureController
+    public func setupPiP() {
+        guard let playerView = getPlayerView() as? AVPlayerView, let playerLayer = playerView.playerLayer  else {
+            print("AVPlayerWrapper: No playerLayer available for PiP.")
+            return
+        }
+        pipController = AVPictureInPictureController(playerLayer: playerLayer)
+        pipController?.delegate = self
+    }
+    
+    // Start PiP for AVPlayer
+    public func startPiP() {
+        if AVPictureInPictureController.isPictureInPictureSupported() {
+            pipController?.startPictureInPicture()
+        } else {
+            print("PiP is not supported on this device.")
+        }
+    }
+    
+    // Stop PiP for AVPlayer
+    public func stopPiP() {
+        pipController?.stopPictureInPicture()
+    }
+    
+    public func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        // Optional: Handle event when PiP will start
+        PlayerManager.shared.isPiPActive = true
+    }
+    
+    public func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        // Optional: Handle event when PiP stopped
+        PlayerManager.shared.isPiPActive = false
     }
 }

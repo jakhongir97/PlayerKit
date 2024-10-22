@@ -17,6 +17,8 @@ struct ControlMenuView: View {
             // Playback Speed Menu
             playbackSpeedMenu()
             
+            PiPButton()
+            
             PlaybackTimeView(playerManager: playerManager)
 
             Spacer()  // Keeps buttons aligned to the left

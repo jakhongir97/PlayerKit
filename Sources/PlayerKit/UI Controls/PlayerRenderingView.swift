@@ -7,17 +7,9 @@ struct PlayerRenderingView: View {
 
     var body: some View {
         ZStack {
-            // Render AVPlayer if active and player is non-nil
-            if let avPlayerWrapper = playerManager.currentPlayer as? AVPlayerWrapper,
-               let avPlayer = avPlayerWrapper.player {
-                AVPlayerViewRepresentable(player: avPlayer)
-            }
-            // Render VLCPlayer if active
-            else if let vlcPlayerWrapper = playerManager.currentPlayer as? VLCPlayerWrapper {
-                VLCPlayerViewRepresentable(player: vlcPlayerWrapper.player)
-            }
-            // Fallback if no player is loaded
-            else {
+            if let playerView = playerManager.currentPlayer?.getPlayerView() {
+                PlayerViewRepresentable(playerView: playerView)
+            } else {
                 Text("No video loaded.")
                     .foregroundColor(.white)
             }
@@ -25,4 +17,14 @@ struct PlayerRenderingView: View {
     }
 }
 
+struct PlayerViewRepresentable: UIViewRepresentable {
+    let playerView: UIView
 
+    func makeUIView(context: Context) -> UIView {
+        return playerView
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        // No need to update, since the view is managed by the player wrapper
+    }
+}

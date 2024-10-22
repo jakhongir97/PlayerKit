@@ -27,6 +27,8 @@ public class PlayerManager: ObservableObject {
     // Seeking-related state
     @Published public var isSeeking: Bool = false
     @Published public var seekTime: Double = 0  // Temporarily hold the seek time while dragging
+    
+    @Published public var isPiPActive: Bool = false
 
     public var currentPlayer: PlayerProtocol?
     
@@ -76,6 +78,7 @@ public class PlayerManager: ObservableObject {
         currentPlayer?.load(url: url)
         refreshTrackInfo()
         userInteracted()
+        setupPiP()
     }
 
     // MARK: - Play/Pause Controls
@@ -285,5 +288,22 @@ extension PlayerManager {
     // Call this in each interaction method like play, pause, seek, etc.
     public func userInteracted() {
         showControls()  // Show controls and restart the auto-hide timer
+    }
+}
+
+extension PlayerManager {
+    // Start PiP using the current player
+    public func startPiP() {
+        currentPlayer?.startPiP()
+    }
+    
+    // Stop PiP using the current player
+    public func stopPiP() {
+        currentPlayer?.stopPiP()
+    }
+    
+    // Setup PiP for the current player
+    public func setupPiP() {
+        currentPlayer?.setupPiP()
     }
 }

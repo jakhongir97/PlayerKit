@@ -2,6 +2,8 @@ import VLCKit
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
+    private var playerView: UIView?
+    private var pipWindow: UIView?
     private var thumbnailGenerator: VLCPlayerThumbnailGenerator?
 
     public override init() {
@@ -21,6 +23,20 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+    }
+    
+    // Implement getPlayerView to return the cached UIView
+    public func getPlayerView() -> UIView {
+        if let existingView = playerView {
+            return existingView
+        }
+        
+        let newVlcView = UIView()
+        DispatchQueue.main.async {
+            self.player.drawable = newVlcView  // Set VLC's drawable to the view
+        }
+        playerView = newVlcView
+        return newVlcView
     }
 
     // PlayerProtocol property implementations
@@ -157,3 +173,16 @@ extension VLCPlayerWrapper {
     }
 }
 
+extension VLCPlayerWrapper {
+    // Setup custom PiP (floating window)
+    public func setupPiP() {
+    }
+    
+    // Start custom PiP for VLCPlayer
+    public func startPiP() {
+    }
+    
+    // Stop custom PiP for VLCPlayer
+    public func stopPiP() {
+    }
+}
