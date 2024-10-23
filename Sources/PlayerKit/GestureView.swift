@@ -10,9 +10,17 @@ struct GestureView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .gesture(
+                        // Handle drag for tap gestures
                         DragGesture(minimumDistance: 0)
                             .onEnded { value in
                                 gestureManager.handleTap(at: value.location, in: geometry.size)
+                            }
+                    )
+                    .gesture(
+                        // Pinch gesture for zoom
+                        MagnificationGesture()
+                            .onChanged { scale in
+                                gestureManager.handlePinch(scale: scale)
                             }
                     )
 

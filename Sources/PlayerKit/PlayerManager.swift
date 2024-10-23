@@ -249,6 +249,11 @@ extension PlayerManager {
                 self.showControls()  // This will display the controls and start the auto-hide timer
             }
         }
+        
+        gestureManager.onZoom = { [weak self] scale in
+            // Call the player manager's zoom method with the scale value
+            PlayerManager.shared.currentPlayer?.handlePinchGesture(scale: scale)
+        }
 
     }
 }

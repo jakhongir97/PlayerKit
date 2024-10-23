@@ -10,7 +10,8 @@ public class GestureManager: ObservableObject {
     // MARK: - Callback Closures
     var onSeek: ((_ newTime: Double) -> Void)?
     var onToggleControls: (() -> Void)?
-
+    var onZoom: ((_ scale: CGFloat) -> Void)?
+    
     // MARK: - Private Properties
     private var accumulatedInterval: Double = 0.0
     private var seekDirection: SeekDirection = .forward
@@ -27,6 +28,12 @@ public class GestureManager: ObservableObject {
     private let fastSeekBaseInterval: Double = 10.0 // Base seek interval
 
     // MARK: - Public Methods
+    
+    /// Handles the pinch gesture from the view.
+    func handlePinch(scale: CGFloat) {
+        print("[GestureManager] handlePinch - scale: \(scale)")
+        onZoom?(scale)  // Trigger the zoom action
+    }
 
     /// Handles the tap gesture from the view.
     func handleTap(at location: CGPoint, in size: CGSize) {

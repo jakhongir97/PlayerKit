@@ -136,6 +136,16 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
             PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks, videoTracks: videoTracks)
         }
     }
+    
+    public func handlePinchGesture(scale: CGFloat) {
+        guard let playerView = getPlayerView() as? AVPlayerView else { return }
+        guard let playerLayer = playerView.playerLayer else { return }
+        if scale > 1 {
+            playerLayer.videoGravity = .resizeAspectFill  // Zoom in
+        } else {
+            playerLayer.videoGravity = .resizeAspect  // Zoom out
+        }
+    }
 }
 
 // MARK: - AVPlayerWrapper Extension

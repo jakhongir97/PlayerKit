@@ -33,4 +33,6 @@ public protocol PlayerProtocol: AnyObject {
     func setupPiP()                 // Setup PiP functionality if supported
     func startPiP()                 // Start PiP
     func stopPiP()                  // Stop PiP
+    
+    func handlePinchGesture(scale: CGFloat)
 }

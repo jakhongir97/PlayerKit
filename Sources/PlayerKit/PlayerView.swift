@@ -31,9 +31,6 @@ public struct PlayerView: View {
                     Spacer()
                     PlayerMenuView(playerManager: playerManager)
                         .padding()
-                        .background(Color.black.opacity(0.6))
-                        .clipShape(Circle())
-                        .foregroundColor(.white)
                 }
                 Spacer()
             }

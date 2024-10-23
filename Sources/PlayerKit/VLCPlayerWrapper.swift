@@ -159,6 +159,29 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
             PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks, videoTracks: videoTracks)
         }
     }
+
+    public func handlePinchGesture(scale: CGFloat) {
+        // Get screen dimensions
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+
+        // Calculate aspect ratio only when zooming in
+        let aspectRatioString: String = scale > 1 ? {
+            let gcd = greatestCommonDivisor(Int(screenWidth), Int(screenHeight))
+            return "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
+        }() : ""
+
+        // Apply the aspect ratio to the VLC player
+        DispatchQueue.main.async { [weak self] in
+            self?.player.videoAspectRatio = aspectRatioString
+        }
+        print("New aspect ratio: \(aspectRatioString)")
+    }
+
+    // GCD function
+    private func greatestCommonDivisor(_ a: Int, _ b: Int) -> Int {
+        return b == 0 ? a : greatestCommonDivisor(b, a % b)
+    }
 }
 
 // MARK: - VLCPlayerWrapper Extension
