@@ -122,7 +122,6 @@ public class PlayerManager: ObservableObject {
                 }
             }
         }
-        userInteracted()
     }
 
     /// Handle the start of seeking interaction (user starts dragging the slider)
