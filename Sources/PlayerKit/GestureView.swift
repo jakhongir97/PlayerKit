@@ -2,7 +2,7 @@ import SwiftUI
 
 struct GestureView: View {
     @ObservedObject var gestureManager: GestureManager
-
+    
     var body: some View {
         GeometryReader { geometry in
             ZStack {
@@ -10,10 +10,13 @@ struct GestureView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .gesture(
-                        // Handle drag for tap gestures
-                        DragGesture(minimumDistance: 0)
-                            .onEnded { value in
-                                gestureManager.handleTap(at: value.location, in: geometry.size)
+                        // Drag gesture for tap gestures and swipe (volume/brightness)
+                        DragGesture()
+                            .onChanged { value in
+                                gestureManager.handleVerticalSwipe(at: value.location, translation: value.translation, in: geometry.size)
+                            }
+                            .onEnded { _ in
+                                gestureManager.resetInitialStates() // Reset after swipe ends
                             }
                     )
                     .gesture(
@@ -23,8 +26,15 @@ struct GestureView: View {
                                 gestureManager.handlePinch(scale: scale)
                             }
                     )
-
-                // Visual feedback for seeking
+                    .gesture(
+                        // Tap gesture for seeking
+                        DragGesture(minimumDistance: 0)
+                            .onEnded { value in
+                                gestureManager.handleTap(at: value.location, in: geometry.size)
+                            }
+                    )
+                
+                // Visual feedback for seeking, volume, brightness
                 if let feedbackID = gestureManager.feedbackID,
                    let feedback = gestureManager.visualFeedback,
                    let feedbackImage = gestureManager.feedbackImage {
