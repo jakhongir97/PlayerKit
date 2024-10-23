@@ -9,8 +9,12 @@ xcuserdata
 .build/
 Package.resolved
 
-# Frameworks
+# Ignore Frameworks folder or specific xcframeworks
+Frameworks/GoogleCast.xcframework/
 Frameworks/VLCKit.xcframework/
+
+# If you have other xcframeworks, you can add them here
+Frameworks/*.xcframework
 
 # IDEs and Editors
 .idea/

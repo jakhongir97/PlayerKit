@@ -1,6 +1,4 @@
 // swift-tools-version: 5.10
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
 import PackageDescription
 
 let package = Package(
@@ -13,11 +11,15 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "VLCKit",
-            path: "./Frameworks/VLCKit.xcframework" // The path to your XCFramework
+            path: "./Frameworks/VLCKit.xcframework"
+        ),
+        .binaryTarget(
+            name: "GoogleCast",  // Update to reference GoogleCast
+            path: "./Frameworks/GoogleCast.xcframework"  // Correct path to GoogleCast.xcframework
         ),
         .target(
             name: "PlayerKit",
-            dependencies: ["VLCKit"],
+            dependencies: ["VLCKit", "GoogleCast"],  // Add GoogleCast as a dependency
             path: "Sources"
         ),
         .testTarget(

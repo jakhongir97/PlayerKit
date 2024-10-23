@@ -29,12 +29,21 @@ public struct PlayerView: View {
             VStack {
                 HStack {
                     Spacer()
+                    //if playerManager.isCastingAvailable {
+                        GoogleCastButton()
+                    //}
                     PlayerMenuView(playerManager: playerManager)
                         .padding()
                 }
                 Spacer()
             }
             .zIndex(2)
+        }
+        .onAppear {
+            playerManager.addCastStateListener()  // Start listening when the view appears
+        }
+        .onDisappear {
+            playerManager.removeCastStateListener()  // Clean up listener when the view disappears
         }
     }
 }

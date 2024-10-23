@@ -2,6 +2,7 @@ import Foundation
 import MediaPlayer
 import UIKit
 import Combine
+import GoogleCast
 
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
@@ -30,6 +31,8 @@ public class PlayerManager: ObservableObject {
     @Published public var seekTime: Double = 0  // Temporarily hold the seek time while dragging
     
     @Published public var isPiPActive: Bool = false
+    @Published public var isCasting = false
+    @Published public var isCastingAvailable: Bool = false
 
     public var currentPlayer: PlayerProtocol?
     
@@ -311,5 +314,34 @@ extension PlayerManager {
     // Setup PiP for the current player
     public func setupPiP() {
         currentPlayer?.setupPiP()
+    }
+}
+
+extension PlayerManager {
+    // Function to play media on Chromecast
+    public func playOnChromecast(url: URL) {
+        CastManager.shared.playMediaOnCast(url: url)
+        isCasting = true
+    }
+    
+    public func pauseChromecast() {
+        CastManager.shared.pauseCast()
+    }
+    
+    public func stopChromecast() {
+        CastManager.shared.stopCast()
+    }
+    
+    // Call this method to start listening for changes in Chromecast availability
+    public func addCastStateListener() {
+        NotificationCenter.default.addObserver(forName: .gckCastStateDidChange, object: nil, queue: .main) { [weak self] _ in
+            // Update the state based on the current cast state
+            self?.isCastingAvailable = GCKCastContext.sharedInstance().castState != .noDevicesAvailable
+        }
+    }
+    
+    // Optionally, remove observer to avoid memory leaks
+    public func removeCastStateListener() {
+        NotificationCenter.default.removeObserver(self, name: .gckCastStateDidChange, object: nil)
     }
 }
