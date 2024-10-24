@@ -27,14 +27,12 @@ public struct PlayerView: View {
 
             // PlayerMenuView at the top-right corner
             VStack {
-                HStack {
+                HStack(spacing: 16) {
                     Spacer()
-                    //if playerManager.isCastingAvailable {
-                        GoogleCastButton()
-                    //}
-                    PlayerMenuView(playerManager: playerManager)
-                        .padding()
+                    SharingMenuView()
+                    SettingsMenu(playerManager: playerManager)
                 }
+                .padding()
                 Spacer()
             }
             .zIndex(2)

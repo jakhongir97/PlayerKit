@@ -14,15 +14,13 @@ struct PlayerControlsView: View {
             }
 
             // Playback slider and menu at the bottom
-            VStack {
+            VStack(spacing: 0) {
                 Spacer()
-                
+                ControlMenuView(playerManager: playerManager)
+                    .padding([.leading, .trailing], 16)
                 PlaybackSliderView(playerManager: playerManager)
                     .padding([.leading, .trailing], 16)
-                
-                ControlMenuView(playerManager: playerManager)
-                    .padding([.leading], 16)
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 16)                
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

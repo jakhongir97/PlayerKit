@@ -9,7 +9,7 @@ struct PlayerMenuView: View {
                 playerManager.switchPlayer(to: .vlcPlayer)
             }) {
                 HStack {
-                    Text("VLC Player")
+                    Text(PlayerType.vlcPlayer.title)
                     if playerManager.selectedPlayerType == .vlcPlayer {
                         Image(systemName: "checkmark")
                     }
@@ -19,17 +19,15 @@ struct PlayerMenuView: View {
                 playerManager.switchPlayer(to: .avPlayer)
             }) {
                 HStack {
-                    Text("AVPlayer")
+                    Text(PlayerType.avPlayer.title)
                     if playerManager.selectedPlayerType == .avPlayer {
                         Image(systemName: "checkmark")
                     }
                 }
             }
         } label: {
-            Image(systemName: "gear")
+            Label("Player", systemImage: "shippingbox.fill")
                 .padding()
-                .background(Color.black.opacity(0.6))
-                .clipShape(Circle())
                 .foregroundColor(.white)
         }
     }

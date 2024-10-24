@@ -5,7 +5,6 @@ struct PlaybackTimeView: View {
 
     var body: some View {
         HStack {
-            Spacer()
             Text(TimeFormatter.shared.formatTime(playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime))
                 .foregroundColor(.white)
 
@@ -20,6 +19,7 @@ struct PlaybackTimeView: View {
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     .scaleEffect(0.8)
             }
+            Spacer()
         }
     }
 }

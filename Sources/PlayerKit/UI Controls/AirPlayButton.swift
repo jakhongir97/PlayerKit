@@ -1,6 +1,15 @@
 import SwiftUI
 import AVKit
 
+struct AirPlayButton: View {
+    var body: some View {
+        HStack {
+            AirPlayRoutePickerView()
+                .frame(width: 44, height: 44)  // Adjust size as needed
+        }
+    }
+}
+
 struct AirPlayRoutePickerView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> AVRoutePickerView {
@@ -15,5 +24,4 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
         // No need to update the view in this case
     }
 }
-
 

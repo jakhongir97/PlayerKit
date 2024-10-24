@@ -269,7 +269,7 @@ extension PlayerManager {
     private func startAutoHideTimer() {
         stopAutoHideTimer()  // Ensure no existing timer is running
         
-        autoHideTimer = Timer.publish(every: 5, on: .main, in: .common)
+        autoHideTimer = Timer.publish(every: 10, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.hideControls()
