@@ -24,6 +24,7 @@ struct PlayerControlsView: View {
                 Color.black.opacity(0.5)
                     .allowsHitTesting(false)  // Ensures the background doesn't block gestures
             )
+            .edgesIgnoringSafeArea(.all)
         }
     }
 }
