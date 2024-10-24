@@ -24,18 +24,6 @@ public struct PlayerView: View {
                     .transition(.opacity)
                     .zIndex(1)
             }
-
-            // PlayerMenuView at the top-right corner
-            VStack {
-                HStack(spacing: 16) {
-                    Spacer()
-                    SharingMenuView()
-                    SettingsMenu(playerManager: playerManager)
-                }
-                .padding()
-                Spacer()
-            }
-            .zIndex(2)
         }
         .onAppear {
             playerManager.addCastStateListener()  // Start listening when the view appears
