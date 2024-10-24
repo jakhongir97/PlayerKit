@@ -19,7 +19,11 @@ struct PlayerControlsView: View {
                 // Bottom part: Playback time, audio/subtitles menu, playback slider
                 BottomControlsView(playerManager: playerManager)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                Color.black.opacity(0.5)
+                    .allowsHitTesting(false)  // Ensures the background doesn't block gestures
+            )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

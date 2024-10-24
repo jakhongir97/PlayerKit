@@ -11,12 +11,12 @@ public struct PlayerView: View {
         ZStack {
             // Full-screen PlayerRenderingView
             PlayerRenderingView()
-                .id(playerManager.selectedPlayerType)  // Reset on player type change
+                .id(playerManager.selectedPlayerType)
                 .edgesIgnoringSafeArea(.all)
 
             // GestureView for handling gestures
             GestureView(gestureManager: playerManager.gestureManager)
-                .zIndex(0)  // GestureView should be behind other UI elements
+                .zIndex(0)
             
             // Player controls
             if playerManager.areControlsVisible {
@@ -25,11 +25,12 @@ public struct PlayerView: View {
                     .zIndex(1)
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
         .onAppear {
-            playerManager.addCastStateListener()  // Start listening when the view appears
+            playerManager.addCastStateListener()
         }
         .onDisappear {
-            playerManager.removeCastStateListener()  // Clean up listener when the view disappears
+            playerManager.removeCastStateListener()
         }
     }
 }
