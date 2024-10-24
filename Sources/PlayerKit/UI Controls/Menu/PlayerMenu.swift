@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct PlayerMenuView: View {
+struct PlayerMenu: View {
     @ObservedObject var playerManager: PlayerManager
 
     var body: some View {

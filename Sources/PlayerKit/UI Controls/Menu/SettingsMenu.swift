@@ -9,7 +9,7 @@ struct SettingsMenu: View {
 
             PlaybackSpeedMenu(playerManager: playerManager)
             
-            PlayerMenuView(playerManager: playerManager)
+            PlayerMenu(playerManager: playerManager)
 
         } label: {
             Image(systemName: "gearshape")
