@@ -27,10 +27,7 @@ public struct PlayerView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
         .onAppear {
-            playerManager.addCastStateListener()
-        }
-        .onDisappear {
-            playerManager.removeCastStateListener()
+            playerManager.castManager.addCastStateListener()
         }
     }
 }

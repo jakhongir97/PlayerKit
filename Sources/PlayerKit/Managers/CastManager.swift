@@ -1,16 +1,22 @@
 import GoogleCast
 
 class CastManager: NSObject, GCKLoggerDelegate {
-
+    
     static let shared = CastManager()
+    
+    @Published var isCasting = false
+    @Published var isCastingAvailable = false
 
     override init() {
         super.init()
         setupGoogleCast()
+        addCastStateListener()
     }
-
-    // Google Cast setup function
-    func setupGoogleCast() {
+    
+    // MARK: - Google Cast Setup
+    
+    /// Sets up Google Cast options and logger delegate
+    private func setupGoogleCast() {
         let criteria = GCKDiscoveryCriteria(applicationID: kGCKDefaultMediaReceiverApplicationID)
         let options = GCKCastOptions(discoveryCriteria: criteria)
         options.startDiscoveryAfterFirstTapOnCastButton = false
@@ -24,33 +30,52 @@ class CastManager: NSObject, GCKLoggerDelegate {
         GCKCastContext.sharedInstance().useDefaultExpandedMediaControls = true
     }
     
-    // GCKLoggerDelegate - Logs Google Cast SDK messages
-    func logMessage(_ message: String, fromFunction function: String) {
-        print("Google Cast Log - Function: \(function) Message: \(message)")
+    // MARK: - Chromecast State Management
+    
+    /// Start listening for changes in Chromecast availability
+    func addCastStateListener() {
+        NotificationCenter.default.addObserver(forName: .gckCastStateDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.isCastingAvailable = GCKCastContext.sharedInstance().castState != .noDevicesAvailable
+        }
     }
-
-    // Function to handle media playback on Chromecast
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: .gckCastStateDidChange, object: nil)
+    }
+    
+    // MARK: - Media Playback Control on Chromecast
+    
+    /// Initiates playback of media on Chromecast
     func playMediaOnCast(url: URL) {
         guard let mediaClient = GCKCastContext.sharedInstance().sessionManager.currentSession?.remoteMediaClient else {
             return
         }
-
+        
         let mediaInfoBuilder = GCKMediaInformationBuilder(contentURL: url)
         mediaInfoBuilder.streamType = .buffered
         mediaInfoBuilder.contentType = "application/x-mpegURL" // Adjust based on your content type
 
         let mediaInfo = mediaInfoBuilder.build()
         mediaClient.loadMedia(mediaInfo)
+        isCasting = true
     }
-
-    // Pause playback on Chromecast
+    
+    /// Pauses playback on Chromecast
     func pauseCast() {
         GCKCastContext.sharedInstance().sessionManager.currentSession?.remoteMediaClient?.pause()
     }
-
-    // Stop playback on Chromecast
+    
+    /// Stops playback on Chromecast
     func stopCast() {
         GCKCastContext.sharedInstance().sessionManager.currentSession?.remoteMediaClient?.stop()
+        isCasting = false
+    }
+    
+    // MARK: - GCKLoggerDelegate
+    
+    /// Logs Google Cast SDK messages
+    func logMessage(_ message: String, fromFunction function: String) {
+        print("Google Cast Log - Function: \(function) Message: \(message)")
     }
 }
 

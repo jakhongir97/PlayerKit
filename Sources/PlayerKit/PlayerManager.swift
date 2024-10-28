@@ -1,347 +1,244 @@
-import Foundation
-import MediaPlayer
-import UIKit
 import Combine
 import GoogleCast
 
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
 
-    // Published properties to reflect the state of the player
-    @Published public var availableAudioTracks: [String] = []
-    @Published public var availableSubtitles: [String] = []
-    @Published public var availableVideoTracks: [String] = []
-    @Published public var selectedAudioTrackIndex: Int?
-    @Published public var selectedSubtitleTrackIndex: Int?
-    @Published public var selectedVideoTrackIndex: Int?
-    @Published public var isPlaying: Bool = false
-    @Published public var isBuffering: Bool = false
-    @Published public var currentTime: Double = 0
-    @Published public var duration: Double = 0
-    @Published public var bufferedDuration: Double = 0
-    @Published public var isFullscreen: Bool = false  // Track fullscreen state
-    @Published public var isMinimized: Bool = false  // Track minimized state
-    @Published public var areControlsVisible: Bool = true
+    // State management
+    @Published var isPlaying: Bool = false
+    @Published var isBuffering: Bool = false
+    @Published var currentTime: Double = 0
+    @Published var seekTime: Double = 0
+    @Published var duration: Double = 0
+    @Published var bufferedDuration: Double = 0
+    @Published var playbackSpeed: Float = 0
+    @Published var isSeeking: Bool = false
+    @Published var isCasting: Bool = false
+    @Published var isPiPActive: Bool = false
+    @Published var isCastingAvailable: Bool = false
+    @Published var areControlsVisible: Bool = true
     
-    @Published public var selectedPlayerType: PlayerType = .vlcPlayer  // Player type moved here
-    @Published public var videoURL: URL?  // Video URL moved here
-
-    // Seeking-related state
-    @Published public var isSeeking: Bool = false
-    @Published public var seekTime: Double = 0  // Temporarily hold the seek time while dragging
+    // Track indices
+    @Published var selectedAudioTrackIndex: Int?
+    @Published var selectedSubtitleTrackIndex: Int?
+    @Published var selectedVideoTrackIndex: Int?
+    @Published var availableAudioTracks: [String] = []
+    @Published var availableSubtitles: [String] = []
+    @Published var availableVideoTracks: [String] = []
     
-    @Published public var isPiPActive: Bool = false
-    @Published public var isCasting = false
-    @Published public var isCastingAvailable: Bool = false
+    @Published var selectedPlayerType: PlayerType = .avPlayer
+    @Published var videoURL: URL?
+    
 
+    // Managers for different responsibilities
+    var playbackManager: PlaybackManager?
+    var trackManager: TrackManager?
+    let castManager = CastManager.shared
+    var pipManager: PiPManager?
+    let gestureManager = GestureManager()
+    
+    // Lazy initialization for controlVisibilityManager
+    lazy var controlVisibilityManager: ControlVisibilityManager = {
+        ControlVisibilityManager(playerManager: self)
+    }()
+    
+    private var currentProvider: PlayerProvider?
     public var currentPlayer: PlayerProtocol?
     
-    // Reference to ThumbnailManager
-    public let thumbnailManager = ThumbnailManager.shared
-    public let gestureManager = GestureManager()
-
     private var cancellables = Set<AnyCancellable>()
-    private var autoHideTimer: AnyCancellable?
-
-    // Singleton initializer
+    
     private init() {
-    }
-
-    // MARK: - Player Setup
-
-    /// Set the player type (AVPlayer or VLCPlayer)
-    public func setPlayer(type: PlayerType) {
-        selectedPlayerType = type
-        switch type {
-        case .vlcPlayer:
-            currentPlayer = VLCPlayerWrapper()  // Assuming VLCPlayerWrapper exists
-        case .avPlayer:
-            currentPlayer = AVPlayerWrapper()  // Assuming AVPlayerWrapper exists
-        }
-        
-        // Refresh available tracks and observe player state
-        refreshTrackInfo()
-        observePlayerState()
+        setPlayer(type: selectedPlayerType)  // Initialize default player
         setupGestureHandling()
     }
     
-    public func switchPlayer(to type: PlayerType) {
-        let lastPosition = currentTime  // Save the current time before switching
-        setPlayer(type: type)  // Switch player
-        if let url = videoURL {
-            load(url: url)  // Reload the video with the new player
-            seek(to: lastPosition)  // Seek to the saved position after loading
-        }
+    // MARK: - Player Setup
+    
+    public func setPlayer(type: PlayerType) {
+        selectedPlayerType = type
+        let provider = PlayerFactory.getProvider(for: type)
+        setupPlayer(provider: provider)
     }
 
-    // MARK: - Load Media
+    private func setupPlayer(provider: PlayerProvider) {
+        currentProvider = provider
+        currentPlayer = provider.createPlayer()
 
-    /// Load a media URL into the player
-    public func load(url: URL) {
-        videoURL = url
-        currentPlayer?.load(url: url)
+        // Initialize managers with the player instance
+        playbackManager = PlaybackManager(player: currentPlayer!)
+        trackManager = TrackManager(player: currentPlayer!)
+        pipManager = PiPManager(player: currentPlayer!)
+
         refreshTrackInfo()
-        userInteracted()
-        setupPiP()
+        observePlayerState()
     }
-
-    // MARK: - Play/Pause Controls
-
-    /// Play the media
-    public func play() {
-        currentPlayer?.play()
-        DispatchQueue.main.async {
-            self.isPlaying = true
-        }
-       userInteracted()
-    }
-
-    /// Pause the media
-    public func pause() {
-        currentPlayer?.pause()
-        DispatchQueue.main.async {
-            self.isPlaying = false
-        }
-        userInteracted()
-    }
-
-    // MARK: - Seeking Controls
-
-    /// Seek to a specific time in the media
-    public func seek(to time: Double) {
-        isSeeking = true  // Mark that we are seeking
-        isBuffering = true  // Start showing buffering during seeking
-        currentPlayer?.seek(to: time) { [weak self] success in
-            guard let self = self else { return }
-            if success {
-                DispatchQueue.main.async {
-                    self.currentTime = time
-                    self.isSeeking = false  // Update after seek completes
-                    self.isBuffering = false  // Hide buffering after seek completes and playback resumes
-                }
-            } else {
-                DispatchQueue.main.async {
-                    self.isBuffering = false  // Hide buffering if seek fails
-                }
-            }
-        }
-    }
-
-    /// Handle the start of seeking interaction (user starts dragging the slider)
-    public func startSeeking() {
-        isSeeking = true
-    }
-
-    /// Handle the end of seeking interaction (user stops dragging the slider)
-    public func stopSeeking() {
-        isSeeking = false
-        seek(to: seekTime)  // Seek to the selected seek time
-    }
-
-    // MARK: - Track Management
-
-    /// Refresh the available audio and subtitle tracks
-    public func refreshTrackInfo() {
-        guard let player = currentPlayer else {
-            print("No current player available.")
-            return
-        }
-
-        DispatchQueue.main.async {
-            self.availableAudioTracks = player.availableAudioTracks
-            self.availableSubtitles = player.availableSubtitles
-        }
-    }
-
-    /// Select an audio track by index
-    public func selectAudioTrack(index: Int) {
-        currentPlayer?.selectAudioTrack(index: index)
-        DispatchQueue.main.async {
-            self.selectedAudioTrackIndex = index
-        }
-    }
-
-    /// Select a subtitle track by index
-    public func selectSubtitle(index: Int) {
-        currentPlayer?.selectSubtitle(index: index)
-        DispatchQueue.main.async {
-            self.selectedSubtitleTrackIndex = index
-        }
-    }
-
-    // Switch video track on the active player
-    public func selectVideoTrack(index: Int) {
-        currentPlayer?.selectVideoTrack(index: index)
-        DispatchQueue.main.async {
-            self.selectedVideoTrackIndex = index
+    
+    // MARK: - Switch Player at Runtime
+    
+    public func switchPlayer(to type: PlayerType) {
+        guard selectedPlayerType != type else { return } // No need to switch if already selected
+        setPlayer(type: type)
+        
+        // Reload the current media if videoURL is already set
+        if let url = videoURL {
+            load(url: url)
         }
     }
     
-    // Playback speed control
-    public var playbackSpeed: Float {
-        get {
-            return currentPlayer?.playbackSpeed ?? 1.0
-        }
-        set {
-            currentPlayer?.playbackSpeed = newValue
-        }
+    // Loads a media URL into the current player
+    public func load(url: URL) {
+        videoURL = url
+        currentPlayer?.load(url: url)
+    }
+}
+
+// MARK: - Playback Controls
+extension PlayerManager {
+    public func play() {
+        playbackManager?.play()
+        isPlaying = true
+        userInteracted()
     }
 
-    // MARK: - Player State Observation
+    public func pause() {
+        playbackManager?.pause()
+        isPlaying = false
+        userInteracted()
+    }
 
-    /// Observe player state (e.g., buffering, play/pause, current time, and duration)
+    public func stop() {
+        playbackManager?.stop()
+        userInteracted()
+    }
+
+    public func seek(to time: Double) {
+        playbackManager?.seek(to: time) { [weak self] success in
+            if success {
+                self?.currentTime = time
+            }
+        }
+    }
+    
+    // Start seeking
+    func startSeeking() {
+        isSeeking = true
+        // Pause playback if required while seeking
+        currentPlayer?.pause()
+    }
+    
+    // Stop seeking
+    func stopSeeking() {
+        isSeeking = false
+        // Resume playback or seek to new time
+        currentPlayer?.seek(to: seekTime) { [weak self] success in
+            if success {
+                self?.currentTime = self?.seekTime ?? 0
+            }
+            self?.currentPlayer?.play()
+        }
+    }
+}
+
+// MARK: - Track Management
+extension PlayerManager {
+    public func refreshTrackInfo() {
+        availableAudioTracks = trackManager?.availableAudioTracks ?? []
+        availableSubtitles = trackManager?.availableSubtitles ?? []
+        availableVideoTracks = trackManager?.availableVideoTracks ?? []
+    }
+
+    public func selectAudioTrack(index: Int) {
+        trackManager?.selectAudioTrack(index: index)
+    }
+
+    public func selectSubtitle(index: Int) {
+        trackManager?.selectSubtitle(index: index)
+    }
+
+    public func selectVideoTrack(index: Int) {
+        trackManager?.selectVideoTrack(index: index)
+    }
+}
+
+// MARK: - PiP Controls
+extension PlayerManager {
+    public func startPiP() {
+        pipManager?.startPiP()
+    }
+
+    public func stopPiP() {
+        pipManager?.stopPiP()
+    }
+}
+
+// MARK: - Chromecast Controls
+extension PlayerManager {
+    public func playOnChromecast(url: URL) {
+        castManager.playMediaOnCast(url: url)
+    }
+
+    public func pauseChromecast() {
+        castManager.pauseCast()
+    }
+
+    public func stopChromecast() {
+        castManager.stopCast()
+    }
+
+}
+
+// MARK: - Gesture Handling
+extension PlayerManager {
+    private func setupGestureHandling() {
+        gestureManager.onSeek = { [weak self] newTime in
+            self?.seek(to: newTime)
+        }
+
+        gestureManager.onToggleControls = { [weak self] in
+            self?.toggleControlsVisibility()
+        }
+
+        gestureManager.onZoom = { [weak self] scale in
+            self?.currentPlayer?.handlePinchGesture(scale: scale)
+        }
+    }
+}
+
+// MARK: - Control Visibility Management
+extension PlayerManager {
+
+    /// Called whenever the user interacts, showing controls and resetting the auto-hide timer
+    public func userInteracted() {
+        controlVisibilityManager.showControls()
+    }
+
+    /// Toggles the visibility of controls and manages the auto-hide timer
+    public func toggleControlsVisibility() {
+        if areControlsVisible {
+            controlVisibilityManager.hideControls()
+        } else {
+            controlVisibilityManager.showControls()
+        }
+    }
+}
+
+
+// MARK: - Player State Observation
+extension PlayerManager {
     private func observePlayerState() {
-        // Regularly poll the player's state every 0.5 seconds
         Timer.publish(every: 0.5, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
 
-                // Do not update currentTime while seeking
-                if !self.isSeeking {
-                    self.isPlaying = player.isPlaying
-                    self.isBuffering = player.isBuffering
-                    self.currentTime = player.currentTime
-                    self.duration = player.duration
-                    self.bufferedDuration = player.bufferedDuration
-                }
+                self.isPlaying = player.isPlaying
+                self.isBuffering = player.isBuffering
+                self.currentTime = player.currentTime
+                self.duration = player.duration
+                self.bufferedDuration = player.bufferedDuration
+                self.refreshTrackInfo()
             }
             .store(in: &cancellables)
     }
-
-    // MARK: - Helper Methods
-
-    /// Update available audio and subtitle tracks
-    public func updateTrackInfo(audioTracks: [String], subtitles: [String], videoTracks: [String]) {
-        DispatchQueue.main.async {
-            self.availableAudioTracks = audioTracks
-            self.availableSubtitles = subtitles
-            self.availableVideoTracks = videoTracks
-        }
-    }
-    
-    // MARK: - Thumbnail Management
-    /// Requests a thumbnail at the specified time
-    public func requestThumbnail(at time: Double) {
-        if let player = currentPlayer {
-            thumbnailManager.requestThumbnail(for: player, at: time)
-            print("PlayerManager: Requested thumbnail at \(time) seconds.")
-        } else {
-            print("PlayerManager: No current player available for thumbnail request.")
-        }
-    }
 }
 
-extension PlayerManager {
-    private func setupGestureHandling() {
-        // Handle seek gesture
-        gestureManager.onSeek = { [weak self] newTime in
-            print("Seek gesture triggered: \(newTime)")
-            self?.currentPlayer?.seek(to: newTime, completion: nil)
-        }
-        
-        // Handle control toggle (tap gesture)
-        gestureManager.onToggleControls = { [weak self] in
-            guard let self = self else { return }
-            
-            if self.areControlsVisible {
-                // Controls are visible, restart the auto-hide timer
-                self.hideControls()
-            } else {
-                // Show controls immediately and start the auto-hide timer
-                self.showControls()  // This will display the controls and start the auto-hide timer
-            }
-        }
-        
-        gestureManager.onZoom = { [weak self] scale in
-            // Call the player manager's zoom method with the scale value
-            PlayerManager.shared.currentPlayer?.handlePinchGesture(scale: scale)
-        }
-
-    }
-}
-
-extension PlayerManager {
-    
-    // MARK: - Setup Auto-Hide for Controls
-    
-    /// Start the timer to auto-hide controls after a delay
-    private func startAutoHideTimer() {
-        stopAutoHideTimer()  // Ensure no existing timer is running
-        
-        autoHideTimer = Timer.publish(every: 10, on: .main, in: .common)
-            .autoconnect()
-            .sink { [weak self] _ in
-                self?.hideControls()
-            }
-    }
-    
-    /// Stop the auto-hide timer
-    private func stopAutoHideTimer() {
-        autoHideTimer?.cancel()
-        autoHideTimer = nil
-    }
-    
-    /// Show the controls and restart the auto-hide timer
-    public func showControls() {
-        areControlsVisible = true
-        startAutoHideTimer()  // Restart the auto-hide timer
-    }
-    
-    /// Hide the controls
-    private func hideControls() {
-        areControlsVisible = false
-        stopAutoHideTimer()  // Stop the timer after hiding controls
-    }
-
-    // Call this in each interaction method like play, pause, seek, etc.
-    public func userInteracted() {
-        showControls()  // Show controls and restart the auto-hide timer
-    }
-}
-
-extension PlayerManager {
-    // Start PiP using the current player
-    public func startPiP() {
-        currentPlayer?.startPiP()
-    }
-    
-    // Stop PiP using the current player
-    public func stopPiP() {
-        currentPlayer?.stopPiP()
-    }
-    
-    // Setup PiP for the current player
-    public func setupPiP() {
-        currentPlayer?.setupPiP()
-    }
-}
-
-extension PlayerManager {
-    // Function to play media on Chromecast
-    public func playOnChromecast(url: URL) {
-        CastManager.shared.playMediaOnCast(url: url)
-        isCasting = true
-    }
-    
-    public func pauseChromecast() {
-        CastManager.shared.pauseCast()
-    }
-    
-    public func stopChromecast() {
-        CastManager.shared.stopCast()
-    }
-    
-    // Call this method to start listening for changes in Chromecast availability
-    public func addCastStateListener() {
-        NotificationCenter.default.addObserver(forName: .gckCastStateDidChange, object: nil, queue: .main) { [weak self] _ in
-            // Update the state based on the current cast state
-            self?.isCastingAvailable = GCKCastContext.sharedInstance().castState != .noDevicesAvailable
-        }
-    }
-    
-    // Optionally, remove observer to avoid memory leaks
-    public func removeCastStateListener() {
-        NotificationCenter.default.removeObserver(self, name: .gckCastStateDidChange, object: nil)
-    }
-}

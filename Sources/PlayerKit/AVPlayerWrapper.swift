@@ -115,16 +115,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL) {
         player = AVPlayer(url: url)
         player?.allowsExternalPlayback = true
-        refreshTrackInfo()
-    }
-    
-    private func refreshTrackInfo() {
-        let audioTracks = availableAudioTracks
-        let subtitleTracks = availableSubtitles
-        let videoTracks = availableVideoTracks
-        DispatchQueue.main.async {
-            PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks, videoTracks: videoTracks)
-        }
+        playerView?.player = player
     }
 }
 

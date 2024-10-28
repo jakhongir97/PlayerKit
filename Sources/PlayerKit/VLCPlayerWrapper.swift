@@ -198,25 +198,10 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
 extension VLCPlayerWrapper {
     @objc private func mediaPlayerStateChanged(_ notification: Notification) {
         guard let player = notification.object as? VLCMediaPlayer else { return }
-        if player.state == .playing || player.state == .buffering {
-            refreshTrackInfo()
-        }
     }
 
     @objc private func mediaPlayerTimeChanged(_ notification: Notification) {
         guard let player = notification.object as? VLCMediaPlayer else { return }
-        DispatchQueue.main.async {
-            PlayerManager.shared.currentTime = Double(player.time.intValue) / 1000
-        }
-    }
-
-    private func refreshTrackInfo() {
-        let audioTracks = availableAudioTracks
-        let subtitleTracks = availableSubtitles
-        let videoTracks = availableVideoTracks
-        DispatchQueue.main.async {
-            PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks, videoTracks: videoTracks)
-        }
     }
 }
 

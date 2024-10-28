@@ -265,3 +265,4 @@ public class GestureManager: ObservableObject {
         // No need to hide feedback; it will be managed by the FeedbackView
     }
 }
+
