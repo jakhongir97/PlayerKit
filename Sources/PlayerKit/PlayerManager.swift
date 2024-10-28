@@ -3,7 +3,7 @@ import GoogleCast
 
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
-
+    
     // State management
     @Published var isPlaying: Bool = false
     @Published var isBuffering: Bool = false
@@ -29,7 +29,6 @@ public class PlayerManager: ObservableObject {
     @Published var selectedPlayerType: PlayerType = .avPlayer
     @Published var videoURL: URL?
     
-
     // Managers for different responsibilities
     var playbackManager: PlaybackManager?
     var trackManager: TrackManager?
@@ -44,6 +43,7 @@ public class PlayerManager: ObservableObject {
     
     private var currentProvider: PlayerProvider?
     public var currentPlayer: PlayerProtocol?
+    private var lastPosition: Double = 0
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -59,16 +59,17 @@ public class PlayerManager: ObservableObject {
         let provider = PlayerFactory.getProvider(for: type)
         setupPlayer(provider: provider)
     }
-
+    
     private func setupPlayer(provider: PlayerProvider) {
         currentProvider = provider
-        currentPlayer = provider.createPlayer()
-
+        let player = provider.createPlayer()
+        currentPlayer = player
+        
         // Initialize managers with the player instance
-        playbackManager = PlaybackManager(player: currentPlayer!)
-        trackManager = TrackManager(player: currentPlayer!)
-        pipManager = PiPManager(player: currentPlayer!)
-
+        playbackManager = PlaybackManager(player: player, playerManager: self)
+        trackManager = TrackManager(player: player)
+        pipManager = PiPManager(player: player)
+        
         refreshTrackInfo()
         observePlayerState()
     }
@@ -77,11 +78,22 @@ public class PlayerManager: ObservableObject {
     
     public func switchPlayer(to type: PlayerType) {
         guard selectedPlayerType != type else { return } // No need to switch if already selected
+        
+        // Store the last position before switching players
+        lastPosition = currentPlayer?.currentTime ?? 0
+        
         setPlayer(type: type)
         
         // Reload the current media if videoURL is already set
         if let url = videoURL {
             load(url: url)
+            
+            // Seek to the saved position after loading the new player
+            currentPlayer?.seek(to: lastPosition) { success in
+                if success {
+                    self.currentTime = self.lastPosition
+                }
+            }
         }
     }
     
@@ -99,18 +111,18 @@ extension PlayerManager {
         isPlaying = true
         userInteracted()
     }
-
+    
     public func pause() {
         playbackManager?.pause()
         isPlaying = false
         userInteracted()
     }
-
+    
     public func stop() {
         playbackManager?.stop()
         userInteracted()
     }
-
+    
     public func seek(to time: Double) {
         playbackManager?.seek(to: time) { [weak self] success in
             if success {
@@ -146,15 +158,15 @@ extension PlayerManager {
         availableSubtitles = trackManager?.availableSubtitles ?? []
         availableVideoTracks = trackManager?.availableVideoTracks ?? []
     }
-
+    
     public func selectAudioTrack(index: Int) {
         trackManager?.selectAudioTrack(index: index)
     }
-
+    
     public func selectSubtitle(index: Int) {
         trackManager?.selectSubtitle(index: index)
     }
-
+    
     public func selectVideoTrack(index: Int) {
         trackManager?.selectVideoTrack(index: index)
     }
@@ -165,7 +177,7 @@ extension PlayerManager {
     public func startPiP() {
         pipManager?.startPiP()
     }
-
+    
     public func stopPiP() {
         pipManager?.stopPiP()
     }
@@ -176,15 +188,15 @@ extension PlayerManager {
     public func playOnChromecast(url: URL) {
         castManager.playMediaOnCast(url: url)
     }
-
+    
     public func pauseChromecast() {
         castManager.pauseCast()
     }
-
+    
     public func stopChromecast() {
         castManager.stopCast()
     }
-
+    
 }
 
 // MARK: - Gesture Handling
@@ -193,11 +205,11 @@ extension PlayerManager {
         gestureManager.onSeek = { [weak self] newTime in
             self?.seek(to: newTime)
         }
-
+        
         gestureManager.onToggleControls = { [weak self] in
             self?.toggleControlsVisibility()
         }
-
+        
         gestureManager.onZoom = { [weak self] scale in
             self?.currentPlayer?.handlePinchGesture(scale: scale)
         }
@@ -206,12 +218,12 @@ extension PlayerManager {
 
 // MARK: - Control Visibility Management
 extension PlayerManager {
-
+    
     /// Called whenever the user interacts, showing controls and resetting the auto-hide timer
     public func userInteracted() {
         controlVisibilityManager.showControls()
     }
-
+    
     /// Toggles the visibility of controls and manages the auto-hide timer
     public func toggleControlsVisibility() {
         if areControlsVisible {
@@ -230,7 +242,8 @@ extension PlayerManager {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
-
+                guard !isSeeking else { return }
+                
                 self.isPlaying = player.isPlaying
                 self.isBuffering = player.isBuffering
                 self.currentTime = player.currentTime
