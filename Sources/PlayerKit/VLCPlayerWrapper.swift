@@ -38,53 +38,19 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
         playerView = newVlcView
         return newVlcView
     }
+}
 
-    // PlayerProtocol property implementations
+// MARK: - PlaybackControlProtocol
+extension VLCPlayerWrapper: PlaybackControlProtocol {
     public var isPlaying: Bool {
         return player.isPlaying
     }
 
-    public var currentTime: Double {
-        return Double(player.time.intValue) / 1000
-    }
-    
-    public var bufferedDuration: Double {
-        return duration * Double(player.position)
-    }
-
-    public var duration: Double {
-        return Double(player.media?.length.intValue ?? 0) / 1000
-    }
-
-    public var isBuffering: Bool {
-        return player.state == .buffering
-    }
-    
     public var playbackSpeed: Float {
-        get {
-            return player.rate ?? 1.0
-        }
-        set {
-            player.rate = newValue
-        }
+        get { return player.rate }
+        set { player.rate = newValue }
     }
 
-    public var availableAudioTracks: [String] {
-        guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.map { $0.trackName ?? "Unknown" }
-    }
-
-    public var availableSubtitles: [String] {
-        guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.map { $0.trackName ?? "Unknown" }
-    }
-    
-    public var availableVideoTracks: [String] {
-        guard let tracks = player.videoTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.map { $0.trackName ?? "Unknown" }
-    }
-
-    // Implement PlayerProtocol methods
     public func play() {
         player.play()
     }
@@ -96,7 +62,68 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public func stop() {
         player.stop()
     }
+}
 
+// MARK: - TimeControlProtocol
+extension VLCPlayerWrapper: TimeControlProtocol {
+    public var currentTime: Double {
+        return Double(player.time.intValue) / 1000
+    }
+    
+    public var duration: Double {
+        return Double(player.media?.length.intValue ?? 0) / 1000
+    }
+
+    public var bufferedDuration: Double {
+        return duration * Double(player.position)
+    }
+
+    public var isBuffering: Bool {
+        return player.state == .buffering
+    }
+    
+    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
+        let position = Double(time / duration)
+        player.position = position
+        completion?(true)  // Call the completion immediately since VLC does not have asynchronous seeking
+    }
+}
+
+// MARK: - TrackSelectionProtocol
+extension VLCPlayerWrapper: TrackSelectionProtocol {
+    public var availableAudioTracks: [String] {
+        guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return [] }
+        return tracks.map { $0.trackName }
+    }
+
+    public var availableSubtitles: [String] {
+        guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return [] }
+        return tracks.map { $0.trackName }
+    }
+    
+    public var availableVideoTracks: [String] {
+        guard let tracks = player.videoTracks as? [VLCMediaPlayer.Track] else { return [] }
+        return tracks.map { $0.trackName }
+    }
+    
+    public func selectAudioTrack(index: Int) {
+        guard index < player.audioTracks.count else { return }
+        player.audioTracks[index].isSelected = true
+    }
+
+    public func selectSubtitle(index: Int) {
+        guard index < player.textTracks.count else { return }
+        player.textTracks[index].isSelected = true
+    }
+
+    public func selectVideoTrack(index: Int) {
+        guard index < player.videoTracks.count else { return }
+        player.videoTracks[index].isSelected = true
+    }
+}
+
+// MARK: - MediaLoadingProtocol
+extension VLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL) {
         let media = VLCMedia(url: url)
         media?.addOption(":network-caching=1000")
@@ -112,30 +139,63 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
             }
         }
     }
+}
 
-    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
-        let position = Double(time / duration)
-        player.position = position
-        completion?(true)  // Call the completion immediately since VLC does not have asynchronous seeking
-    }
-
-    public func selectAudioTrack(index: Int) {
-        guard index < player.audioTracks.count else { return }
-        player.audioTracks[index].isSelected = true
-    }
-
-    public func selectSubtitle(index: Int) {
-        guard index < player.textTracks.count else { return }
-        player.textTracks[index].isSelected = true
+// MARK: - ViewRenderingProtocol
+extension VLCPlayerWrapper: ViewRenderingProtocol {    
+    public func setupPiP() {
+        
     }
     
-    // Select video track
-    public func selectVideoTrack(index: Int) {
-        guard index < player.videoTracks.count else { return }
-        player.videoTracks[index].isSelected = true
+    public func startPiP() {
+        
+    }
+    
+    public func stopPiP() {
+        
+    }
+}
+
+// MARK: - ThumbnailGeneratorProtocol
+extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
+    public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
+        guard let media = player.media else {
+            completion(nil)
+            return
+        }
+        
+        if thumbnailGenerator == nil {
+            thumbnailGenerator = VLCPlayerThumbnailGenerator(media: media)
+        }
+        
+        thumbnailGenerator?.generateThumbnail(at: time, completion: completion)
+    }
+}
+
+// MARK: - GestureHandlingProtocol
+extension VLCPlayerWrapper: GestureHandlingProtocol {
+    public func handlePinchGesture(scale: CGFloat) {
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+
+        let aspectRatioString: String = scale > 1 ? {
+            let gcd = greatestCommonDivisor(Int(screenWidth), Int(screenHeight))
+            return "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
+        }() : ""
+
+        DispatchQueue.main.async { [weak self] in
+            self?.player.videoAspectRatio = aspectRatioString
+        }
+        print("New aspect ratio: \(aspectRatioString)")
     }
 
-    // Handle VLCMediaPlayerStateChangedNotification
+    private func greatestCommonDivisor(_ a: Int, _ b: Int) -> Int {
+        return b == 0 ? a : greatestCommonDivisor(b, a % b)
+    }
+}
+
+// MARK: - VLCMediaPlayer Notification Handlers
+extension VLCPlayerWrapper {
     @objc private func mediaPlayerStateChanged(_ notification: Notification) {
         guard let player = notification.object as? VLCMediaPlayer else { return }
         if player.state == .playing || player.state == .buffering {
@@ -143,7 +203,6 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
         }
     }
 
-    // Handle VLCMediaPlayerTimeChangedNotification
     @objc private func mediaPlayerTimeChanged(_ notification: Notification) {
         guard let player = notification.object as? VLCMediaPlayer else { return }
         DispatchQueue.main.async {
@@ -159,58 +218,5 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
             PlayerManager.shared.updateTrackInfo(audioTracks: audioTracks, subtitles: subtitleTracks, videoTracks: videoTracks)
         }
     }
-
-    public func handlePinchGesture(scale: CGFloat) {
-        // Get screen dimensions
-        let screenWidth = UIScreen.main.bounds.width
-        let screenHeight = UIScreen.main.bounds.height
-
-        // Calculate aspect ratio only when zooming in
-        let aspectRatioString: String = scale > 1 ? {
-            let gcd = greatestCommonDivisor(Int(screenWidth), Int(screenHeight))
-            return "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
-        }() : ""
-
-        // Apply the aspect ratio to the VLC player
-        DispatchQueue.main.async { [weak self] in
-            self?.player.videoAspectRatio = aspectRatioString
-        }
-        print("New aspect ratio: \(aspectRatioString)")
-    }
-
-    // GCD function
-    private func greatestCommonDivisor(_ a: Int, _ b: Int) -> Int {
-        return b == 0 ? a : greatestCommonDivisor(b, a % b)
-    }
 }
 
-// MARK: - VLCPlayerWrapper Extension
-extension VLCPlayerWrapper {
-    public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        guard let media = player.media else {
-            completion(nil)
-            return
-        }
-        
-        // Reuse the same instance of VLCPlayerThumbnailGenerator
-        if thumbnailGenerator == nil {
-            thumbnailGenerator = VLCPlayerThumbnailGenerator(media: media)
-        }
-        
-        thumbnailGenerator?.generateThumbnail(at: time, completion: completion)
-    }
-}
-
-extension VLCPlayerWrapper {
-    // Setup custom PiP (floating window)
-    public func setupPiP() {
-    }
-    
-    // Start custom PiP for VLCPlayer
-    public func startPiP() {
-    }
-    
-    // Stop custom PiP for VLCPlayer
-    public func stopPiP() {
-    }
-}

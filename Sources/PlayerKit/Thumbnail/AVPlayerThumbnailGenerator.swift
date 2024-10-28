@@ -23,7 +23,6 @@ public class AVPlayerThumbnailGenerator {
     ///   - time: The time in seconds at which to generate the thumbnail.
     ///   - completion: Completion handler called with the generated UIImage or nil if failed.
     public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        print("Generating thumbnail at time \(time)")
         
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         
@@ -46,7 +45,6 @@ public class AVPlayerThumbnailGenerator {
             }
             
             let uiImage = UIImage(cgImage: cgImage)
-            print("Successfully generated thumbnail for time \(time)")
             
             DispatchQueue.main.async {
                 completion(uiImage)
