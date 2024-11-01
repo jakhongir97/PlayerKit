@@ -17,7 +17,7 @@ public class GestureManager: ObservableObject {
     private var accumulatedInterval: Double = 0.0
     private var seekDirection: SeekDirection = .forward
     private var lastSeekDirection: SeekDirection?
-    private var gestureState: GestureState = .idle
+    private var gestureState: GestureStates = .idle
     private var isRightSide: Bool = true
     private var tapDelayTimer: Timer?
     private var multipleTapResetTimer: Timer?

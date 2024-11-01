@@ -10,16 +10,16 @@ struct PlaybackSliderView: View {
                     let sliderWidth = geometry.size.width
                     let bufferProgressWidth = sliderWidth * CGFloat(playerManager.bufferedDuration / max(playerManager.duration, 0.01))
 
-                    // Buffered portion (buffered duration)
-                    Capsule()
-                        .fill(Color.white.opacity(0.6))  // Buffered track color
-                        .frame(width: bufferProgressWidth, height: 3)
+//                    // Buffered portion (buffered duration)
+//                    Capsule()
+//                        .fill(Color.white.opacity(0.6))  // Buffered track color
+//                        .frame(width: bufferProgressWidth, height: 3)
                 }
                 .frame(height: 3)
                 .padding(.horizontal, 2)
 
-                // Default Slider to show current progress
-                Slider(
+                // Use MusicProgressSlider instead of default Slider
+                MusicProgressSlider(
                     value: Binding(
                         get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
                         set: { newValue in
@@ -29,16 +29,21 @@ struct PlaybackSliderView: View {
                             }
                         }
                     ),
-                    in: 0...max(playerManager.duration, 0.01),
-                    onEditingChanged: { editing in
-                        if editing {
-                            playerManager.startSeeking()
-                        } else {
-                            playerManager.stopSeeking()
-                        }
+                    inRange: 0...max(playerManager.duration, 0.01),
+                    activeFillColor: .white,
+                    fillColor: .white.opacity(0.5),
+                    emptyColor: .white.opacity(0.3),
+                    height: 40
+                ) { editing in
+                    if editing {
+                        playerManager.startSeeking()
+                    } else {
+                        playerManager.stopSeeking()
                     }
-                )
-                .accentColor(.blue)
+                }
+                .frame(height: 40)
+                .padding()
+                .contentShape(Rectangle()) // Ensures full slider area is tappable
 
                 // Thumbnail preview while seeking
                 if let thumbnail = ThumbnailManager.shared.thumbnailImage {

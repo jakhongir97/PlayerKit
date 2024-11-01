@@ -29,7 +29,7 @@ enum SeekDirection: CustomStringConvertible {
     }
 }
 
-enum GestureState: CustomStringConvertible {
+enum GestureStates: CustomStringConvertible {
     case idle
     case singleTapPending
     case multipleTapping
