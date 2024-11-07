@@ -101,6 +101,7 @@ public class PlayerManager: ObservableObject {
     public func load(url: URL) {
         videoURL = url
         currentPlayer?.load(url: url)
+        userInteracted()
     }
 }
 
@@ -136,6 +137,7 @@ extension PlayerManager {
         isSeeking = true
         // Pause playback if required while seeking
         currentPlayer?.pause()
+        userInteracted()
     }
     
     // Stop seeking
@@ -148,6 +150,7 @@ extension PlayerManager {
             }
             self?.currentPlayer?.play()
         }
+        userInteracted()
     }
 }
 
@@ -158,17 +161,21 @@ extension PlayerManager {
         availableSubtitles = trackManager?.availableSubtitles ?? []
         availableVideoTracks = trackManager?.availableVideoTracks ?? []
     }
+
     
     public func selectAudioTrack(index: Int) {
         trackManager?.selectAudioTrack(index: index)
+        userInteracted()
     }
     
     public func selectSubtitle(index: Int) {
         trackManager?.selectSubtitle(index: index)
+        userInteracted()
     }
     
     public func selectVideoTrack(index: Int) {
         trackManager?.selectVideoTrack(index: index)
+        userInteracted()
     }
 }
 
@@ -221,6 +228,7 @@ extension PlayerManager {
     
     /// Called whenever the user interacts, showing controls and resetting the auto-hide timer
     public func userInteracted() {
+        print("User interact")
         controlVisibilityManager.showControls()
     }
     
@@ -242,7 +250,10 @@ extension PlayerManager {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
-                guard !isSeeking else { return }
+                guard !isSeeking else { 
+                    userInteracted()
+                    return
+                }
                 
                 self.isPlaying = player.isPlaying
                 self.isBuffering = player.isBuffering

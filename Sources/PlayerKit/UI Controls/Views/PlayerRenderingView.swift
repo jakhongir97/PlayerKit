@@ -14,6 +14,7 @@ struct PlayerRenderingView: View {
                     .foregroundColor(.white)
             }
         }
+        .background(Color.black)
     }
 }
 

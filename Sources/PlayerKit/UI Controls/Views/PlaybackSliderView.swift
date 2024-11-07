@@ -45,7 +45,7 @@ struct PlaybackSliderView: View {
                 .contentShape(Rectangle()) // Ensures full slider area is tappable
 
                 // Thumbnail preview while seeking
-                if let thumbnail = ThumbnailManager.shared.thumbnailImage {
+                if let thumbnail = ThumbnailManager.shared.thumbnailImage, playerManager.isSeeking {
                     GeometryReader { geometry in
                         let sliderWidth = geometry.size.width
                         let thumbPosition = sliderWidth * CGFloat(playerManager.seekTime / max(playerManager.duration, 0.01))

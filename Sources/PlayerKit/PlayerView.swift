@@ -17,6 +17,7 @@ public struct PlayerView: View {
             // GestureView for handling gestures
             GestureView(gestureManager: playerManager.gestureManager)
                 .zIndex(0)
+                .edgesIgnoringSafeArea(.all)
             
             // Player controls
             if playerManager.areControlsVisible {

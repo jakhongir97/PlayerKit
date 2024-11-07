@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
+struct CustomSlider<T: BinaryFloatingPoint>: View {
     @Binding var value: T
     let inRange: ClosedRange<T>
     let activeFillColor: Color
@@ -13,25 +13,6 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
     @State private var localRealProgress: T = 0
     @State private var localTempProgress: T = 0
     @GestureState private var isActive: Bool = false
-    @State private var progressDuration: T = 0
-    
-    init(
-        value: Binding<T>,
-        inRange: ClosedRange<T>,
-        activeFillColor: Color,
-        fillColor: Color,
-        emptyColor: Color,
-        height: CGFloat,
-        onEditingChanged: @escaping (Bool) -> Void
-    ) {
-        self._value = value
-        self.inRange = inRange
-        self.activeFillColor = activeFillColor
-        self.fillColor = fillColor
-        self.emptyColor = emptyColor
-        self.height = height
-        self.onEditingChanged = onEditingChanged
-    }
     
     var body: some View {
         GeometryReader { bounds in
@@ -51,35 +32,12 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
                                     }
                                 })
                         } else {
-                            Capsule()
-                                    .fill(isActive ? activeFillColor : fillColor)
-                                    .mask(
-                                        HStack {
-                                            Rectangle()
-                                                .frame(width: max(bounds.size.width * CGFloat((localRealProgress + localTempProgress)), 0), alignment: .leading)
-                                            Spacer(minLength: 0)
-                                        }
-                                    )
+                            // Fallback on earlier versions
                         }
                     }
-                    
-                    HStack {
-                        if #available(iOS 15, *) {
-                            Text(progressDuration.asTimeString(style: .positional))
-                                .monospacedDigit()
-                            Spacer(minLength: 0)
-                            Text("-" + (inRange.upperBound - progressDuration).asTimeString(style: .positional))
-                                .monospacedDigit()
-                        } else {
-                            Text(progressDuration.asTimeString(style: .positional))
-                            Spacer(minLength: 0)
-                            Text("-" + (inRange.upperBound - progressDuration).asTimeString(style: .positional))
-                        }
-                    }
-                    .font(.system(.headline, design: .rounded))
-                    .foregroundColor(isActive ? fillColor : emptyColor)
+                    .frame(width: isActive ? bounds.size.width * 1.04 : bounds.size.width, alignment: .center)
                 }
-                .frame(width: isActive ? bounds.size.width * 1.04 : bounds.size.width, alignment: .center)
+//                .shadow(color: .black.opacity(0.1), radius: isActive ? 20 : 0, x: 0, y: 0)
                 .animation(animation, value: isActive)
             }
             .frame(width: bounds.size.width, height: bounds.size.height, alignment: .center)
@@ -89,13 +47,10 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
                 }
                 .onChanged { gesture in
                     localTempProgress = T(gesture.translation.width / bounds.size.width)
-                    let prg = max(min((localRealProgress + localTempProgress), 1), 0)
-                    progressDuration = inRange.upperBound * prg
                     value = max(min(getPrgValue(), inRange.upperBound), inRange.lowerBound)
                 }.onEnded { value in
                     localRealProgress = max(min(localRealProgress + localTempProgress, 1), 0)
                     localTempProgress = 0
-                    progressDuration = inRange.upperBound * localRealProgress
                 })
             .onChange(of: isActive) { newValue in
                 value = max(min(getPrgValue(), inRange.upperBound), inRange.lowerBound)
@@ -103,16 +58,14 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
             }
             .onAppear {
                 localRealProgress = getPrgPercentage(value)
-                progressDuration = inRange.upperBound * localRealProgress
             }
             .onChange(of: value) { newValue in
                 if !isActive {
                     localRealProgress = getPrgPercentage(newValue)
-                    progressDuration = newValue // Ensure progressDuration updates as value changes
                 }
             }
         }
-        .frame(height: isActive ? height * 1.25 : height, alignment: .center)
+        .frame(height: isActive ? height * 2 : height, alignment: .center)
     }
     
     private var animation: Animation {
