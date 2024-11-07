@@ -5,6 +5,11 @@ struct PlayerControlsView: View {
 
     var body: some View {
         ZStack {
+            // Background color with opacity, ignoring safe area insets
+            Color.black.opacity(0.5)
+                .edgesIgnoringSafeArea(.all)
+                .allowsHitTesting(false)  // Ensures the background doesn't block gestures
+
             VStack {
                 // Top part: Title, description, cast button, settings menu
                 TopControlsView(playerManager: playerManager)
@@ -19,12 +24,7 @@ struct PlayerControlsView: View {
                 // Bottom part: Playback time, audio/subtitles menu, playback slider
                 BottomControlsView(playerManager: playerManager)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                Color.black.opacity(0.5)
-                    .allowsHitTesting(false)  // Ensures the background doesn't block gestures
-            )
-            .edgesIgnoringSafeArea(.all)
+            .padding()
         }
     }
 }

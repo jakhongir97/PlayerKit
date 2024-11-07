@@ -16,7 +16,6 @@ struct PlaybackSliderView: View {
 //                        .frame(width: bufferProgressWidth, height: 3)
                 }
                 .frame(height: 3)
-                .padding(.horizontal, 2)
 
                 // Use MusicProgressSlider instead of default Slider
                 MusicProgressSlider(
@@ -42,7 +41,7 @@ struct PlaybackSliderView: View {
                     }
                 }
                 .frame(height: 40)
-                .padding()
+                .padding(.vertical)
                 .contentShape(Rectangle()) // Ensures full slider area is tappable
 
                 // Thumbnail preview while seeking

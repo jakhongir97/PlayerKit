@@ -20,7 +20,6 @@ struct TopControlsView: View {
             SharingMenuView()
             SettingsMenu(playerManager: playerManager)
         }
-        .padding([.leading, .trailing, .top], 16)
     }
 }
 
