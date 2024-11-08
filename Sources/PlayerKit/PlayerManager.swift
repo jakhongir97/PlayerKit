@@ -132,6 +132,11 @@ extension PlayerManager {
         }
     }
     
+    public func setPlaybackSpeed(_ speed: Float) {
+        playbackSpeed = speed
+        playbackManager?.setPlaybackSpeed(speed)
+    }
+    
     // Start seeking
     func startSeeking() {
         isSeeking = true

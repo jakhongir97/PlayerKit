@@ -5,6 +5,7 @@ struct AudioAndSubtitlesMenu: View {
 
     var body: some View {
         HStack(spacing: 16) {
+            PlaybackSpeedMenu()
             // Subtitle Tracks Menu
             SubtitleMenu()
             // Audio Tracks Menu

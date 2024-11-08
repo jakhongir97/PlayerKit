@@ -11,17 +11,19 @@ struct PlaybackSpeedMenu: View {
             speedOption(1.25)
             speedOption(1.5)
         } label: {
-            Label("Speed", systemImage: "gauge.with.dots.needle.67percent")
+            Image(systemName: "gauge.with.needle.fill")
+                .resizable()
                 .foregroundColor(.white)
-                .padding()
-                .background(Color.black.opacity(0.7))
-                .cornerRadius(8)
+                .frame(width: 25, height: 25)
         }
+        .onAppear(perform: {
+            playerManager.userInteracted()
+        })
     }
 
     private func speedOption(_ speed: Float, label: String? = nil) -> some View {
         Button(action: {
-            playerManager.playbackSpeed = speed
+            playerManager.setPlaybackSpeed(speed)
         }) {
             HStack {
                 Text(label ?? "\(speed)x")

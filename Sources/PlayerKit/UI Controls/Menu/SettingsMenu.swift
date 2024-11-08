@@ -6,8 +6,6 @@ struct SettingsMenu: View {
     var body: some View {
         Menu {
             VideoMenu()
-
-            PlaybackSpeedMenu()
             
             PlayerMenu()
 

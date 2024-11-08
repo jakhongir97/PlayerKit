@@ -43,4 +43,8 @@ class PlaybackManager {
     func setPlayer(_ player: PlayerProtocol) {
         self.player = player
     }
+    
+    func setPlaybackSpeed(_ speed: Float) {
+        player.playbackSpeed = speed
+    }
 }
