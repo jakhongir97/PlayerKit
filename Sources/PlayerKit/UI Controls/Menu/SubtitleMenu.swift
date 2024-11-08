@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SubtitleMenu: View {
-    @ObservedObject var playerManager: PlayerManager
+    var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {
@@ -18,11 +18,14 @@ struct SubtitleMenu: View {
                 }
             }
         } label: {
-            Label("Subtitles", systemImage: "captions.bubble")
+            Image(systemName: "captions.bubble.fill")
+                .resizable()
                 .foregroundColor(.white)
-                .padding()
-                .background(Color.black.opacity(0.7))
-                .cornerRadius(8)
+                .frame(width: 25, height: 25)
         }
+        .onAppear(perform: {
+            playerManager.userInteracted()
+        })
+        
     }
 }

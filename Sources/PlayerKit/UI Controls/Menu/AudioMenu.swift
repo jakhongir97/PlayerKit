@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AudioMenu: View {
-    @ObservedObject var playerManager: PlayerManager
+    var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {
@@ -18,12 +18,14 @@ struct AudioMenu: View {
                 }
             }
         } label: {
-            Label("Audio", systemImage: "speaker.wave.2")
+            Image(systemName: "waveform.circle.fill")
+                .resizable()
                 .foregroundColor(.white)
-                .padding()
-                .background(Color.black.opacity(0.7))
-                .cornerRadius(8)
+                .frame(width: 25, height: 25)
         }
+        .onAppear(perform: {
+            playerManager.userInteracted()
+        })
     }
 }
 

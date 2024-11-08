@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlayerMenu: View {
-    @ObservedObject var playerManager: PlayerManager
+    var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {

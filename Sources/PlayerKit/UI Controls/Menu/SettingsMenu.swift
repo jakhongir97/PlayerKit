@@ -1,20 +1,25 @@
 import SwiftUI
 
 struct SettingsMenu: View {
-    @ObservedObject var playerManager: PlayerManager
+    var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {
-            VideoMenu(playerManager: playerManager)
+            VideoMenu()
 
-            PlaybackSpeedMenu(playerManager: playerManager)
+            PlaybackSpeedMenu()
             
-            PlayerMenu(playerManager: playerManager)
+            PlayerMenu()
 
         } label: {
-            Image(systemName: "gearshape")
+            Image(systemName: "ellipsis.circle.fill")
+                .resizable()
+                .frame(width: 25, height: 25)
                 .foregroundColor(.white)
         }
+        .onAppear(perform: {
+            playerManager.userInteracted()
+        })
     }
 }
 
