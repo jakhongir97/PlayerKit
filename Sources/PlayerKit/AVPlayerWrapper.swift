@@ -72,37 +72,62 @@ extension AVPlayerWrapper: TimeControlProtocol {
 }
 
 // MARK: - TrackSelectionProtocol
+// AVPlayerWrapper.swift
 extension AVPlayerWrapper: TrackSelectionProtocol {
     public var availableAudioTracks: [String] {
         guard let asset = player?.currentItem?.asset,
               let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return [] }
         return audioGroup.options.map { $0.displayName }
     }
-    
+
     public var availableSubtitles: [String] {
         guard let asset = player?.currentItem?.asset,
               let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return [] }
         return subtitleGroup.options.map { $0.displayName }
     }
-    
+
     public var availableVideoTracks: [String] {
         guard let asset = player?.currentItem?.asset,
               let videoGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .visual) else { return [] }
         return videoGroup.options.map { $0.displayName }
     }
+
+    public var currentAudioTrack: String? {
+        guard let asset = player?.currentItem?.asset,
+              let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return nil }
+
+        let selectedOption = player?.currentItem?.selectedMediaOption(in: audioGroup)
+        return selectedOption?.displayName
+    }
     
+    public var currentSubtitleTrack: String? {
+        guard let asset = player?.currentItem?.asset,
+              let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return nil }
+
+        let selectedOption = player?.currentItem?.selectedMediaOption(in: subtitleGroup)
+        return selectedOption?.displayName
+    }
+    
+    public var currentVideoTrack: String? {
+        guard let asset = player?.currentItem?.asset,
+              let videoGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .visual) else { return nil }
+        
+        let selectedOption = player?.currentItem?.selectedMediaOption(in: videoGroup)
+        return selectedOption?.displayName
+    }
+
     public func selectAudioTrack(index: Int) {
         guard let audioGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
               index < audioGroup.options.count else { return }
         player?.currentItem?.select(audioGroup.options[index], in: audioGroup)
     }
-    
+
     public func selectSubtitle(index: Int) {
         guard let subtitleGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
               index < subtitleGroup.options.count else { return }
         player?.currentItem?.select(subtitleGroup.options[index], in: subtitleGroup)
     }
-    
+
     public func selectVideoTrack(index: Int) {
         guard let videoGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .visual),
               index < videoGroup.options.count else { return }

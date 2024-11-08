@@ -106,6 +106,24 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
         return tracks.map { $0.trackName }
     }
     
+    public var currentAudioTrack: String? {
+        guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return nil }
+        let selectedTrack = tracks.first(where: { $0.isSelected })
+        return selectedTrack?.trackName
+    }
+    
+    public var currentSubtitleTrack: String? {
+        guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return nil }
+        let selectedTrack = tracks.first(where: { $0.isSelected })
+        return selectedTrack?.trackName
+    }
+    
+    public var currentVideoTrack: String? {
+        guard let tracks = player.videoTracks as? [VLCMediaPlayer.Track] else { return nil }
+        let selectedTrack = tracks.first(where: { $0.isSelected })
+        return selectedTrack?.trackName
+    }
+    
     public func selectAudioTrack(index: Int) {
         guard index < player.audioTracks.count else { return }
         player.audioTracks[index].isSelected = true
@@ -175,18 +193,18 @@ extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
 // MARK: - GestureHandlingProtocol
 extension VLCPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
-        let screenWidth = UIScreen.main.bounds.width
-        let screenHeight = UIScreen.main.bounds.height
-
-        let aspectRatioString: String = scale > 1 ? {
-            let gcd = greatestCommonDivisor(Int(screenWidth), Int(screenHeight))
-            return "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
-        }() : ""
-
-        DispatchQueue.main.async { [weak self] in
-            self?.player.videoAspectRatio = aspectRatioString
-        }
-        print("New aspect ratio: \(aspectRatioString)")
+//        let screenWidth = UIScreen.main.bounds.width
+//        let screenHeight = UIScreen.main.bounds.height
+//
+//        let aspectRatioString: String = scale > 1 ? {
+//            let gcd = greatestCommonDivisor(Int(screenWidth), Int(screenHeight))
+//            return "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
+//        }() : ""
+//
+//        DispatchQueue.main.async { [weak self] in
+//            self?.player.videoAspectRatio = aspectRatioString
+//        }
+//        print("New aspect ratio: \(aspectRatioString)")
     }
 
     private func greatestCommonDivisor(_ a: Int, _ b: Int) -> Int {

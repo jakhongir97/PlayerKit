@@ -17,6 +17,10 @@ class TrackManager {
     var availableAudioTracks: [String] { player.availableAudioTracks }
     var availableSubtitles: [String] { player.availableSubtitles }
     var availableVideoTracks: [String] { player.availableVideoTracks }
+    
+    var currentAudioTrack: String? { player.currentAudioTrack }
+    var currentSubtitleTrack: String? { player.currentSubtitleTrack }
+    var currentVideoTrack: String? { player.currentVideoTrack }
 
     func selectAudioTrack(index: Int) {
         player.selectAudioTrack(index: index)

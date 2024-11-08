@@ -11,7 +11,7 @@ public class PlayerManager: ObservableObject {
     @Published var seekTime: Double = 0
     @Published var duration: Double = 0
     @Published var bufferedDuration: Double = 0
-    @Published var playbackSpeed: Float = 0
+    @Published var playbackSpeed: Float = 1.0
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
     @Published var isPiPActive: Bool = false
@@ -81,7 +81,7 @@ public class PlayerManager: ObservableObject {
         
         // Store the last position before switching players
         lastPosition = currentPlayer?.currentTime ?? 0
-        
+        resetTrackStates()
         setPlayer(type: type)
         
         // Reload the current media if videoURL is already set
@@ -165,11 +165,33 @@ extension PlayerManager {
         availableAudioTracks = trackManager?.availableAudioTracks ?? []
         availableSubtitles = trackManager?.availableSubtitles ?? []
         availableVideoTracks = trackManager?.availableVideoTracks ?? []
+
+        selectedAudioTrackIndex = indexOfCurrentTrack(
+            currentTrack: trackManager?.currentAudioTrack,
+            availableTracks: availableAudioTracks
+        )
+        
+        selectedSubtitleTrackIndex = indexOfCurrentTrack(
+            currentTrack: trackManager?.currentSubtitleTrack,
+            availableTracks: availableSubtitles
+        )
+        
+        selectedVideoTrackIndex = indexOfCurrentTrack(
+            currentTrack: trackManager?.currentVideoTrack,
+            availableTracks: availableVideoTracks
+        )
+    }
+
+    // Helper function to find the index of the current track
+    private func indexOfCurrentTrack(currentTrack: String?, availableTracks: [String]) -> Int? {
+        guard let currentTrack = currentTrack else { return nil }
+        return availableTracks.firstIndex(of: currentTrack)
     }
 
     
     public func selectAudioTrack(index: Int) {
         trackManager?.selectAudioTrack(index: index)
+        selectedAudioTrackIndex = index
         userInteracted()
     }
     
@@ -268,6 +290,15 @@ extension PlayerManager {
                 self.refreshTrackInfo()
             }
             .store(in: &cancellables)
+    }
+    
+    public func resetTrackStates() {
+        selectedAudioTrackIndex = nil
+        selectedSubtitleTrackIndex = nil
+        selectedVideoTrackIndex = nil
+        availableAudioTracks = []
+        availableSubtitles = []
+        availableVideoTracks = []
     }
 }
 
