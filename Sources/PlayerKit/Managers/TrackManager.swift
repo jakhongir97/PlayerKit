@@ -26,7 +26,7 @@ class TrackManager {
         player.selectAudioTrack(index: index)
     }
 
-    func selectSubtitle(index: Int) {
+    func selectSubtitle(index: Int?) {
         player.selectSubtitle(index: index)
     }
 

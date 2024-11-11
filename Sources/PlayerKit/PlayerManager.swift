@@ -190,12 +190,13 @@ extension PlayerManager {
 
     
     public func selectAudioTrack(index: Int) {
-        trackManager?.selectAudioTrack(index: index)
         selectedAudioTrackIndex = index
+        trackManager?.selectAudioTrack(index: index)
         userInteracted()
     }
     
-    public func selectSubtitle(index: Int) {
+    public func selectSubtitle(index: Int?) {
+        selectedSubtitleTrackIndex = index
         trackManager?.selectSubtitle(index: index)
         userInteracted()
     }

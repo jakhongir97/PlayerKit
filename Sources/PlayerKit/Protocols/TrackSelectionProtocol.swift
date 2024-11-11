@@ -17,7 +17,7 @@ public protocol TrackSelectionProtocol: AnyObject {
     var currentVideoTrack: String? { get }
 
     func selectAudioTrack(index: Int)
-    func selectSubtitle(index: Int)
+    func selectSubtitle(index: Int?)
     func selectVideoTrack(index: Int)
 }
 

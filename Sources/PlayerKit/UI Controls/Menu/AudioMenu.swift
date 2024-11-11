@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AudioMenu: View {
-    var playerManager: PlayerManager = PlayerManager.shared
+    @ObservedObject var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {

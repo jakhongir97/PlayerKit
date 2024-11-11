@@ -122,10 +122,14 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
         player?.currentItem?.select(audioGroup.options[index], in: audioGroup)
     }
 
-    public func selectSubtitle(index: Int) {
-        guard let subtitleGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
-              index < subtitleGroup.options.count else { return }
-        player?.currentItem?.select(subtitleGroup.options[index], in: subtitleGroup)
+    public func selectSubtitle(index: Int?) {
+        guard let subtitleGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return }
+        
+        if let index = index, index < subtitleGroup.options.count {
+            player?.currentItem?.select(subtitleGroup.options[index], in: subtitleGroup)
+        } else {
+            player?.currentItem?.select(nil, in: subtitleGroup) // Deselects all subtitles
+        }
     }
 
     public func selectVideoTrack(index: Int) {

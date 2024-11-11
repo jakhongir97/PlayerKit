@@ -129,9 +129,13 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
         player.audioTracks[index].isSelected = true
     }
 
-    public func selectSubtitle(index: Int) {
-        guard index < player.textTracks.count else { return }
-        player.textTracks[index].isSelected = true
+    public func selectSubtitle(index: Int?) {
+        if let index = index {
+            guard index < player.textTracks.count else { return }
+            player.textTracks[index].isSelected = true
+        } else {
+            player.deselectAllTextTracks()
+        }
     }
 
     public func selectVideoTrack(index: Int) {

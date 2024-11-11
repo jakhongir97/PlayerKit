@@ -1,11 +1,24 @@
 import SwiftUI
 
 struct SubtitleMenu: View {
-    var playerManager: PlayerManager = PlayerManager.shared
+    @ObservedObject var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {
             Section(header: Text("Subtitles")) { // Section title
+                // "Turn Off Subtitles" option
+                Button(action: {
+                    playerManager.selectSubtitle(index: nil) // Nil indicates turn off
+                }) {
+                    HStack {
+                        Text("Turn off")
+                        if playerManager.selectedSubtitleTrackIndex == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+                
+                // List available subtitle tracks
                 ForEach(playerManager.availableSubtitles.indices, id: \.self) { index in
                     Button(action: {
                         playerManager.selectSubtitle(index: index)
@@ -30,3 +43,4 @@ struct SubtitleMenu: View {
         })
     }
 }
+
