@@ -141,7 +141,7 @@ extension PlayerManager {
     func startSeeking() {
         isSeeking = true
         // Pause playback if required while seeking
-        currentPlayer?.pause()
+        playbackManager?.pause()
         userInteracted()
     }
     
@@ -149,7 +149,7 @@ extension PlayerManager {
     func stopSeeking() {
         isSeeking = false
         // Resume playback or seek to new time
-        currentPlayer?.seek(to: seekTime) { [weak self] success in
+        playbackManager?.seek(to: seekTime) { [weak self] success in
             if success {
                 self?.currentTime = self?.seekTime ?? 0
             }
