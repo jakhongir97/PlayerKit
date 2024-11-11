@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlaybackSpeedMenu: View {
-    var playerManager: PlayerManager = PlayerManager.shared
+    @ObservedObject var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {
