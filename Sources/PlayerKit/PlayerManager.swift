@@ -86,21 +86,14 @@ public class PlayerManager: ObservableObject {
         
         // Reload the current media if videoURL is already set
         if let url = videoURL {
-            load(url: url)
-            
-            // Seek to the saved position after loading the new player
-            currentPlayer?.seek(to: lastPosition) { success in
-                if success {
-                    self.currentTime = self.lastPosition
-                }
-            }
+            load(url: url, lastPosition: lastPosition)
         }
     }
     
     // Loads a media URL into the current player
-    public func load(url: URL) {
+    public func load(url: URL, lastPosition: Double? = nil) {
         videoURL = url
-        currentPlayer?.load(url: url)
+        currentPlayer?.load(url: url, lastPosition: lastPosition)
         userInteracted()
     }
 }

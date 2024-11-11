@@ -141,10 +141,18 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
 
 // MARK: - MediaLoadingProtocol
 extension AVPlayerWrapper: MediaLoadingProtocol {
-    public func load(url: URL) {
+    public func load(url: URL, lastPosition: Double? = nil) {
         player = AVPlayer(url: url)
         player?.allowsExternalPlayback = true
         playerView?.player = player
+        
+        // Seek to last position if provided, else start from the beginning
+        if let position = lastPosition {
+            let targetTime = CMTime(seconds: position, preferredTimescale: 600)
+            player?.seek(to: targetTime)
+        }
+        
+        player?.play()
     }
 }
 

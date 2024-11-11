@@ -8,5 +8,5 @@
 import Foundation
 
 public protocol MediaLoadingProtocol: AnyObject {
-    func load(url: URL)
+    func load(url: URL, lastPosition: Double?)
 }

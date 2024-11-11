@@ -146,16 +146,20 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
 
 // MARK: - MediaLoadingProtocol
 extension VLCPlayerWrapper: MediaLoadingProtocol {
-    public func load(url: URL) {
+    public func load(url: URL, lastPosition: Double? = nil) {
         let media = VLCMedia(url: url)
         media?.addOption(":network-caching=1000")
         player.media = media
-
-        // Delay the playback slightly to ensure drawable is ready
+        
+        // Delay playback slightly to ensure drawable is ready
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             if self.player.drawable != nil {
-                print("Starting playback with drawable set.")
                 self.player.play()
+                
+                // Seek to last position if provided
+                if let position = lastPosition {
+                    self.player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds
+                }
             } else {
                 print("Drawable is still nil after delay.")
             }
