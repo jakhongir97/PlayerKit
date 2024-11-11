@@ -5,11 +5,13 @@ struct PlaybackSpeedMenu: View {
 
     var body: some View {
         Menu {
-            speedOption(0.25)
-            speedOption(0.5)
-            speedOption(1.0, label: "1.0x (Normal)")
-            speedOption(1.25)
-            speedOption(1.5)
+            Section(header: Text("Playback Speed")) { // Section title
+                speedOption(0.25)
+                speedOption(0.5)
+                speedOption(1.0, label: "1.0x (Normal)")
+                speedOption(1.25)
+                speedOption(1.5)
+            }
         } label: {
             Image(systemName: "gauge.with.needle.fill")
                 .resizable()

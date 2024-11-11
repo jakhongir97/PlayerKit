@@ -255,7 +255,7 @@ extension PlayerManager {
     
     /// Called whenever the user interacts, showing controls and resetting the auto-hide timer
     public func userInteracted() {
-        print("User interact")
+        guard !gestureManager.isMultipleTapping else { return }
         controlVisibilityManager.showControls()
     }
     

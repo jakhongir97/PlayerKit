@@ -5,14 +5,16 @@ struct AudioMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(playerManager.availableAudioTracks.indices, id: \.self) { index in
-                Button(action: {
-                    playerManager.selectAudioTrack(index: index)
-                }) {
-                    HStack {
-                        Text(playerManager.availableAudioTracks[index])
-                        if playerManager.selectedAudioTrackIndex == index {
-                            Image(systemName: "checkmark")
+            Section(header: Text("Audio Tracks")) { // Section title
+                ForEach(playerManager.availableAudioTracks.indices, id: \.self) { index in
+                    Button(action: {
+                        playerManager.selectAudioTrack(index: index)
+                    }) {
+                        HStack {
+                            Text(playerManager.availableAudioTracks[index])
+                            if playerManager.selectedAudioTrackIndex == index {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
@@ -28,4 +30,3 @@ struct AudioMenu: View {
         })
     }
 }
-

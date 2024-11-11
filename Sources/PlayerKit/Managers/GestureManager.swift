@@ -7,6 +7,7 @@ public class GestureManager: ObservableObject {
     @Published var visualFeedback: String?
     @Published var feedbackImage: Image?
     @Published var feedbackID: UUID? // Use an identifier to trigger FeedbackView
+    @Published var isMultipleTapping: Bool = false
     
     // MARK: - Callback Closures
     var onSeek: ((_ newTime: Double) -> Void)?
@@ -115,6 +116,7 @@ public class GestureManager: ObservableObject {
     }
     
     private func handleMultipleTap(direction: SeekDirection) {
+        isMultipleTapping = true
         seekDirection = direction
         accumulatedInterval += fastSeekBaseInterval
         performSeek()
@@ -188,6 +190,7 @@ public class GestureManager: ObservableObject {
     // MARK: - State Reset
     
     private func resetMultipleTapping() {
+        isMultipleTapping = false
         gestureState = .idle
         resetAccumulatedInterval()
         invalidateMultipleTapResetTimer()

@@ -5,14 +5,16 @@ struct SubtitleMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(playerManager.availableSubtitles.indices, id: \.self) { index in
-                Button(action: {
-                    playerManager.selectSubtitle(index: index)
-                }) {
-                    HStack {
-                        Text(playerManager.availableSubtitles[index])
-                        if playerManager.selectedSubtitleTrackIndex == index {
-                            Image(systemName: "checkmark")
+            Section(header: Text("Subtitles")) { // Section title
+                ForEach(playerManager.availableSubtitles.indices, id: \.self) { index in
+                    Button(action: {
+                        playerManager.selectSubtitle(index: index)
+                    }) {
+                        HStack {
+                            Text(playerManager.availableSubtitles[index])
+                            if playerManager.selectedSubtitleTrackIndex == index {
+                                Image(systemName: "checkmark")
+                            }
                         }
                     }
                 }
@@ -26,6 +28,5 @@ struct SubtitleMenu: View {
         .onAppear(perform: {
             playerManager.userInteracted()
         })
-        
     }
 }
