@@ -43,6 +43,7 @@ public class GestureManager: ObservableObject {
     
     // MARK: - Handle Vertical Swipe (Volume & Brightness)
     func handleVerticalSwipe(at location: CGPoint, translation: CGSize, in size: CGSize) {
+        guard !PlayerManager.shared.isLocked else { return }
         isRightSide = location.x > size.width / 2
         isRightSide ? adjustBrightness(translation: translation.height) : adjustVolume(translation: translation.height)
     }
@@ -73,6 +74,7 @@ public class GestureManager: ObservableObject {
     // MARK: - Public Methods
     
     func handlePinch(scale: CGFloat) {
+        guard !PlayerManager.shared.isLocked else { return }
         onZoom?(scale)  // Trigger the zoom action
     }
     
@@ -116,6 +118,7 @@ public class GestureManager: ObservableObject {
     }
     
     private func handleMultipleTap(direction: SeekDirection) {
+        guard !PlayerManager.shared.isLocked else { return }
         isMultipleTapping = true
         seekDirection = direction
         accumulatedInterval += fastSeekBaseInterval

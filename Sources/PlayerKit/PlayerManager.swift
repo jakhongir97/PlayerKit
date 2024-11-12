@@ -17,6 +17,7 @@ public class PlayerManager: ObservableObject {
     @Published var isPiPActive: Bool = false
     @Published var isCastingAvailable: Bool = false
     @Published var areControlsVisible: Bool = true
+    @Published var isLocked: Bool = false
     
     // Track indices
     @Published var selectedAudioTrackIndex: Int?

@@ -20,11 +20,24 @@ public struct PlayerView: View {
                 .edgesIgnoringSafeArea(.all)
             
             // Player controls
-            if playerManager.areControlsVisible {
+            if playerManager.areControlsVisible && !playerManager.isLocked {
                 PlayerControlsView(playerManager: playerManager)
                     .transition(.opacity)
                     .zIndex(1)
             }
+            
+            // Lock button on the right, vertically centered
+            if playerManager.areControlsVisible {
+                VStack {
+                    Spacer()
+                    LockButtonView()
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 16) // Adjust padding as needed
+                .zIndex(2)
+            }
+            
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
         .onAppear {
