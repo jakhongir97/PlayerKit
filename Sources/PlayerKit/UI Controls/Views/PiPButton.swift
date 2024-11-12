@@ -13,12 +13,8 @@ struct PiPButton: View {
         }) {
             // Change the image based on whether PiP is active
             Image(systemName: playerManager.isPiPActive ? "pip.fill" : "pip")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 30, height: 30)  // Set a suitable size for the icon
-                .padding()
+                .font(.system(size: 22, weight: .bold))
                 .foregroundColor(.white)
-                .cornerRadius(8)
         }
     }
 }

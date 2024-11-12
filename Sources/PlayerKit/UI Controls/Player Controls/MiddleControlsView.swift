@@ -7,7 +7,6 @@ struct MiddleControlsView: View {
         HStack {
             Spacer()
             PlayPauseButtonView(playerManager: playerManager)
-                .frame(width: 60, height: 60)
             Spacer()
         }
     }

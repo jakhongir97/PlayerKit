@@ -7,8 +7,10 @@ struct BottomControlsView: View {
         VStack() {
             HStack {
                 //PlaybackTimeView(playerManager: playerManager)
-                Spacer()
                 AudioAndSubtitlesMenu(playerManager: playerManager)
+                Spacer()
+                PiPButton()
+                RotateButtonView()
             }
 
             PlaybackSliderView(playerManager: playerManager)

@@ -11,11 +11,8 @@ struct PlayPauseButtonView: View {
                 playerManager.isPlaying ? playerManager.pause() : playerManager.play()
             }) {
                 Image(systemName: playerManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .resizable()
-                    .frame(width: 60, height: 60)
+                    .font(.system(size: 60, weight: .bold))
                     .foregroundColor(.white)
-                    .background(Color.black.opacity(0.5))
-                    .clipShape(Circle())
             }
 
             Spacer()  // Push button to the center horizontally

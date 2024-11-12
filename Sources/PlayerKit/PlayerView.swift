@@ -26,15 +26,17 @@ public struct PlayerView: View {
                     .zIndex(1)
             }
             
-            // Lock button on the right, vertically centered
+            // Lock button in the top-left corner
             if playerManager.areControlsVisible {
                 VStack {
-                    Spacer()
-                    LockButtonView()
+                    HStack {
+                        LockButtonView()
+                            .padding(.leading) // Adjust padding as needed
+                            .padding(.top, 80)
+                        Spacer()
+                    }
                     Spacer()
                 }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, 16) // Adjust padding as needed
                 .zIndex(2)
             }
             
