@@ -36,7 +36,7 @@ extension GestureView {
     // Pinch gesture for zoom
     private var pinchGesture: some Gesture {
         MagnificationGesture()
-            .onChanged { scale in
+            .onEnded { scale in
                 gestureManager.handlePinch(scale: scale)
             }
     }

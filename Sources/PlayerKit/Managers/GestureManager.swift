@@ -42,10 +42,30 @@ public class GestureManager: ObservableObject {
     }()
     
     // MARK: - Handle Vertical Swipe (Volume & Brightness)
+    // Define screen regions for gestures
+    private let leftRegionWidthRatio: CGFloat = 0.33 // Left 30% of the screen for volume
+    private let rightRegionWidthRatio: CGFloat = 0.66 // Right 30% of the screen for brightness
+    private let centerRegionTopRatio: CGFloat = 0.33 // Start of the center region (33% of height)
+    private let centerRegionBottomRatio: CGFloat = 0.66 // End of the center region (66% of height)
+
     func handleVerticalSwipe(at location: CGPoint, translation: CGSize, in size: CGSize) {
         guard !PlayerManager.shared.isLocked else { return }
-        isRightSide = location.x > size.width / 2
-        isRightSide ? adjustBrightness(translation: translation.height) : adjustVolume(translation: translation.height)
+
+        // Calculate screen boundaries for horizontal and vertical regions
+        let leftRegionEndX = size.width * leftRegionWidthRatio
+        let rightRegionStartX = size.width * rightRegionWidthRatio
+        let centerRegionTopY = size.height * centerRegionTopRatio
+        let centerRegionBottomY = size.height * centerRegionBottomRatio
+
+        // Only respond to gestures in the center third of the screen’s height
+        if location.y >= centerRegionTopY && location.y <= centerRegionBottomY {
+            if location.x < leftRegionEndX {
+                adjustVolume(translation: translation.height)
+            } else if location.x > rightRegionStartX {
+                adjustBrightness(translation: translation.height)
+            }
+            // Ignore gestures outside the center region (top and bottom thirds)
+        }
     }
     
     // Adjust volume based on vertical drag gesture
