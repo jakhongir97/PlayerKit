@@ -3,8 +3,8 @@ import SwiftUI
 public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
 
-    public init() {
-        playerManager.setPlayer(type: playerManager.selectedPlayerType)
+    public init(url: URL) {
+        playerManager.load(url: url)
     }
 
     public var body: some View {

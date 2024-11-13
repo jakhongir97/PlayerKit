@@ -27,14 +27,13 @@ public class PlayerManager: ObservableObject {
     @Published var availableSubtitles: [String] = []
     @Published var availableVideoTracks: [String] = []
     
-    @Published var selectedPlayerType: PlayerType = .avPlayer
+    @Published var selectedPlayerType: PlayerType = .vlcPlayer
     @Published var videoURL: URL?
     
     // Managers for different responsibilities
     var playbackManager: PlaybackManager?
     var trackManager: TrackManager?
     let castManager = CastManager.shared
-    var pipManager: PiPManager?
     let gestureManager = GestureManager()
     
     // Lazy initialization for controlVisibilityManager
@@ -69,7 +68,6 @@ public class PlayerManager: ObservableObject {
         // Initialize managers with the player instance
         playbackManager = PlaybackManager(player: player, playerManager: self)
         trackManager = TrackManager(player: player)
-        pipManager = PiPManager(player: player)
         
         refreshTrackInfo()
         observePlayerState()
@@ -95,6 +93,7 @@ public class PlayerManager: ObservableObject {
     public func load(url: URL, lastPosition: Double? = nil) {
         videoURL = url
         currentPlayer?.load(url: url, lastPosition: lastPosition)
+        setupPiP()
         userInteracted()
     }
 }
@@ -203,12 +202,16 @@ extension PlayerManager {
 
 // MARK: - PiP Controls
 extension PlayerManager {
+    public func setupPiP() {
+        currentPlayer?.setupPiP()
+    }
+    
     public func startPiP() {
-        pipManager?.startPiP()
+        currentPlayer?.startPiP()
     }
     
     public func stopPiP() {
-        pipManager?.stopPiP()
+        currentPlayer?.stopPiP()
     }
 }
 
