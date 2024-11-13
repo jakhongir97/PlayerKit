@@ -185,16 +185,16 @@ extension VLCPlayerWrapper: ViewRenderingProtocol {
 // MARK: - ThumbnailGeneratorProtocol
 extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
     public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        guard let media = player.media else {
-            completion(nil)
-            return
-        }
-        
-        if thumbnailGenerator == nil {
-            thumbnailGenerator = VLCPlayerThumbnailGenerator(media: media)
-        }
-        
-        thumbnailGenerator?.generateThumbnail(at: time, completion: completion)
+//        guard let media = player.media else {
+//            completion(nil)
+//            return
+//        }
+//        
+//        if thumbnailGenerator == nil {
+//            thumbnailGenerator = VLCPlayerThumbnailGenerator(media: media)
+//        }
+//        
+//        thumbnailGenerator?.generateThumbnail(at: time, completion: completion)
     }
 }
 

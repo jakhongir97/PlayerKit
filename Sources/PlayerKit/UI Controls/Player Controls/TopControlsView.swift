@@ -5,15 +5,19 @@ struct TopControlsView: View {
 
     var body: some View {
         HStack {
+            CloseButtonView()
             VStack(alignment: .leading) {
-                Text("Title")
-                    .font(.title)
-                    .bold()
-                    .foregroundColor(.white)
+                if let title = playerManager.playerItem?.title {
+                    Text(title)
+                        .font(.title)
+                        .foregroundColor(.white)
+                }
                 
-                Text("Description")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+                if let description = playerManager.playerItem?.description {
+                    Text(description)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
             }
             Spacer()
             

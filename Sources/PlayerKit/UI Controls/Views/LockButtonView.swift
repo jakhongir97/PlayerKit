@@ -2,6 +2,11 @@ import SwiftUI
 
 struct LockButtonView: View {
     @ObservedObject var playerManager: PlayerManager = PlayerManager.shared  // Access shared lock state
+    
+    // Determine if the device is an iPhone
+    private var isIPhone: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
 
     var body: some View {
         Button(action: toggleLock) {
@@ -18,8 +23,10 @@ struct LockButtonView: View {
                 Image(systemName: playerManager.isLocked ? "lock.fill" : "lock.open.fill")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(playerManager.isLocked ? .red : .white)
-                
             }
+            .padding(isIPhone ? 16 : 32)
+            .background(Color.clear)
+            .contentShape(Rectangle())
         }
     }
     
@@ -27,4 +34,3 @@ struct LockButtonView: View {
         playerManager.isLocked.toggle()
     }
 }
-

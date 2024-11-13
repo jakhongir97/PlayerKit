@@ -28,7 +28,7 @@ public class PlayerManager: ObservableObject {
     @Published var availableVideoTracks: [String] = []
     
     @Published var selectedPlayerType: PlayerType = .vlcPlayer
-    @Published var videoURL: URL?
+    @Published var playerItem: PlayerItem?
     
     // Managers for different responsibilities
     var playbackManager: PlaybackManager?
@@ -84,14 +84,18 @@ public class PlayerManager: ObservableObject {
         setPlayer(type: type)
         
         // Reload the current media if videoURL is already set
-        if let url = videoURL {
+        if let url = playerItem?.url {
             load(url: url, lastPosition: lastPosition)
         }
     }
     
+    public func load(playerItem: PlayerItem) {
+        self.playerItem = playerItem
+        load(url: playerItem.url, lastPosition: playerItem.lastPosition)
+    }
+    
     // Loads a media URL into the current player
-    public func load(url: URL, lastPosition: Double? = nil) {
-        videoURL = url
+    private func load(url: URL, lastPosition: Double? = nil) {
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         setupPiP()
         userInteracted()

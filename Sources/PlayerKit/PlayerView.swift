@@ -3,8 +3,8 @@ import SwiftUI
 public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
 
-    public init(url: URL) {
-        playerManager.load(url: url)
+    public init(playerItem: PlayerItem) {
+        playerManager.load(playerItem: playerItem)
     }
 
     public var body: some View {
@@ -26,16 +26,15 @@ public struct PlayerView: View {
                     .zIndex(1)
             }
             
-            // Lock button in the top-left corner
+            // Lock button on the vertically centered right side
             if playerManager.areControlsVisible {
-                VStack {
-                    HStack {
+                HStack {
+                    Spacer() // Push lock button to the right
+                    VStack {
+                        Spacer() // Center lock button vertically
                         LockButtonView()
-                            .padding(.leading) // Adjust padding as needed
-                            .padding(.top, 80)
-                        Spacer()
+                        Spacer() // Center lock button vertically
                     }
-                    Spacer()
                 }
                 .zIndex(2)
             }
