@@ -9,7 +9,9 @@ struct BottomControlsView: View {
                 //PlaybackTimeView(playerManager: playerManager)
                 AudioAndSubtitlesMenu(playerManager: playerManager)
                 Spacer()
-                PiPButton()
+                if playerManager.selectedPlayerType == .avPlayer {
+                    PiPButton()
+                }
                 RotateButtonView()
             }
 
