@@ -217,8 +217,8 @@ extension PlayerManager {
 
 // MARK: - Chromecast Controls
 extension PlayerManager {
-    public func playOnChromecast(url: URL) {
-        castManager.playMediaOnCast(url: url)
+    public func playOnChromecast() {
+        castManager.playMediaOnCast()
     }
     
     public func pauseChromecast() {
