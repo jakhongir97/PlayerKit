@@ -1,25 +1,17 @@
-import SwiftUI
-import AVFoundation
+import AVKit
 import UIKit
 
-class AVPlayerView: UIView {
-    public var playerLayer: AVPlayerLayer?
-
-    var player: AVPlayer? {
-        didSet {
-            playerLayer?.removeFromSuperlayer()  // Remove any existing playerLayer to prevent overlaps
-            guard let player = player else { return }
-            let newPlayerLayer = AVPlayerLayer(player: player)
-            newPlayerLayer.videoGravity = .resizeAspect
-            newPlayerLayer.frame = bounds
-            layer.addSublayer(newPlayerLayer)
-            playerLayer = newPlayerLayer
-        }
+public class AVPlayerView: UIView {
+    public override static var layerClass: AnyClass {
+        return AVPlayerLayer.self
     }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        playerLayer?.frame = bounds
+    
+    var playerLayer: AVPlayerLayer {
+        return layer as! AVPlayerLayer
+    }
+    
+    var player: AVPlayer? {
+        get { playerLayer.player }
+        set { playerLayer.player = newValue }
     }
 }
-

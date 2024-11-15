@@ -27,7 +27,7 @@ public class PlayerManager: ObservableObject {
     @Published var availableSubtitles: [String] = []
     @Published var availableVideoTracks: [String] = []
     
-    @Published var selectedPlayerType: PlayerType = .vlcPlayer
+    @Published var selectedPlayerType: PlayerType = .avPlayer
     @Published var playerItem: PlayerItem?
     
     // Managers for different responsibilities
@@ -48,6 +48,7 @@ public class PlayerManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     private init() {
+        AudioSessionManager.shared.configureAudioSession()
         setPlayer(type: selectedPlayerType)  // Initialize default player
         setupGestureHandling()
     }
@@ -97,7 +98,6 @@ public class PlayerManager: ObservableObject {
     // Loads a media URL into the current player
     private func load(url: URL, lastPosition: Double? = nil) {
         currentPlayer?.load(url: url, lastPosition: lastPosition)
-        setupPiP()
         userInteracted()
     }
 }
@@ -206,10 +206,6 @@ extension PlayerManager {
 
 // MARK: - PiP Controls
 extension PlayerManager {
-    public func setupPiP() {
-        currentPlayer?.setupPiP()
-    }
-    
     public func startPiP() {
         currentPlayer?.startPiP()
     }

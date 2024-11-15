@@ -144,7 +144,6 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         player = AVPlayer(url: url)
         player?.allowsExternalPlayback = true
-        playerView?.player = player
         
         // Seek to last position if provided, else start from the beginning
         if let position = lastPosition {
@@ -159,18 +158,19 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
 // MARK: - ViewRenderingProtocol
 extension AVPlayerWrapper: ViewRenderingProtocol {
     public func getPlayerView() -> UIView {
-        if let existingView = playerView {
-            return existingView
+        if let playerView = playerView {
+            return playerView
+        } else {
+            let newPlayerView = AVPlayerView()
+            newPlayerView.player = player
+            playerView = newPlayerView
+            setupPiP()
+            return newPlayerView
         }
-        
-        let newPlayerView = AVPlayerView()
-        newPlayerView.player = player
-        playerView = newPlayerView
-        return newPlayerView
     }
     
     public func setupPiP() {
-        guard let playerView = getPlayerView() as? AVPlayerView, let playerLayer = playerView.playerLayer else {
+        guard let playerLayer = playerView?.playerLayer else {
             print("AVPlayerWrapper: No playerLayer available for PiP.")
             return
         }
@@ -207,7 +207,7 @@ extension AVPlayerWrapper: ThumbnailGeneratorProtocol {
 // MARK: - GestureHandlingProtocol
 extension AVPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
-        guard let playerView = getPlayerView() as? AVPlayerView, let playerLayer = playerView.playerLayer else { return }
+        guard let playerLayer = playerView?.playerLayer else { return }
         playerLayer.videoGravity = scale > 1 ? .resizeAspectFill : .resizeAspect
     }
 }
