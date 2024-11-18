@@ -27,8 +27,14 @@ public class PlayerManager: ObservableObject {
     @Published var availableSubtitles: [String] = []
     @Published var availableVideoTracks: [String] = []
     
-    @Published var selectedPlayerType: PlayerType = .avPlayer
+    @Published var selectedPlayerType: PlayerType = .vlcPlayer
     @Published var playerItem: PlayerItem?
+    @Published var shouldDissmiss: Bool = false {
+        didSet {
+            playbackManager?.stop()
+        }
+    }
+    @Published var isVideoEnded: Bool = false
     
     // Managers for different responsibilities
     var playbackManager: PlaybackManager?
@@ -49,13 +55,12 @@ public class PlayerManager: ObservableObject {
     
     private init() {
         AudioSessionManager.shared.configureAudioSession()
-        setPlayer(type: selectedPlayerType)  // Initialize default player
         setupGestureHandling()
     }
     
     // MARK: - Player Setup
     
-    public func setPlayer(type: PlayerType) {
+    public func setPlayer(type: PlayerType = .vlcPlayer) {
         selectedPlayerType = type
         let provider = PlayerFactory.getProvider(for: type)
         setupPlayer(provider: provider)
@@ -97,8 +102,15 @@ public class PlayerManager: ObservableObject {
     
     // Loads a media URL into the current player
     private func load(url: URL, lastPosition: Double? = nil) {
+        shouldDissmiss = false
+        isVideoEnded = false
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         userInteracted()
+    }
+    
+    public func videoDidEnd() {
+        isVideoEnded = true
+        shouldDissmiss = true
     }
 }
 

@@ -2,8 +2,10 @@ import SwiftUI
 
 public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
+    @Environment(\.presentationMode) var presentationMode
 
     public init(playerItem: PlayerItem) {
+        playerManager.setPlayer()
         playerManager.load(playerItem: playerItem)
     }
 
@@ -39,6 +41,11 @@ public struct PlayerView: View {
                 .zIndex(2)
             }
             
+        }
+        .onReceive(playerManager.$shouldDissmiss) { shouldDissmiss in
+            if shouldDissmiss {
+                presentationMode.wrappedValue.dismiss()
+            }
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
     }

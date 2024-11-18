@@ -6,7 +6,7 @@ public struct CloseButtonView: View {
 
     public var body: some View {
         Button(action: {
-            playerManager.stop() // Stop the player
+            playerManager.shouldDissmiss = true
             presentationMode.wrappedValue.dismiss() // Dismiss the view
         }) {
             Image(systemName: "xmark.circle.fill")

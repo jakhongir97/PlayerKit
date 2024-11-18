@@ -7,6 +7,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var pipController: AVPictureInPictureController?
     
     private var playerItemStatusObserver: NSKeyValueObservation?
+    private var playbackEndedObserver: Any?
     
     // Lazy initialization for thumbnail generator
     private lazy var thumbnailGenerator: AVPlayerThumbnailGenerator? = {
@@ -17,6 +18,14 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     // MARK: - Initializer
     public override init() {
         super.init()
+    }
+    
+    deinit {
+        // Remove observers to prevent memory leaks
+        playerItemStatusObserver = nil
+        if let observer = playbackEndedObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 }
 
@@ -137,6 +146,16 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
                     PlayerManager.shared.refreshTrackInfo()
                 }
             }
+        }
+        
+        // Observe when playback ends
+        playbackEndedObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            // Notify PlayerManager that playback ended
+            PlayerManager.shared.videoDidEnd()
         }
         
         // Seek to last position if provided, else start from the beginning

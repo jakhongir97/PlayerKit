@@ -209,14 +209,19 @@ extension VLCPlayerWrapper {
     @objc private func mediaPlayerStateChanged(_ notification: Notification) {
         guard let player = notification.object as? VLCMediaPlayer else { return }
         switch player.state {
-            case .playing:
-                // When the player starts playing, tracks should be available
-                DispatchQueue.main.async {
-                    PlayerManager.shared.refreshTrackInfo()
-                }
-            default:
-                break
+        case .playing:
+            // When the player starts playing, tracks should be available
+            DispatchQueue.main.async {
+                PlayerManager.shared.refreshTrackInfo()
             }
+        case .stopped:
+            // Video ended; notify PlayerManager
+            DispatchQueue.main.async {
+                PlayerManager.shared.videoDidEnd()
+            }
+        default:
+            break
+        }
     }
 
     @objc private func mediaPlayerTimeChanged(_ notification: Notification) {

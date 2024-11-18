@@ -79,7 +79,7 @@ class CastManager: NSObject {
         isCasting = true
         
         GCKCastContext.sharedInstance().presentDefaultExpandedMediaControls()
-        PlayerManager.shared.pause()
+        PlayerManager.shared.shouldDissmiss = true
     }
     
     private func createMediaLoadRequest(for playerItem: PlayerItem) -> GCKMediaLoadRequestData {
