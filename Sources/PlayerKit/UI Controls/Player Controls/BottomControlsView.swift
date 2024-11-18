@@ -7,7 +7,7 @@ struct BottomControlsView: View {
         VStack() {
             HStack {
                 //PlaybackTimeView(playerManager: playerManager)
-                AudioAndSubtitlesMenu()
+                MediaOptionsMenu()
                 Spacer()
                 if playerManager.selectedPlayerType == .avPlayer {
                     PiPButton()

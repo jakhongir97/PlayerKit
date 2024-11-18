@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PlayerMenu: View {
-    @StateObject private var viewModel = PlayerMenuViewModel()
+    @ObservedObject private var viewModel = PlayerMenuViewModel()
 
     var body: some View {
         Menu {

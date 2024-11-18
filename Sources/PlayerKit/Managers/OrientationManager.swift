@@ -14,17 +14,19 @@ public class OrientationManager: ObservableObject {
     }
 
     private func updateOrientation() {
-        let orientation: UIInterfaceOrientation = isLandscape ? .landscapeRight : .portrait
-        UIDevice.current.setValue(orientation.rawValue, forKey: "orientation")
-        
-        // Update supported orientations on the root view controller to apply the orientation
-        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-           let window = windowScene.windows.first,
-           let rootViewController = window.rootViewController {
-            if #available(iOS 16.0, *) {
-                rootViewController.setNeedsUpdateOfSupportedInterfaceOrientations()
-            } else {
-                // Fallback on earlier versions
+        let orientationMask: UIInterfaceOrientationMask = isLandscape ? .landscapeRight : .portrait
+
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            return
+        }
+
+        if #available(iOS 16.0, *) {
+            // Use UIWindowScene.requestGeometryUpdate(_:) in iOS 16 and later
+            let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: orientationMask)
+            windowScene.requestGeometryUpdate(geometryPreferences) { error in
+                if error != nil {
+                    print("Failed to request geometry update: \(error)")
+                }
             }
         }
     }
