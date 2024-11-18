@@ -161,7 +161,6 @@ extension PlayerManager {
     public func refreshTrackInfo() {
         availableAudioTracks = trackManager?.availableAudioTracks ?? []
         availableSubtitles = trackManager?.availableSubtitles ?? []
-        availableVideoTracks = trackManager?.availableVideoTracks ?? []
 
         selectedAudioTrackIndex = indexOfCurrentTrack(
             currentTrack: trackManager?.currentAudioTrack,
@@ -171,11 +170,6 @@ extension PlayerManager {
         selectedSubtitleTrackIndex = indexOfCurrentTrack(
             currentTrack: trackManager?.currentSubtitleTrack,
             availableTracks: availableSubtitles
-        )
-        
-        selectedVideoTrackIndex = indexOfCurrentTrack(
-            currentTrack: trackManager?.currentVideoTrack,
-            availableTracks: availableVideoTracks
         )
     }
 
@@ -195,11 +189,6 @@ extension PlayerManager {
     public func selectSubtitle(index: Int?) {
         selectedSubtitleTrackIndex = index
         trackManager?.selectSubtitle(index: index)
-        userInteracted()
-    }
-    
-    public func selectVideoTrack(index: Int) {
-        trackManager?.selectVideoTrack(index: index)
         userInteracted()
     }
 }
@@ -285,7 +274,6 @@ extension PlayerManager {
                 self.currentTime = player.currentTime
                 self.duration = player.duration
                 self.bufferedDuration = player.bufferedDuration
-                self.refreshTrackInfo()
             }
             .store(in: &cancellables)
     }

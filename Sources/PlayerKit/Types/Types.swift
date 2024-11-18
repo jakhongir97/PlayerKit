@@ -1,16 +1,17 @@
 import Foundation
 
-public enum PlayerType {
-    case avPlayer
+public enum PlayerType: String, CaseIterable, Identifiable {
     case vlcPlayer
+    case avPlayer
 
-    // Computed property to provide a more descriptive title
-    public var title: String {
+    public var id: String { rawValue }
+
+    var title: String {
         switch self {
-        case .avPlayer:
-            return "AV Player"
         case .vlcPlayer:
             return "VLC Player"
+        case .avPlayer:
+            return "AV Player"
         }
     }
 }

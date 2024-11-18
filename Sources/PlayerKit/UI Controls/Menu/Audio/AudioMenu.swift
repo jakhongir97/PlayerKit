@@ -1,18 +1,18 @@
 import SwiftUI
 
 struct AudioMenu: View {
-    @ObservedObject var playerManager: PlayerManager = PlayerManager.shared
+    @ObservedObject var viewModel = AudioMenuViewModel()
 
     var body: some View {
         Menu {
             Section(header: Text("Audio Tracks")) { // Section title
-                ForEach(playerManager.availableAudioTracks.indices, id: \.self) { index in
+                ForEach(viewModel.availableAudioTracks.indices, id: \.self) { index in
                     Button(action: {
-                        playerManager.selectAudioTrack(index: index)
+                        viewModel.selectAudioTrack(index: index)
                     }) {
                         HStack {
-                            Text(playerManager.availableAudioTracks[index])
-                            if playerManager.selectedAudioTrackIndex == index {
+                            Text(viewModel.availableAudioTracks[index])
+                            if viewModel.selectedAudioTrackIndex == index {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -25,8 +25,8 @@ struct AudioMenu: View {
                 .foregroundColor(.white)
                 .frame(width: 25, height: 25)
         }
-        .onAppear(perform: {
-            playerManager.userInteracted()
-        })
+        .onAppear {
+            viewModel.userInteracted()
+        }
     }
 }

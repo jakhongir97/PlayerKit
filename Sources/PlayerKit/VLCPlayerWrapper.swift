@@ -101,11 +101,6 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
         return tracks.map { $0.trackName }
     }
     
-    public var availableVideoTracks: [String] {
-        guard let tracks = player.videoTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.map { $0.trackName }
-    }
-    
     public var currentAudioTrack: String? {
         guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return nil }
         let selectedTrack = tracks.first(where: { $0.isSelected })
@@ -114,12 +109,6 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
     
     public var currentSubtitleTrack: String? {
         guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return nil }
-        let selectedTrack = tracks.first(where: { $0.isSelected })
-        return selectedTrack?.trackName
-    }
-    
-    public var currentVideoTrack: String? {
-        guard let tracks = player.videoTracks as? [VLCMediaPlayer.Track] else { return nil }
         let selectedTrack = tracks.first(where: { $0.isSelected })
         return selectedTrack?.trackName
     }
@@ -136,11 +125,6 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
         } else {
             player.deselectAllTextTracks()
         }
-    }
-
-    public func selectVideoTrack(index: Int) {
-        guard index < player.videoTracks.count else { return }
-        player.videoTracks[index].isSelected = true
     }
 }
 
@@ -224,6 +208,15 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
 extension VLCPlayerWrapper {
     @objc private func mediaPlayerStateChanged(_ notification: Notification) {
         guard let player = notification.object as? VLCMediaPlayer else { return }
+        switch player.state {
+            case .playing:
+                // When the player starts playing, tracks should be available
+                DispatchQueue.main.async {
+                    PlayerManager.shared.refreshTrackInfo()
+                }
+            default:
+                break
+            }
     }
 
     @objc private func mediaPlayerTimeChanged(_ notification: Notification) {

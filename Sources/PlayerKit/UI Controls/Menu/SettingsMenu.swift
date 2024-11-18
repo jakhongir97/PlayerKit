@@ -5,8 +5,6 @@ struct SettingsMenu: View {
 
     var body: some View {
         Menu {
-            VideoMenu()
-            
             PlayerMenu()
 
         } label: {

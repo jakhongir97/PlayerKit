@@ -6,6 +6,8 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var playerView: AVPlayerView?
     private var pipController: AVPictureInPictureController?
     
+    private var playerItemStatusObserver: NSKeyValueObservation?
+    
     // Lazy initialization for thumbnail generator
     private lazy var thumbnailGenerator: AVPlayerThumbnailGenerator? = {
         guard let asset = player?.currentItem?.asset else { return nil }
@@ -86,12 +88,6 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
         return subtitleGroup.options.map { $0.displayName }
     }
 
-    public var availableVideoTracks: [String] {
-        guard let asset = player?.currentItem?.asset,
-              let videoGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .visual) else { return [] }
-        return videoGroup.options.map { $0.displayName }
-    }
-
     public var currentAudioTrack: String? {
         guard let asset = player?.currentItem?.asset,
               let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return nil }
@@ -105,14 +101,6 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
               let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return nil }
 
         let selectedOption = player?.currentItem?.selectedMediaOption(in: subtitleGroup)
-        return selectedOption?.displayName
-    }
-    
-    public var currentVideoTrack: String? {
-        guard let asset = player?.currentItem?.asset,
-              let videoGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .visual) else { return nil }
-        
-        let selectedOption = player?.currentItem?.selectedMediaOption(in: videoGroup)
         return selectedOption?.displayName
     }
 
@@ -131,19 +119,25 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
             player?.currentItem?.select(nil, in: subtitleGroup) // Deselects all subtitles
         }
     }
-
-    public func selectVideoTrack(index: Int) {
-        guard let videoGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .visual),
-              index < videoGroup.options.count else { return }
-        player?.currentItem?.select(videoGroup.options[index], in: videoGroup)
-    }
 }
 
 // MARK: - MediaLoadingProtocol
 extension AVPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
-        player = AVPlayer(url: url)
+        let playerItem = AVPlayerItem(url: url)
+        player = AVPlayer(playerItem: playerItem)
         player?.allowsExternalPlayback = true
+        
+        // Observe the player item's status
+        playerItemStatusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            guard let self = self else { return }
+            if item.status == .readyToPlay {
+                // Tracks are now available; refresh track info
+                DispatchQueue.main.async {
+                    PlayerManager.shared.refreshTrackInfo()
+                }
+            }
+        }
         
         // Seek to last position if provided, else start from the beginning
         if let position = lastPosition {

@@ -1,11 +1,11 @@
 import SwiftUI
 
 struct PlaybackSpeedMenu: View {
-    @ObservedObject var playerManager: PlayerManager = PlayerManager.shared
+    @ObservedObject var viewModel = PlaybackSpeedViewModel()
 
     var body: some View {
         Menu {
-            Section(header: Text("Playback Speed")) { // Section title
+            Section(header: Text("Playback Speed")) {
                 speedOption(0.25)
                 speedOption(0.5)
                 speedOption(1.0, label: "1.0x (Normal)")
@@ -18,21 +18,22 @@ struct PlaybackSpeedMenu: View {
                 .foregroundColor(.white)
                 .frame(width: 25, height: 25)
         }
-        .onAppear(perform: {
-            playerManager.userInteracted()
-        })
+        .onAppear {
+            viewModel.userInteracted()
+        }
     }
 
     private func speedOption(_ speed: Float, label: String? = nil) -> some View {
         Button(action: {
-            playerManager.setPlaybackSpeed(speed)
+            viewModel.setPlaybackSpeed(speed)
         }) {
             HStack {
                 Text(label ?? "\(speed)x")
-                if playerManager.playbackSpeed == speed {
+                if viewModel.playbackSpeed == speed {
                     Image(systemName: "checkmark")
                 }
             }
         }
     }
 }
+

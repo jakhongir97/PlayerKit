@@ -1,31 +1,31 @@
 import SwiftUI
 
 struct SubtitleMenu: View {
-    @ObservedObject var playerManager: PlayerManager = PlayerManager.shared
+    @ObservedObject var viewModel = SubtitleMenuViewModel()
 
     var body: some View {
         Menu {
-            Section(header: Text("Subtitles")) { // Section title
+            Section(header: Text("Subtitles")) {
                 // "Turn Off Subtitles" option
                 Button(action: {
-                    playerManager.selectSubtitle(index: nil) // Nil indicates turn off
+                    viewModel.selectSubtitle(index: nil)
                 }) {
                     HStack {
                         Text("Turn off")
-                        if playerManager.selectedSubtitleTrackIndex == nil {
+                        if viewModel.selectedSubtitleTrackIndex == nil {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
                 
                 // List available subtitle tracks
-                ForEach(playerManager.availableSubtitles.indices, id: \.self) { index in
+                ForEach(viewModel.availableSubtitles.indices, id: \.self) { index in
                     Button(action: {
-                        playerManager.selectSubtitle(index: index)
+                        viewModel.selectSubtitle(index: index)
                     }) {
                         HStack {
-                            Text(playerManager.availableSubtitles[index])
-                            if playerManager.selectedSubtitleTrackIndex == index {
+                            Text(viewModel.availableSubtitles[index])
+                            if viewModel.selectedSubtitleTrackIndex == index {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -38,9 +38,8 @@ struct SubtitleMenu: View {
                 .foregroundColor(.white)
                 .frame(width: 25, height: 25)
         }
-        .onAppear(perform: {
-            playerManager.userInteracted()
-        })
+        .onAppear {
+            viewModel.userInteracted()
+        }
     }
 }
-

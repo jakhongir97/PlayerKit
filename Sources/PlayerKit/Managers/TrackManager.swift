@@ -16,11 +16,9 @@ class TrackManager {
 
     var availableAudioTracks: [String] { player.availableAudioTracks }
     var availableSubtitles: [String] { player.availableSubtitles }
-    var availableVideoTracks: [String] { player.availableVideoTracks }
     
     var currentAudioTrack: String? { player.currentAudioTrack }
     var currentSubtitleTrack: String? { player.currentSubtitleTrack }
-    var currentVideoTrack: String? { player.currentVideoTrack }
 
     func selectAudioTrack(index: Int) {
         player.selectAudioTrack(index: index)
@@ -28,10 +26,6 @@ class TrackManager {
 
     func selectSubtitle(index: Int?) {
         player.selectSubtitle(index: index)
-    }
-
-    func selectVideoTrack(index: Int) {
-        player.selectVideoTrack(index: index)
     }
 
     func setPlayer(_ player: PlayerProtocol) {
