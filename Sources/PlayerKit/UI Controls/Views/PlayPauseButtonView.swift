@@ -7,6 +7,7 @@ struct PlayPauseButtonView: View {
         HStack {
             Button(action: {
                 playerManager.isPlaying ? playerManager.pause() : playerManager.play()
+                HapticsManager.shared.triggerImpactFeedback(style: .medium)
             }) {
                 Image(playerManager.isPlaying ? "pause" : "play", bundle: .module)
                     .font(.system(size: 60, weight: .bold))

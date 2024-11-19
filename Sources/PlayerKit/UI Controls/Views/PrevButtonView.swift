@@ -10,6 +10,7 @@ struct PrevButtonView: View {
     var body: some View {
         Button(action: {
             playerManager.playPrevious()
+            HapticsManager.shared.triggerImpactFeedback(style: .light)
         }) {
             Image("prev", bundle: .module)
                 .font(.title)

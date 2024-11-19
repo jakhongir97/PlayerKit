@@ -20,6 +20,7 @@ struct LockButtonView: View {
     }
     
     private func toggleLock() {
+        HapticsManager.shared.triggerImpactFeedback(style: .rigid)
         playerManager.isLocked.toggle()
     }
 }

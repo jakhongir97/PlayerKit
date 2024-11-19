@@ -10,6 +10,7 @@ struct NextButtonView: View {
     var body: some View {
         Button(action: {
             playerManager.playNext()
+            HapticsManager.shared.triggerImpactFeedback(style: .light)
         }) {
             Image("next", bundle: .module)
                 .font(.title)
