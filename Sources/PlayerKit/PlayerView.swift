@@ -8,6 +8,11 @@ public struct PlayerView: View {
         playerManager.setPlayer()
         playerManager.load(playerItem: playerItem)
     }
+    
+    public init(playerItems: [PlayerItem], currentIndex: Int = 0) {
+        playerManager.setPlayer()
+        playerManager.loadEpisodes(playerItems: playerItems, currentIndex: currentIndex) // Load episodes list
+    }
 
     public var body: some View {
         ZStack {

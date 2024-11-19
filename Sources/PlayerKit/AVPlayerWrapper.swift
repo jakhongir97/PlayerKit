@@ -134,7 +134,12 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
 extension AVPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         let playerItem = AVPlayerItem(url: url)
-        player = AVPlayer(playerItem: playerItem)
+        if let player = player {
+            player.replaceCurrentItem(with: playerItem)
+        } else {
+            player = AVPlayer(playerItem: playerItem)
+            player?.allowsExternalPlayback = true
+        }
         player?.allowsExternalPlayback = true
         
         // Observe the player item's status

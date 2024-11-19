@@ -22,13 +22,14 @@ public class PlayerManager: ObservableObject {
     // Track indices
     @Published var selectedAudioTrackIndex: Int?
     @Published var selectedSubtitleTrackIndex: Int?
-    @Published var selectedVideoTrackIndex: Int?
     @Published var availableAudioTracks: [String] = []
     @Published var availableSubtitles: [String] = []
-    @Published var availableVideoTracks: [String] = []
     
     @Published var selectedPlayerType: PlayerType = .vlcPlayer
     @Published var playerItem: PlayerItem?
+    @Published var playerItems: [PlayerItem] = []
+    @Published var currentPlayerItemIndex: Int = 0
+    @Published var isMovie: Bool = true
     @Published var shouldDissmiss: Bool = false {
         didSet {
             playbackManager?.stop()
@@ -56,6 +57,7 @@ public class PlayerManager: ObservableObject {
     private init() {
         AudioSessionManager.shared.configureAudioSession()
         setupGestureHandling()
+        observeEpisodes()
     }
     
     // MARK: - Player Setup
@@ -100,6 +102,13 @@ public class PlayerManager: ObservableObject {
         load(url: playerItem.url, lastPosition: playerItem.lastPosition)
     }
     
+    public func loadEpisodes(playerItems: [PlayerItem], currentIndex: Int = 0 ) {
+        self.playerItems = playerItems
+        currentPlayerItemIndex = currentIndex
+        guard let playerItem = playerItems[safe: currentIndex] else { return }
+        load(playerItem: playerItem)
+    }
+    
     // Loads a media URL into the current player
     private func load(url: URL, lastPosition: Double? = nil) {
         shouldDissmiss = false
@@ -109,8 +118,40 @@ public class PlayerManager: ObservableObject {
     }
     
     public func videoDidEnd() {
-        isVideoEnded = true
-        shouldDissmiss = true
+        if isMovie {
+            // Dismiss the player immediately for movies
+            isVideoEnded = true
+            shouldDissmiss = true
+        } else {
+            // Check if there are more episodes to play
+            if currentPlayerItemIndex <= playerItems.count - 1 {
+                // Play the next episode
+                playNext()
+            } else {
+                // No more episodes, dismiss the player
+                isVideoEnded = true
+                shouldDissmiss = true
+            }
+        }
+    }
+    
+    // MARK: - Player Items Navigation
+    public func playNext() {
+        guard !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count - 1 else { return }
+        currentPlayerItemIndex += 1
+        loadPlayerItem(at: currentPlayerItemIndex)
+    }
+    
+    public func playPrevious() {
+        guard !playerItems.isEmpty, currentPlayerItemIndex > 0 else { return }
+        currentPlayerItemIndex -= 1
+        loadPlayerItem(at: currentPlayerItemIndex)
+    }
+    
+    private func loadPlayerItem(at index: Int) {
+        let playerItem = playerItems[index]
+        load(playerItem: playerItem)
+        
     }
 }
 
@@ -290,13 +331,17 @@ extension PlayerManager {
             .store(in: &cancellables)
     }
     
+    private func observeEpisodes() {
+        $playerItems
+            .map { $0.isEmpty } // Map episodes to a boolean for `isMovie`
+            .assign(to: &$isMovie)
+    }
+    
     public func resetTrackStates() {
         selectedAudioTrackIndex = nil
         selectedSubtitleTrackIndex = nil
-        selectedVideoTrackIndex = nil
         availableAudioTracks = []
         availableSubtitles = []
-        availableVideoTracks = []
     }
 }
 

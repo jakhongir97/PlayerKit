@@ -5,8 +5,6 @@ struct PlayPauseButtonView: View {
 
     var body: some View {
         HStack {
-            Spacer()  // Push button to the center horizontally
-
             Button(action: {
                 playerManager.isPlaying ? playerManager.pause() : playerManager.play()
             }) {
@@ -14,10 +12,7 @@ struct PlayPauseButtonView: View {
                     .font(.system(size: 60, weight: .bold))
                     .foregroundColor(.white)
             }
-
-            Spacer()  // Push button to the center horizontally
         }
-        .frame(maxHeight: .infinity)  // Ensures it's vertically centered
     }
 }
 
