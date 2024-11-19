@@ -88,7 +88,7 @@ public class PlayerManager: ObservableObject {
         
         // Store the last position before switching players
         lastPosition = currentPlayer?.currentTime ?? 0
-        resetTrackStates()
+        resetPlayer()
         setPlayer(type: type)
         
         // Reload the current media if videoURL is already set
@@ -337,11 +337,13 @@ extension PlayerManager {
             .assign(to: &$isMovie)
     }
     
-    public func resetTrackStates() {
+    public func resetPlayer() {
         selectedAudioTrackIndex = nil
         selectedSubtitleTrackIndex = nil
         availableAudioTracks = []
         availableSubtitles = []
+        
+        ThumbnailManager.shared.thumbnailImage = nil
     }
 }
 
