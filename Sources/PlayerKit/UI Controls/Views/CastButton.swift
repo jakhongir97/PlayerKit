@@ -31,7 +31,7 @@ struct CastButton: UIViewRepresentable {
         }
 
         // Google Cast action that triggers the Chromecast dialog
-        let googleCastAction = UIAction(title: "Chromecast", image: UIImage(systemName: "tv")) { _ in
+        let googleCastAction = UIAction(title: "Chromecast", image: UIImage.fromFramework(named: "chromecast")) { _ in
             if GCKCastContext.sharedInstance().castState != .noDevicesAvailable {
                 GCKCastContext.sharedInstance().presentCastDialog()
             } else {

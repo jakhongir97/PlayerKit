@@ -5,7 +5,7 @@
 //  Created by Jakhongir Nematov on 08/10/24.
 //
 
-import Foundation
+import UIKit
 
 // Add a safe subscript for collections to avoid index out of range errors
 extension Collection {
@@ -31,5 +31,11 @@ extension BinaryFloatingPoint {
         formatter.unitsStyle = style
         formatter.zeroFormattingBehavior = .pad
         return formatter.string(from: TimeInterval(self)) ?? "" //formatter.string(from: self) ?? ""
+    }
+}
+
+extension UIImage {
+    static func fromFramework(named name: String) -> UIImage? {
+        return UIImage(named: name, in: .module, compatibleWith: nil)
     }
 }

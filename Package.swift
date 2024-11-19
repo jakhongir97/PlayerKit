@@ -20,7 +20,8 @@ let package = Package(
         .target(
             name: "PlayerKit",
             dependencies: ["VLCKit", "GoogleCast"],  // Add GoogleCast as a dependency
-            path: "Sources"
+            path: "Sources",
+            resources: [.process("Resources/Assets.xcassets")]
         ),
         .testTarget(
             name: "PlayerKitTests",

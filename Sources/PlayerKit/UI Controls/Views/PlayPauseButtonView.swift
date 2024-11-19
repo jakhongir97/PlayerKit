@@ -10,7 +10,7 @@ struct PlayPauseButtonView: View {
             Button(action: {
                 playerManager.isPlaying ? playerManager.pause() : playerManager.play()
             }) {
-                Image(systemName: playerManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                Image(playerManager.isPlaying ? "pause" : "play", bundle: .module)
                     .font(.system(size: 60, weight: .bold))
                     .foregroundColor(.white)
             }
