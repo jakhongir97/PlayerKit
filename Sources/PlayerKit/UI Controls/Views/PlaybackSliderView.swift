@@ -4,18 +4,8 @@ struct PlaybackSliderView: View {
     @ObservedObject var playerManager: PlayerManager
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack() {
             ZStack(alignment: .leading) {
-                GeometryReader { geometry in
-                    let sliderWidth = geometry.size.width
-                    let bufferProgressWidth = sliderWidth * CGFloat(playerManager.bufferedDuration / max(playerManager.duration, 0.01))
-
-//                    // Buffered portion (buffered duration)
-//                    Capsule()
-//                        .fill(Color.white.opacity(0.6))  // Buffered track color
-//                        .frame(width: bufferProgressWidth, height: 3)
-                }
-                .frame(height: 3)
 
                 // Use MusicProgressSlider instead of default Slider
                 MusicProgressSlider(
@@ -54,7 +44,6 @@ struct PlaybackSliderView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(width: 120, height: 67.5)
-                            .background(Color.black.opacity(0.7))
                             .cornerRadius(8)
                             .offset(x: min(max(thumbPosition - 60, 0), sliderWidth - 120), y: -80)
                     }
