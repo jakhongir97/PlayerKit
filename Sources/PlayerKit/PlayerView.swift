@@ -40,6 +40,7 @@ public struct PlayerView: View {
                     VStack {
                         Spacer() // Center lock button vertically
                         LockButtonView()
+                            .padding(.bottom , 30)
                         Spacer() // Center lock button vertically
                     }
                 }
@@ -50,8 +51,10 @@ public struct PlayerView: View {
         .onReceive(playerManager.$shouldDissmiss) { shouldDissmiss in
             if shouldDissmiss {
                 presentationMode.wrappedValue.dismiss()
+                NotificationCenter.default.post(name: .playerViewDidClose, object: nil)
             }
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
+        .portrait()
     }
 }

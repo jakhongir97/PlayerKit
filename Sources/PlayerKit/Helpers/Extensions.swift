@@ -39,3 +39,7 @@ extension UIImage {
         return UIImage(named: name, in: .module, compatibleWith: nil)
     }
 }
+
+extension Notification.Name {
+    public static let playerViewDidClose = Notification.Name("PlayerKitDidClose")
+}

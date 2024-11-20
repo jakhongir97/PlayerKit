@@ -23,7 +23,6 @@ struct PlayerControlsView: View {
 
                 // Middle part: Play/pause button (later: next/prev buttons)
                 MiddleControlsView(playerManager: playerManager)
-                    .padding(.top, 20)
 
                 Spacer()
 

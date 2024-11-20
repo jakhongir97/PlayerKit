@@ -7,7 +7,7 @@ public class PlayerManager: ObservableObject {
     // State management
     @Published var isPlaying: Bool = false
     @Published var isBuffering: Bool = false
-    @Published var currentTime: Double = 0
+    @Published public var currentTime: Double = 0
     @Published var seekTime: Double = 0
     @Published var duration: Double = 0
     @Published var bufferedDuration: Double = 0
