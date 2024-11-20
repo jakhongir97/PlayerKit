@@ -93,24 +93,28 @@ extension VLCPlayerWrapper: TimeControlProtocol {
 extension VLCPlayerWrapper: TrackSelectionProtocol {
     public var availableAudioTracks: [String] {
         guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.map { $0.trackName }
+        return tracks.compactMap { track in
+            track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+        }
     }
 
     public var availableSubtitles: [String] {
         guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.map { $0.trackName }
+        return tracks.compactMap { track in
+            track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+        }
     }
     
     public var currentAudioTrack: String? {
         guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return nil }
         let selectedTrack = tracks.first(where: { $0.isSelected })
-        return selectedTrack?.trackName
+        return selectedTrack?.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
     }
     
     public var currentSubtitleTrack: String? {
         guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return nil }
         let selectedTrack = tracks.first(where: { $0.isSelected })
-        return selectedTrack?.trackName
+        return selectedTrack?.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
     }
     
     public func selectAudioTrack(index: Int) {
