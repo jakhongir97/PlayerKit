@@ -317,8 +317,8 @@ extension PlayerManager {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
-                guard !isSeeking else { 
-                    userInteracted()
+                guard !self.isSeeking else {
+                    self.userInteracted()
                     return
                 }
                 

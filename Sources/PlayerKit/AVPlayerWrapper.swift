@@ -178,13 +178,13 @@ extension AVPlayerWrapper: ViewRenderingProtocol {
     public func getPlayerView() -> UIView {
         if let playerView = playerView {
             return playerView
-        } else {
-            let newPlayerView = AVPlayerView()
-            newPlayerView.player = player
-            playerView = newPlayerView
-            setupPiP()
-            return newPlayerView
         }
+        
+        let newPlayerView = AVPlayerView()
+        newPlayerView.player = player
+        playerView = newPlayerView
+        setupPiP()
+        return newPlayerView
     }
     
     public func setupPiP() {

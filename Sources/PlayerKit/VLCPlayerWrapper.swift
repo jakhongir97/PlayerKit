@@ -2,9 +2,7 @@ import VLCKit
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
-    private var playerView: UIView?
-    private var pipWindow: UIView?
-    private var thumbnailGenerator: VLCPlayerThumbnailGenerator?
+    private var playerView: VLCPlayerView?
 
     public override init() {
         self.player = VLCMediaPlayer()
@@ -23,20 +21,6 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-    }
-    
-    // Implement getPlayerView to return the cached UIView
-    public func getPlayerView() -> UIView {
-        if let existingView = playerView {
-            return existingView
-        }
-        
-        let newVlcView = UIView()
-        DispatchQueue.main.async {
-            self.player.drawable = newVlcView  // Set VLC's drawable to the view
-        }
-        playerView = newVlcView
-        return newVlcView
     }
 }
 
@@ -136,53 +120,14 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
 extension VLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         let media = VLCMedia(url: url)
-        media?.addOption(":network-caching=1000")
         player.media = media
         
-        // Delay playback slightly to ensure drawable is ready
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if self.player.drawable != nil {
-                self.player.play()
-                
-                // Seek to last position if provided
-                if let position = lastPosition {
-                    self.player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds
-                }
-            } else {
-                print("Drawable is still nil after delay.")
-            }
+        player.play()
+        print("workkkkk play")
+        // Seek to last position if provided
+        if let position = lastPosition {
+            player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds
         }
-    }
-}
-
-// MARK: - ViewRenderingProtocol
-extension VLCPlayerWrapper: ViewRenderingProtocol {    
-    public func setupPiP() {
-        
-    }
-    
-    public func startPiP() {
-        
-    }
-    
-    public func stopPiP() {
-        
-    }
-}
-
-// MARK: - ThumbnailGeneratorProtocol
-extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
-    public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-//        guard let media = player.media else {
-//            completion(nil)
-//            return
-//        }
-//        
-//        if thumbnailGenerator == nil {
-//            thumbnailGenerator = VLCPlayerThumbnailGenerator(media: media)
-//        }
-//        
-//        thumbnailGenerator?.generateThumbnail(at: time, completion: completion)
     }
 }
 
@@ -192,10 +137,13 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
 
-        let aspectRatioString: String = scale > 1 ? {
+        let aspectRatioString: String
+        if scale > 1 {
             let gcd = greatestCommonDivisor(Int(screenWidth), Int(screenHeight))
-            return "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
-        }() : ""
+            aspectRatioString = "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
+        } else {
+            aspectRatioString = ""
+        }
 
         DispatchQueue.main.async { [weak self] in
             self?.player.videoAspectRatio = aspectRatioString
@@ -233,3 +181,37 @@ extension VLCPlayerWrapper {
     }
 }
 
+// MARK: - ViewRenderingProtocol
+extension VLCPlayerWrapper: ViewRenderingProtocol {
+    // Implement getPlayerView to return the cached UIView
+    public func getPlayerView() -> UIView {
+        if let playerView = playerView {
+            return playerView
+        }
+        
+        let newPlayerView = VLCPlayerView()
+        newPlayerView.player = player
+        playerView = newPlayerView
+        return newPlayerView
+    }
+    
+    
+    public func setupPiP() {
+        
+    }
+    
+    public func startPiP() {
+        
+    }
+    
+    public func stopPiP() {
+        
+    }
+}
+
+// MARK: - ThumbnailGeneratorProtocol
+extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
+    public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
+        
+    }
+}
