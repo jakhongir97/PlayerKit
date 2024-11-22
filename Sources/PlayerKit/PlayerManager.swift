@@ -58,6 +58,12 @@ public class PlayerManager: ObservableObject {
         AudioSessionManager.shared.configureAudioSession()
         setupGestureHandling()
         observeEpisodes()
+        observeAppLifecycle()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.removeObserver(self, name: UIApplication.willEnterForegroundNotification, object: nil)
     }
     
     // MARK: - Player Setup
@@ -176,6 +182,7 @@ extension PlayerManager {
     }
     
     public func seek(to time: Double) {
+        guard duration != 0 else { return }
         playbackManager?.seek(to: time) { [weak self] success in
             if success {
                 self?.currentTime = time
@@ -339,6 +346,9 @@ extension PlayerManager {
     }
     
     public func resetPlayer() {
+        currentPlayer?.stop()
+        currentPlayer = nil
+        
         selectedAudioTrackIndex = nil
         selectedSubtitleTrackIndex = nil
         availableAudioTracks = []
@@ -348,3 +358,29 @@ extension PlayerManager {
     }
 }
 
+extension PlayerManager {
+    private func observeAppLifecycle() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAppWillEnterForeground),
+            name: UIApplication.willEnterForegroundNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleAppDidEnterBackground() {
+        pause()
+    }
+
+    @objc private func handleAppWillEnterForeground() {
+        play()
+    }
+
+}
