@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SettingsMenu: View {
-    var playerManager: PlayerManager = PlayerManager.shared
 
     var body: some View {
         Menu {
@@ -9,13 +8,12 @@ struct SettingsMenu: View {
 
         } label: {
             Image(systemName: "ellipsis.circle.fill")
-                .resizable()
-                .frame(width: 25, height: 25)
+                .font(.system(size: 25, weight: .bold))
                 .foregroundColor(.white)
         }
-        .onAppear(perform: {
-            playerManager.userInteracted()
-        })
+        .onTapGesture {
+            PlayerManager.shared.userInteracted()
+        }
     }
 }
 

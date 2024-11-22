@@ -22,7 +22,7 @@ struct PlayerMenu: View {
                 .padding()
                 .foregroundColor(.white)
         }
-        .onAppear {
+        .onTapGesture {
             viewModel.userInteracted()
         }
     }

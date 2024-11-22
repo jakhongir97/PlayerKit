@@ -22,7 +22,7 @@ struct TopControlsView: View {
             Spacer()
             
             SharingMenuView()
-            SettingsMenu(playerManager: playerManager)
+            SettingsMenu()
         }
     }
 }

@@ -34,11 +34,10 @@ struct SubtitleMenu: View {
             }
         } label: {
             Image(systemName: "captions.bubble.fill")
-                .resizable()
+                .font(.system(size: 25, weight: .bold))
                 .foregroundColor(.white)
-                .frame(width: 25, height: 25)
         }
-        .onAppear {
+        .onTapGesture {
             viewModel.userInteracted()
         }
     }

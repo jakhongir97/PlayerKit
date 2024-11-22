@@ -376,10 +376,12 @@ extension PlayerManager {
     }
 
     @objc private func handleAppDidEnterBackground() {
+        guard selectedPlayerType != .avPlayer else { return }
         pause()
     }
 
     @objc private func handleAppWillEnterForeground() {
+        guard selectedPlayerType != .avPlayer else { return }
         play()
     }
 

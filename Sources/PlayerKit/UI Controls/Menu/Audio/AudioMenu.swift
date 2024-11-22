@@ -25,7 +25,7 @@ struct AudioMenu: View {
                 .foregroundColor(.white)
                 .frame(width: 25, height: 25)
         }
-        .onAppear {
+        .onTapGesture {
             viewModel.userInteracted()
         }
     }
