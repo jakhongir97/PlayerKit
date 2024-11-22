@@ -63,7 +63,7 @@ extension VLCPlayerWrapper: TimeControlProtocol {
     }
 
     public var isBuffering: Bool {
-        return player.state == .buffering
+        return player.state == .buffering && !isPlaying
     }
     
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
@@ -123,7 +123,6 @@ extension VLCPlayerWrapper: MediaLoadingProtocol {
         player.media = media
         
         player.play()
-        print("workkkkk play")
         // Seek to last position if provided
         if let position = lastPosition {
             player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds

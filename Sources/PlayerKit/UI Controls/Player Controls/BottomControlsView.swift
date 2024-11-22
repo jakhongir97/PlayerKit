@@ -13,6 +13,7 @@ struct BottomControlsView: View {
             HStack {
                 //PlaybackTimeView(playerManager: playerManager)
                 MediaOptionsMenu()
+                BufferingIndicatorView(playerManager: playerManager)
                 Spacer()
                 if playerManager.selectedPlayerType == .avPlayer {
                     PiPButton()

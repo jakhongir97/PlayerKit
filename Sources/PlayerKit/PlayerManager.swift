@@ -118,6 +118,7 @@ public class PlayerManager: ObservableObject {
     }
     
     public func videoDidEnd() {
+        guard duration != 0 else { return }
         if isMovie {
             // Dismiss the player immediately for movies
             isVideoEnded = true

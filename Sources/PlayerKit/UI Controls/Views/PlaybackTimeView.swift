@@ -14,11 +14,6 @@ struct PlaybackTimeView: View {
             Text(TimeFormatter.shared.formatTime(playerManager.duration))
                 .foregroundColor(.white)
 
-            if playerManager.isBuffering {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(0.8)
-            }
             Spacer()
         }
     }

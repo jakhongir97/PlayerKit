@@ -19,7 +19,7 @@ public class VLCPlayerView: UIView {
     }
 
     private func setupView() {
-        self.backgroundColor = .red
+        self.backgroundColor = .black
     }
 
     public override func layoutSubviews() {
