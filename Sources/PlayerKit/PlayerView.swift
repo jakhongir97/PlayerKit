@@ -51,7 +51,7 @@ public struct PlayerView: View {
         .onReceive(playerManager.$shouldDissmiss) { shouldDissmiss in
             if shouldDissmiss {
                 presentationMode.wrappedValue.dismiss()
-                NotificationCenter.default.post(name: .playerViewDidClose, object: nil)
+                NotificationCenter.default.post(name: .PlayerKitDidClose, object: nil)
             }
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)

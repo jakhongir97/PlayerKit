@@ -6,14 +6,14 @@ struct MiddleControlsView: View {
     var body: some View {
         HStack {
             Spacer()
-            if !playerManager.isMovie {
+            if playerManager.contentType == .episode {
                 PrevButtonView(playerManager: playerManager)
             }
 
             Spacer()
             PlayPauseButtonView(playerManager: playerManager)
             Spacer()
-            if !playerManager.isMovie {
+            if playerManager.contentType == .episode {
                 NextButtonView(playerManager: playerManager)
             }
             Spacer()

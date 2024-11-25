@@ -25,3 +25,8 @@ public struct PlayerItem {
         self.episodeIndex = episodeIndex
     }
 }
+
+public enum PlayerContentType {
+    case movie
+    case episode
+}

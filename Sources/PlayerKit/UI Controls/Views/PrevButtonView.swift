@@ -4,7 +4,7 @@ struct PrevButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
     private var isDisabled: Bool {
-        playerManager.currentPlayerItemIndex == 0
+        false
     }
 
     var body: some View {

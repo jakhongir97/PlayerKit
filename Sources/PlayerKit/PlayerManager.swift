@@ -29,7 +29,7 @@ public class PlayerManager: ObservableObject {
     @Published var playerItem: PlayerItem?
     @Published var playerItems: [PlayerItem] = []
     @Published var currentPlayerItemIndex: Int = 0
-    @Published var isMovie: Bool = true
+    @Published public var contentType: PlayerContentType = .movie
     @Published var shouldDissmiss: Bool = false {
         didSet {
             playbackManager?.stop()
@@ -57,7 +57,6 @@ public class PlayerManager: ObservableObject {
     private init() {
         AudioSessionManager.shared.configureAudioSession()
         setupGestureHandling()
-        observeEpisodes()
         observeAppLifecycle()
     }
     
@@ -69,6 +68,7 @@ public class PlayerManager: ObservableObject {
     // MARK: - Player Setup
     
     public func setPlayer(type: PlayerType = .vlcPlayer) {
+        resetPlayer()
         selectedPlayerType = type
         let provider = PlayerFactory.getProvider(for: type)
         setupPlayer(provider: provider)
@@ -125,7 +125,7 @@ public class PlayerManager: ObservableObject {
     
     public func videoDidEnd() {
         guard duration != 0 else { return }
-        if isMovie {
+        if contentType == .movie {
             // Dismiss the player immediately for movies
             isVideoEnded = true
             shouldDissmiss = true
@@ -144,12 +144,14 @@ public class PlayerManager: ObservableObject {
     
     // MARK: - Player Items Navigation
     public func playNext() {
+        NotificationCenter.default.post(name: .PlayerKitNextItem, object: nil)
         guard !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count - 1 else { return }
         currentPlayerItemIndex += 1
         loadPlayerItem(at: currentPlayerItemIndex)
     }
     
     public func playPrevious() {
+        NotificationCenter.default.post(name: .PlayerKitPrevItem, object: nil)
         guard !playerItems.isEmpty, currentPlayerItemIndex > 0 else { return }
         currentPlayerItemIndex -= 1
         loadPlayerItem(at: currentPlayerItemIndex)
@@ -337,12 +339,6 @@ extension PlayerManager {
                 self.bufferedDuration = player.bufferedDuration
             }
             .store(in: &cancellables)
-    }
-    
-    private func observeEpisodes() {
-        $playerItems
-            .map { $0.isEmpty } // Map episodes to a boolean for `isMovie`
-            .assign(to: &$isMovie)
     }
     
     public func resetPlayer() {

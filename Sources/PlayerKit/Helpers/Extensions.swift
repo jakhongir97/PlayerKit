@@ -41,5 +41,7 @@ extension UIImage {
 }
 
 extension Notification.Name {
-    public static let playerViewDidClose = Notification.Name("PlayerKitDidClose")
+    public static let PlayerKitDidClose = Notification.Name("PlayerKitDidClose")
+    public static let PlayerKitNextItem = Notification.Name("PlayerKitNextItem")
+    public static let PlayerKitPrevItem = Notification.Name("PlayerKitPrevItem")
 }
