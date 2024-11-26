@@ -117,28 +117,19 @@ public class PlayerManager: ObservableObject {
     
     // Loads a media URL into the current player
     private func load(url: URL, lastPosition: Double? = nil) {
-        shouldDissmiss = false
-        isVideoEnded = false
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         userInteracted()
     }
     
     public func videoDidEnd() {
-        guard duration != 0 else { return }
+        guard duration != 0, currentTime + 1 > duration else { return }
         if contentType == .movie {
             // Dismiss the player immediately for movies
             isVideoEnded = true
             shouldDissmiss = true
         } else {
             // Check if there are more episodes to play
-            if currentPlayerItemIndex <= playerItems.count - 1 {
-                // Play the next episode
-                playNext()
-            } else {
-                // No more episodes, dismiss the player
-                isVideoEnded = true
-                shouldDissmiss = true
-            }
+            playNext()
         }
     }
     
@@ -344,6 +335,9 @@ extension PlayerManager {
     public func resetPlayer() {
         currentPlayer?.stop()
         currentPlayer = nil
+        
+        isVideoEnded = false
+        shouldDissmiss = false
         
         selectedAudioTrackIndex = nil
         selectedSubtitleTrackIndex = nil

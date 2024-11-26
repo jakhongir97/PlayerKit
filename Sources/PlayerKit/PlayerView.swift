@@ -4,8 +4,9 @@ public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @Environment(\.presentationMode) var presentationMode
 
-    public init(playerItem: PlayerItem) {
+    public init(playerItem: PlayerItem? = nil) {
         playerManager.setPlayer()
+        guard let playerItem = playerItem else { return }
         playerManager.load(playerItem: playerItem)
     }
     
