@@ -146,6 +146,15 @@ extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
         DispatchQueue.main.async { [weak self] in
             self?.pipController?.invalidatePlaybackState()
+            PlayerManager.shared.refreshTrackInfo()
+        }
+        switch newState {
+        case .stopped:
+            DispatchQueue.main.async {
+                PlayerManager.shared.videoDidEnd()
+            }
+        default:
+            break
         }
     }
     
@@ -205,9 +214,7 @@ extension VLCPlayerWrapper: ViewRenderingProtocol {
         return playerView
     }
     
-    public func setupPiP() {
-        pipController?.startPictureInPicture()
-    }
+    public func setupPiP() {}
     
     public func startPiP() {
         pipController?.startPictureInPicture()
