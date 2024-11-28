@@ -2,25 +2,15 @@ import VLCKit
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
-    private var playerView: VLCPlayerView?
+    private let playerView = UIView()
+    private weak var pipController: VLCPictureInPictureWindowControlling?
 
     public override init() {
         self.player = VLCMediaPlayer()
         super.init()
 
-        // Register for VLC state and time change notifications
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(mediaPlayerStateChanged(_:)),
-                                               name: VLCMediaPlayer.stateChangedNotification,
-                                               object: player)
-        NotificationCenter.default.addObserver(self,
-                                               selector: #selector(mediaPlayerTimeChanged(_:)),
-                                               name: VLCMediaPlayer.timeChangedNotification,
-                                               object: player)
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
+        player.delegate = self
+        player.drawable = self
     }
 }
 
@@ -76,28 +66,24 @@ extension VLCPlayerWrapper: TimeControlProtocol {
 // MARK: - TrackSelectionProtocol
 extension VLCPlayerWrapper: TrackSelectionProtocol {
     public var availableAudioTracks: [String] {
-        guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.compactMap { track in
+        return player.audioTracks.compactMap { track in
             track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
         }
     }
 
     public var availableSubtitles: [String] {
-        guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return [] }
-        return tracks.compactMap { track in
+        return player.textTracks.compactMap { track in
             track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
         }
     }
     
     public var currentAudioTrack: String? {
-        guard let tracks = player.audioTracks as? [VLCMediaPlayer.Track] else { return nil }
-        let selectedTrack = tracks.first(where: { $0.isSelected })
+        let selectedTrack = player.audioTracks.first(where: { $0.isSelected })
         return selectedTrack?.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
     }
     
     public var currentSubtitleTrack: String? {
-        guard let tracks = player.textTracks as? [VLCMediaPlayer.Track] else { return nil }
-        let selectedTrack = tracks.first(where: { $0.isSelected })
+        let selectedTrack = player.textTracks.first(where: { $0.isSelected })
         return selectedTrack?.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
     }
     
@@ -156,27 +142,59 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
 }
 
 // MARK: - VLCMediaPlayer Notification Handlers
-extension VLCPlayerWrapper {
-    @objc private func mediaPlayerStateChanged(_ notification: Notification) {
-        guard let player = notification.object as? VLCMediaPlayer else { return }
-        switch player.state {
-        case .playing:
-            // When the player starts playing, tracks should be available
-            DispatchQueue.main.async {
-                PlayerManager.shared.refreshTrackInfo()
-            }
-        case .stopped:
-            // Video ended; notify PlayerManager
-            DispatchQueue.main.async {
-                PlayerManager.shared.videoDidEnd()
-            }
-        default:
-            break
+extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
+    public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
+        DispatchQueue.main.async { [weak self] in
+            self?.pipController?.invalidatePlaybackState()
         }
     }
+    
+    public func mediaPlayerTimeChanged(_ aNotification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            self?.pipController?.invalidatePlaybackState()
+        }
+    }
+}
 
-    @objc private func mediaPlayerTimeChanged(_ notification: Notification) {
-        guard let player = notification.object as? VLCMediaPlayer else { return }
+// MARK: - VLCPictureInPictureMediaControlling
+extension VLCPlayerWrapper: VLCPictureInPictureMediaControlling {
+    public func mediaTime() -> Int64 {
+        return player.time.value?.int64Value ?? 0
+    }
+    
+    public func mediaLength() -> Int64 {
+        return player.media?.length.value?.int64Value ?? 0
+    }
+
+    public func seek(by offset: Int64) {
+    }
+
+    public func isMediaPlaying() -> Bool {
+        return player.isPlaying
+    }
+}
+
+// MARK: - VLCPictureInPictureDrawable
+extension VLCPlayerWrapper: VLCPictureInPictureDrawable {
+    public func mediaController() -> (any VLCPictureInPictureMediaControlling)! {
+        return self
+    }
+    
+    public func pictureInPictureReady() -> (((any VLCPictureInPictureWindowControlling)?) -> Void)! {
+        return { [weak self] controller in
+            self?.pipController = controller
+        }
+    }
+}
+
+// MARK: - VLCDrawable
+extension VLCPlayerWrapper: VLCDrawable {
+    public func addSubview(_ view: UIView) {
+        playerView.addSubview(view)
+    }
+
+    public func bounds() -> CGRect {
+        return playerView.bounds
     }
 }
 
@@ -184,27 +202,19 @@ extension VLCPlayerWrapper {
 extension VLCPlayerWrapper: ViewRenderingProtocol {
     // Implement getPlayerView to return the cached UIView
     public func getPlayerView() -> UIView {
-        if let playerView = playerView {
-            return playerView
-        }
-        
-        let newPlayerView = VLCPlayerView()
-        newPlayerView.player = player
-        playerView = newPlayerView
-        return newPlayerView
+        return playerView
     }
     
-    
     public func setupPiP() {
-        
+        pipController?.startPictureInPicture()
     }
     
     public func startPiP() {
-        
+        pipController?.startPictureInPicture()
     }
     
     public func stopPiP() {
-        
+        pipController?.stopPictureInPicture()
     }
 }
 

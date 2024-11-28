@@ -140,7 +140,6 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             player = AVPlayer(playerItem: playerItem)
             player?.allowsExternalPlayback = true
         }
-        player?.allowsExternalPlayback = true
         
         // Observe the player item's status
         playerItemStatusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in

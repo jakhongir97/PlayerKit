@@ -57,12 +57,6 @@ public class PlayerManager: ObservableObject {
     private init() {
         AudioSessionManager.shared.configureAudioSession()
         setupGestureHandling()
-        observeAppLifecycle()
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self, name: UIApplication.didEnterBackgroundNotification, object: nil)
-        NotificationCenter.default.removeObserver(self, name: UIApplication.willEnterForegroundNotification, object: nil)
     }
     
     // MARK: - Player Setup
@@ -346,33 +340,4 @@ extension PlayerManager {
         
         ThumbnailManager.shared.thumbnailImage = nil
     }
-}
-
-extension PlayerManager {
-    private func observeAppLifecycle() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAppDidEnterBackground),
-            name: UIApplication.didEnterBackgroundNotification,
-            object: nil
-        )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleAppWillEnterForeground),
-            name: UIApplication.willEnterForegroundNotification,
-            object: nil
-        )
-    }
-
-    @objc private func handleAppDidEnterBackground() {
-        guard selectedPlayerType != .avPlayer else { return }
-        pause()
-    }
-
-    @objc private func handleAppWillEnterForeground() {
-        guard selectedPlayerType != .avPlayer else { return }
-        play()
-    }
-
 }

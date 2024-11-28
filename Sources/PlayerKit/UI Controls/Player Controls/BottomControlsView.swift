@@ -15,9 +15,7 @@ struct BottomControlsView: View {
                 MediaOptionsMenu()
                 BufferingIndicatorView(playerManager: playerManager)
                 Spacer()
-                if playerManager.selectedPlayerType == .avPlayer {
-                    PiPButton()
-                }
+                PiPButton()
                 if isIPhone {
                     RotateButtonView()
                 }
