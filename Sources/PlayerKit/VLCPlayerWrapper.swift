@@ -57,9 +57,10 @@ extension VLCPlayerWrapper: TimeControlProtocol {
     }
     
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
-        let position = Double(time / duration)
-        player.position = position
-        completion?(true)  // Call the completion immediately since VLC does not have asynchronous seeking
+        player.pause()
+        let vlcTime = VLCTime(number: NSNumber(value: time * 1000))  // Convert seconds to milliseconds
+        player.time = vlcTime
+        completion?(true)
     }
 }
 
@@ -107,12 +108,13 @@ extension VLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         let media = VLCMedia(url: url)
         player.media = media
-        
-        player.play()
+        player.media?.addOption("-vv")
+        player.media?.addOption("--network-caching=10000")
         // Seek to last position if provided
         if let position = lastPosition {
             player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds
         }
+        player.play()
     }
 }
 
@@ -144,8 +146,7 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
 // MARK: - VLCMediaPlayer Notification Handlers
 extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
-        DispatchQueue.main.async { [weak self] in
-            self?.pipController?.invalidatePlaybackState()
+        DispatchQueue.main.async {
             PlayerManager.shared.refreshTrackInfo()
         }
         switch newState {
@@ -159,9 +160,6 @@ extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     }
     
     public func mediaPlayerTimeChanged(_ aNotification: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            self?.pipController?.invalidatePlaybackState()
-        }
     }
 }
 
