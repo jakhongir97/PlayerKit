@@ -2,7 +2,7 @@ import VLCKit
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
-    private let playerView = UIView()
+    private let playerView = VLCPlayerView()
     private weak var pipController: VLCPictureInPictureWindowControlling?
 
     public override init() {
@@ -57,7 +57,6 @@ extension VLCPlayerWrapper: TimeControlProtocol {
     }
     
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
-        player.pause()
         let vlcTime = VLCTime(number: NSNumber(value: time * 1000))  // Convert seconds to milliseconds
         player.time = vlcTime
         completion?(true)
@@ -109,9 +108,7 @@ extension VLCPlayerWrapper: MediaLoadingProtocol {
         let media = VLCMedia(url: url)
         player.media = media
         player.media?.delegate = self
-        player.media?.addOption("-vv")
-        player.media?.addOption("--network-caching=1000")
-        player.media?.addOption("--avcodec-hw=any")
+        
         // Seek to last position if provided
         if let position = lastPosition {
             player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds
