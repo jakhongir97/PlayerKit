@@ -108,13 +108,30 @@ extension VLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         let media = VLCMedia(url: url)
         player.media = media
+        player.media?.delegate = self
         player.media?.addOption("-vv")
-        player.media?.addOption("--network-caching=10000")
+        player.media?.addOption("--network-caching=1000")
+        player.media?.addOption("--avcodec-hw=any")
         // Seek to last position if provided
         if let position = lastPosition {
             player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds
         }
         player.play()
+    }
+}
+
+// MARK: - VLCMediaDelegate
+extension VLCPlayerWrapper: VLCMediaDelegate {
+    public func mediaDidFinishParsing(_ aMedia: VLCMedia) {
+        DispatchQueue.main.async { [weak self] in
+            PlayerManager.shared.isMediaReady = true
+        }
+    }
+    
+    public func mediaMetaDataDidChange(_ aMedia: VLCMedia) {
+        DispatchQueue.main.async {
+            PlayerManager.shared.refreshTrackInfo()
+        }
     }
 }
 
@@ -146,9 +163,6 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
 // MARK: - VLCMediaPlayer Notification Handlers
 extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
-        DispatchQueue.main.async {
-            PlayerManager.shared.refreshTrackInfo()
-        }
         switch newState {
         case .stopped:
             DispatchQueue.main.async {

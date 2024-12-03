@@ -147,7 +147,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             if item.status == .readyToPlay {
                 // Tracks are now available; refresh track info
                 DispatchQueue.main.async {
-                    PlayerManager.shared.refreshTrackInfo()
+                    PlayerManager.shared.isMediaReady = true
                 }
             }
         }

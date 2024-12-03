@@ -35,6 +35,14 @@ public class PlayerManager: ObservableObject {
             playbackManager?.stop()
         }
     }
+    @Published public var isMediaReady: Bool = false {
+        didSet {
+            if isMediaReady {
+                refreshTrackInfo()
+                NotificationCenter.default.post(name: .PlayerKitMediaReady, object: nil)
+            }
+        }
+    }
     @Published var isVideoEnded: Bool = false
     
     // Managers for different responsibilities
@@ -330,6 +338,7 @@ extension PlayerManager {
         currentPlayer?.stop()
         currentPlayer = nil
         
+        isMediaReady = false
         isVideoEnded = false
         shouldDissmiss = false
         
