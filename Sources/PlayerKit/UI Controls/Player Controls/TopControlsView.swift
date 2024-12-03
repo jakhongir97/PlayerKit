@@ -11,12 +11,14 @@ struct TopControlsView: View {
                     Text(title)
                         .font(.title)
                         .foregroundColor(.white)
+                        .lineLimit(1)
                 }
                 
                 if let description = playerManager.playerItem?.description {
                     Text(description)
                         .font(.subheadline)
                         .foregroundColor(.gray)
+                        .lineLimit(1)
                 }
             }
             Spacer()

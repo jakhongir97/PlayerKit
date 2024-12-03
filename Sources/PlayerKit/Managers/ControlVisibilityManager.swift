@@ -20,12 +20,14 @@ class ControlVisibilityManager {
 
     /// Shows the controls and starts the auto-hide timer
     func showControls() {
+        NotificationCenter.default.post(name: .PlayerKitControlsHidden, object: false)
         playerManager?.areControlsVisible = true
         startAutoHideTimer()
     }
 
     /// Hides the controls and stops the auto-hide timer
     func hideControls() {
+        NotificationCenter.default.post(name: .PlayerKitControlsHidden, object: true)
         playerManager?.areControlsVisible = false
         stopAutoHideTimer()
     }
