@@ -154,25 +154,17 @@ extension VLCPlayerWrapper: VLCMediaDelegate {
 // MARK: - GestureHandlingProtocol
 extension VLCPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
-        let screenWidth = UIScreen.main.bounds.width
-        let screenHeight = UIScreen.main.bounds.height
-
-        let aspectRatioString: String
-        if scale > 1 {
-            let gcd = greatestCommonDivisor(Int(screenWidth), Int(screenHeight))
-            aspectRatioString = "\(Int(screenWidth) / gcd):\(Int(screenHeight) / gcd)"
-        } else {
-            aspectRatioString = ""
-        }
-
         DispatchQueue.main.async { [weak self] in
-            self?.player.videoAspectRatio = aspectRatioString
+            guard let self = self else { return }
+            
+            self.player.videoAspectRatio = scale < 1 ? nil : self.currentAspectRatio()
         }
-        print("New aspect ratio: \(aspectRatioString)")
     }
 
-    private func greatestCommonDivisor(_ a: Int, _ b: Int) -> Int {
-        return b == 0 ? a : greatestCommonDivisor(b, a % b)
+    private func currentAspectRatio() -> String {
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+        return "\(Int(screenWidth)):\(Int(screenHeight))"
     }
 }
 

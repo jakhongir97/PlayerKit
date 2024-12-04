@@ -16,6 +16,7 @@ struct PlaybackSpeedMenu: View {
             Image(systemName: "gauge.with.needle.fill")
                 .font(.system(size: 25, weight: .bold))
                 .foregroundColor(.white)
+                .contentShape(Rectangle())
         }
         .onTapGesture {
             viewModel.userInteracted()

@@ -21,9 +21,9 @@ struct AudioMenu: View {
             }
         } label: {
             Image(systemName: "waveform.circle.fill")
-                .resizable()
+                .font(.system(size: 25, weight: .bold))
                 .foregroundColor(.white)
-                .frame(width: 25, height: 25)
+                .contentShape(Rectangle())
         }
         .onTapGesture {
             viewModel.userInteracted()
