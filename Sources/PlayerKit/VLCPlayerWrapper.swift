@@ -72,8 +72,12 @@ extension VLCPlayerWrapper: TimeControlProtocol {
     }
     
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
-        let vlcTime = VLCTime(number: NSNumber(value: time * 1000))  // Convert seconds to milliseconds
-        player.time = vlcTime
+        guard duration > 0 else {
+            completion?(false)
+            return
+        }
+        let position = Float(time / duration)
+        player.position = Double(position)
         completion?(true)
     }
 }
@@ -215,7 +219,6 @@ extension VLCPlayerWrapper: VLCPictureInPictureDrawable {
     
     public func pictureInPictureReady() -> (((any VLCPictureInPictureWindowControlling)?) -> Void)! {
         return { [weak self] controller in
-            print("workkkkkkkk ready")
             self?.pipController = controller
         }
     }
