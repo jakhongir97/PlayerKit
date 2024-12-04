@@ -11,7 +11,22 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
 
         player.delegate = self
         player.drawable = self
+        
+        setupObservers()
     }
+    
+    func setupObservers() {
+        NotificationCenter.default.addObserver(self, selector: #selector(handleDeviceLock), name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+    }
+
+    @objc private func handleDeviceLock() {
+        player.pause()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+    }
+
 }
 
 // MARK: - PlaybackControlProtocol
@@ -200,6 +215,7 @@ extension VLCPlayerWrapper: VLCPictureInPictureDrawable {
     
     public func pictureInPictureReady() -> (((any VLCPictureInPictureWindowControlling)?) -> Void)! {
         return { [weak self] controller in
+            print("workkkkkkkk ready")
             self?.pipController = controller
         }
     }
