@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AudioMenu: View {
     @ObservedObject var viewModel = AudioMenuViewModel()
-
+    
     var body: some View {
         Menu {
             Section(header: Text("Audio Tracks")) { // Section title
@@ -11,8 +11,8 @@ struct AudioMenu: View {
                         viewModel.selectAudioTrack(index: index)
                     }) {
                         HStack {
-                            Text(viewModel.availableAudioTracks[index])
-                            if viewModel.selectedAudioTrackIndex == index {
+                            Text(viewModel.availableAudioTracks[index].name)
+                            if viewModel.selectedAudioIndex == index {
                                 Image(systemName: "checkmark")
                             }
                         }

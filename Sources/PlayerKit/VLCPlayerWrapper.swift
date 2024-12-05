@@ -84,37 +84,49 @@ extension VLCPlayerWrapper: TimeControlProtocol {
 
 // MARK: - TrackSelectionProtocol
 extension VLCPlayerWrapper: TrackSelectionProtocol {
-    public var availableAudioTracks: [String] {
+    public var availableAudioTracks: [TrackInfo] {
         return player.audioTracks.compactMap { track in
-            track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+            let id = track.trackId
+            let name = track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+            let languageCode = track.language
+            return TrackInfo(id: id, name: name, languageCode: languageCode)
         }
     }
-
-    public var availableSubtitles: [String] {
+    
+    public var availableSubtitles: [TrackInfo] {
         return player.textTracks.compactMap { track in
-            track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+            let id = track.trackId
+            let name = track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+            let languageCode = track.language
+            return TrackInfo(id: id, name: name, languageCode: languageCode)
         }
     }
     
-    public var currentAudioTrack: String? {
-        let selectedTrack = player.audioTracks.first(where: { $0.isSelected })
-        return selectedTrack?.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+    public var currentAudioTrack: TrackInfo? {
+        guard let selectedTrack = player.audioTracks.first(where: { $0.isSelected }) else { return nil }
+        let id = selectedTrack.trackId
+        let name = selectedTrack.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+        let languageCode = selectedTrack.language
+        return TrackInfo(id: id, name: name, languageCode: languageCode)
     }
     
-    public var currentSubtitleTrack: String? {
-        let selectedTrack = player.textTracks.first(where: { $0.isSelected })
-        return selectedTrack?.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+    public var currentSubtitleTrack: TrackInfo? {
+        guard let selectedTrack = player.textTracks.first(where: { $0.isSelected }) else { return nil }
+        let id = selectedTrack.trackId
+        let name = selectedTrack.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
+        let languageCode = selectedTrack.language
+        return TrackInfo(id: id, name: name, languageCode: languageCode)
     }
     
-    public func selectAudioTrack(index: Int) {
-        guard index < player.audioTracks.count else { return }
-        player.audioTracks[index].isSelected = true
+    public func selectAudioTrack(withID id: String) {
+        if let track = player.audioTracks.first(where: { $0.trackId == id }) {
+            track.isSelected = true
+        }
     }
-
-    public func selectSubtitle(index: Int?) {
-        if let index = index {
-            guard index < player.textTracks.count else { return }
-            player.textTracks[index].isSelected = true
+    
+    public func selectSubtitle(withID id: String?) {
+        if let id = id, let track = player.textTracks.first(where: { $0.trackId == id }) {
+            track.isSelected = true
         } else {
             player.deselectAllTextTracks()
         }
@@ -145,9 +157,6 @@ extension VLCPlayerWrapper: VLCMediaDelegate {
     }
     
     public func mediaMetaDataDidChange(_ aMedia: VLCMedia) {
-        DispatchQueue.main.async {
-            PlayerManager.shared.refreshTrackInfo()
-        }
     }
 }
 
@@ -171,6 +180,9 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
 // MARK: - VLCMediaPlayer Notification Handlers
 extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
+        DispatchQueue.main.async {
+            PlayerManager.shared.refreshTrackInfo()
+        }
         switch newState {
         case .stopped:
             DispatchQueue.main.async {

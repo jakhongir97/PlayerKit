@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SubtitleMenu: View {
     @ObservedObject var viewModel = SubtitleMenuViewModel()
-
+    
     var body: some View {
         Menu {
             Section(header: Text("Subtitles")) {
@@ -11,8 +11,8 @@ struct SubtitleMenu: View {
                     viewModel.selectSubtitle(index: nil)
                 }) {
                     HStack {
-                        Text("Turn off")
-                        if viewModel.selectedSubtitleTrackIndex == nil {
+                        Text("Turn Off")
+                        if viewModel.selectedSubtitleIndex == nil {
                             Image(systemName: "checkmark")
                         }
                     }
@@ -24,8 +24,8 @@ struct SubtitleMenu: View {
                         viewModel.selectSubtitle(index: index)
                     }) {
                         HStack {
-                            Text(viewModel.availableSubtitles[index])
-                            if viewModel.selectedSubtitleTrackIndex == index {
+                            Text(viewModel.availableSubtitles[index].name)
+                            if viewModel.selectedSubtitleIndex == index {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -43,3 +43,4 @@ struct SubtitleMenu: View {
         }
     }
 }
+

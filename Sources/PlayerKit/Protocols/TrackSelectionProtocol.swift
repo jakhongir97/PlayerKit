@@ -8,13 +8,13 @@
 import Foundation
 
 public protocol TrackSelectionProtocol: AnyObject {
-    var availableAudioTracks: [String] { get }
-    var availableSubtitles: [String] { get }
-    
-    var currentAudioTrack: String? { get }
-    var currentSubtitleTrack: String? { get }
+    var availableAudioTracks: [TrackInfo] { get }
+    var availableSubtitles: [TrackInfo] { get }
 
-    func selectAudioTrack(index: Int)
-    func selectSubtitle(index: Int?)
+    var currentAudioTrack: TrackInfo? { get }
+    var currentSubtitleTrack: TrackInfo? { get }
+
+    func selectAudioTrack(withID id: String)
+    func selectSubtitle(withID id: String?)
 }
 

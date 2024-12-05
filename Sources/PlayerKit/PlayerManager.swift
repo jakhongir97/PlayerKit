@@ -19,11 +19,13 @@ public class PlayerManager: ObservableObject {
     @Published var areControlsVisible: Bool = true
     @Published var isLocked: Bool = false
     
-    // Track indices
-    @Published var selectedAudioTrackIndex: Int?
-    @Published var selectedSubtitleTrackIndex: Int?
-    @Published var availableAudioTracks: [String] = []
-    @Published var availableSubtitles: [String] = []
+    // Track identifiers
+    @Published var selectedAudioTrackID: String?
+    @Published var selectedSubtitleTrackID: String?
+    @Published var availableAudioTracks: [TrackInfo] = []
+    @Published var availableSubtitles: [TrackInfo] = []
+    private var savedAudioTrackID: String?
+    private var savedSubtitleTrackID: String?
     
     @Published var selectedPlayerType: PlayerType = .vlcPlayer
     @Published var playerItem: PlayerItem?
@@ -138,6 +140,7 @@ public class PlayerManager: ObservableObject {
     // MARK: - Player Items Navigation
     public func playNext() {
         NotificationCenter.default.post(name: .PlayerKitNextItem, object: nil)
+        saveCurrentTracks()
         guard !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count - 1 else { return }
         currentPlayerItemIndex += 1
         loadPlayerItem(at: currentPlayerItemIndex)
@@ -145,6 +148,7 @@ public class PlayerManager: ObservableObject {
     
     public func playPrevious() {
         NotificationCenter.default.post(name: .PlayerKitPrevItem, object: nil)
+        saveCurrentTracks()
         guard !playerItems.isEmpty, currentPlayerItemIndex > 0 else { return }
         currentPlayerItemIndex -= 1
         loadPlayerItem(at: currentPlayerItemIndex)
@@ -153,7 +157,6 @@ public class PlayerManager: ObservableObject {
     private func loadPlayerItem(at index: Int) {
         let playerItem = playerItems[index]
         load(playerItem: playerItem)
-        
     }
 }
 
@@ -217,35 +220,42 @@ extension PlayerManager {
     public func refreshTrackInfo() {
         availableAudioTracks = trackManager?.availableAudioTracks ?? []
         availableSubtitles = trackManager?.availableSubtitles ?? []
-
-        selectedAudioTrackIndex = indexOfCurrentTrack(
-            currentTrack: trackManager?.currentAudioTrack,
-            availableTracks: availableAudioTracks
-        )
         
-        selectedSubtitleTrackIndex = indexOfCurrentTrack(
-            currentTrack: trackManager?.currentSubtitleTrack,
-            availableTracks: availableSubtitles
-        )
+        selectedAudioTrackID = trackManager?.currentAudioTrack?.id
+        selectedSubtitleTrackID = trackManager?.currentSubtitleTrack?.id
+        
+        applySavedTrackIdentifiers()
     }
-
-    // Helper function to find the index of the current track
-    private func indexOfCurrentTrack(currentTrack: String?, availableTracks: [String]) -> Int? {
-        guard let currentTrack = currentTrack else { return nil }
-        return availableTracks.firstIndex(of: currentTrack)
-    }
-
     
-    public func selectAudioTrack(index: Int) {
-        selectedAudioTrackIndex = index
-        trackManager?.selectAudioTrack(index: index)
+    public func selectAudioTrack(withID id: String) {
+        selectedAudioTrackID = id
+        trackManager?.selectAudioTrack(withID: id)
         userInteracted()
     }
     
-    public func selectSubtitle(index: Int?) {
-        selectedSubtitleTrackIndex = index
-        trackManager?.selectSubtitle(index: index)
+    public func selectSubtitle(withID id: String?) {
+        selectedSubtitleTrackID = id
+        trackManager?.selectSubtitle(withID: id)
         userInteracted()
+    }
+    
+    private func saveCurrentTracks() {
+        savedAudioTrackID = selectedAudioTrackID
+        savedSubtitleTrackID = selectedSubtitleTrackID
+    }
+    
+    private func applySavedTrackIdentifiers() {
+        if let audioID = savedAudioTrackID,
+           availableAudioTracks.contains(where: { $0.id == audioID }) {
+            selectAudioTrack(withID: audioID)
+            savedAudioTrackID = nil
+        }
+        
+        if let subtitleID = savedSubtitleTrackID,
+           availableSubtitles.contains(where: { $0.id == subtitleID }) {
+            selectSubtitle(withID: subtitleID)
+            savedSubtitleTrackID = nil
+        }
     }
 }
 
@@ -273,7 +283,6 @@ extension PlayerManager {
     public func stopChromecast() {
         castManager.stopCast()
     }
-    
 }
 
 // MARK: - Gesture Handling
@@ -295,7 +304,6 @@ extension PlayerManager {
 
 // MARK: - Control Visibility Management
 extension PlayerManager {
-    
     /// Called whenever the user interacts, showing controls and resetting the auto-hide timer
     public func userInteracted() {
         guard !gestureManager.isMultipleTapping else { return }
@@ -311,7 +319,6 @@ extension PlayerManager {
         }
     }
 }
-
 
 // MARK: - Player State Observation
 extension PlayerManager {
@@ -342,8 +349,8 @@ extension PlayerManager {
         isVideoEnded = false
         shouldDissmiss = false
         
-        selectedAudioTrackIndex = nil
-        selectedSubtitleTrackIndex = nil
+        selectedAudioTrackID = nil
+        selectedSubtitleTrackID = nil
         availableAudioTracks = []
         availableSubtitles = []
         

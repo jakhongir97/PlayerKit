@@ -83,49 +83,70 @@ extension AVPlayerWrapper: TimeControlProtocol {
 }
 
 // MARK: - TrackSelectionProtocol
-// AVPlayerWrapper.swift
 extension AVPlayerWrapper: TrackSelectionProtocol {
-    public var availableAudioTracks: [String] {
+    public var availableAudioTracks: [TrackInfo] {
         guard let asset = player?.currentItem?.asset,
               let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return [] }
-        return audioGroup.options.map { $0.displayName }
-    }
-
-    public var availableSubtitles: [String] {
-        guard let asset = player?.currentItem?.asset,
-              let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return [] }
-        return subtitleGroup.options.map { $0.displayName }
-    }
-
-    public var currentAudioTrack: String? {
-        guard let asset = player?.currentItem?.asset,
-              let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return nil }
-
-        let selectedOption = player?.currentItem?.selectedMediaOption(in: audioGroup)
-        return selectedOption?.displayName
+        return audioGroup.options.map { option in
+            let id = option.extendedLanguageTag ?? option.locale?.identifier ?? UUID().uuidString
+            let name = option.displayName
+            let languageCode = option.extendedLanguageTag ?? option.locale?.languageCode
+            return TrackInfo(id: id, name: name, languageCode: languageCode)
+        }
     }
     
-    public var currentSubtitleTrack: String? {
+    public var availableSubtitles: [TrackInfo] {
         guard let asset = player?.currentItem?.asset,
-              let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return nil }
-
-        let selectedOption = player?.currentItem?.selectedMediaOption(in: subtitleGroup)
-        return selectedOption?.displayName
+              let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return [] }
+        return subtitleGroup.options.map { option in
+            let id = option.extendedLanguageTag ?? option.locale?.identifier ?? UUID().uuidString
+            let name = option.displayName
+            let languageCode = option.extendedLanguageTag ?? option.locale?.languageCode
+            return TrackInfo(id: id, name: name, languageCode: languageCode)
+        }
     }
-
-    public func selectAudioTrack(index: Int) {
-        guard let audioGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
-              index < audioGroup.options.count else { return }
-        player?.currentItem?.select(audioGroup.options[index], in: audioGroup)
+    
+    public var currentAudioTrack: TrackInfo? {
+        guard let asset = player?.currentItem?.asset,
+              let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
+              let selectedOption = player?.currentItem?.selectedMediaOption(in: audioGroup) else { return nil }
+        let id = selectedOption.extendedLanguageTag ?? selectedOption.locale?.identifier ?? UUID().uuidString
+        let name = selectedOption.displayName
+        let languageCode = selectedOption.extendedLanguageTag ?? selectedOption.locale?.languageCode
+        return TrackInfo(id: id, name: name, languageCode: languageCode)
     }
-
-    public func selectSubtitle(index: Int?) {
-        guard let subtitleGroup = player?.currentItem?.asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return }
-        
-        if let index = index, index < subtitleGroup.options.count {
-            player?.currentItem?.select(subtitleGroup.options[index], in: subtitleGroup)
+    
+    public var currentSubtitleTrack: TrackInfo? {
+        guard let asset = player?.currentItem?.asset,
+              let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
+              let selectedOption = player?.currentItem?.selectedMediaOption(in: subtitleGroup) else { return nil }
+        let id = selectedOption.extendedLanguageTag ?? selectedOption.locale?.identifier ?? UUID().uuidString
+        let name = selectedOption.displayName
+        let languageCode = selectedOption.extendedLanguageTag ?? selectedOption.locale?.languageCode
+        return TrackInfo(id: id, name: name, languageCode: languageCode)
+    }
+    
+    public func selectAudioTrack(withID id: String) {
+        guard let asset = player?.currentItem?.asset,
+              let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
+              let option = audioGroup.options.first(where: {
+                  $0.extendedLanguageTag == id ||
+                  $0.locale?.identifier == id
+              }) else { return }
+        player?.currentItem?.select(option, in: audioGroup)
+    }
+    
+    public func selectSubtitle(withID id: String?) {
+        guard let asset = player?.currentItem?.asset,
+              let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return }
+        if let id = id,
+           let option = subtitleGroup.options.first(where: {
+               $0.extendedLanguageTag == id ||
+               $0.locale?.identifier == id
+           }) {
+            player?.currentItem?.select(option, in: subtitleGroup)
         } else {
-            player?.currentItem?.select(nil, in: subtitleGroup) // Deselects all subtitles
+            player?.currentItem?.select(nil, in: subtitleGroup)
         }
     }
 }

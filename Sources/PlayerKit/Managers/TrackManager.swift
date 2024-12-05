@@ -14,18 +14,18 @@ class TrackManager {
         self.player = player
     }
 
-    var availableAudioTracks: [String] { player.availableAudioTracks }
-    var availableSubtitles: [String] { player.availableSubtitles }
-    
-    var currentAudioTrack: String? { player.currentAudioTrack }
-    var currentSubtitleTrack: String? { player.currentSubtitleTrack }
+    var availableAudioTracks: [TrackInfo] { player.availableAudioTracks }
+    var availableSubtitles: [TrackInfo] { player.availableSubtitles }
 
-    func selectAudioTrack(index: Int) {
-        player.selectAudioTrack(index: index)
+    var currentAudioTrack: TrackInfo? { player.currentAudioTrack }
+    var currentSubtitleTrack: TrackInfo? { player.currentSubtitleTrack }
+
+    func selectAudioTrack(withID id: String) {
+        player.selectAudioTrack(withID: id)
     }
 
-    func selectSubtitle(index: Int?) {
-        player.selectSubtitle(index: index)
+    func selectSubtitle(withID id: String?) {
+        player.selectSubtitle(withID: id)
     }
 
     func setPlayer(_ player: PlayerProtocol) {
