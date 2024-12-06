@@ -86,7 +86,7 @@ extension VLCPlayerWrapper: TimeControlProtocol {
 extension VLCPlayerWrapper: TrackSelectionProtocol {
     public var availableAudioTracks: [TrackInfo] {
         return player.audioTracks.compactMap { track in
-            let id = track.trackId
+            let id = track.trackName
             let name = track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
             let languageCode = track.language
             return TrackInfo(id: id, name: name, languageCode: languageCode)
@@ -95,7 +95,7 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
     
     public var availableSubtitles: [TrackInfo] {
         return player.textTracks.compactMap { track in
-            let id = track.trackId
+            let id = track.trackName
             let name = track.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
             let languageCode = track.language
             return TrackInfo(id: id, name: name, languageCode: languageCode)
@@ -104,7 +104,7 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
     
     public var currentAudioTrack: TrackInfo? {
         guard let selectedTrack = player.audioTracks.first(where: { $0.isSelected }) else { return nil }
-        let id = selectedTrack.trackId
+        let id = selectedTrack.trackName
         let name = selectedTrack.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
         let languageCode = selectedTrack.language
         return TrackInfo(id: id, name: name, languageCode: languageCode)
@@ -112,20 +112,20 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
     
     public var currentSubtitleTrack: TrackInfo? {
         guard let selectedTrack = player.textTracks.first(where: { $0.isSelected }) else { return nil }
-        let id = selectedTrack.trackId
+        let id = selectedTrack.trackName
         let name = selectedTrack.trackName.split(separator: " ", maxSplits: 1).dropFirst().joined(separator: " ")
         let languageCode = selectedTrack.language
         return TrackInfo(id: id, name: name, languageCode: languageCode)
     }
     
     public func selectAudioTrack(withID id: String) {
-        if let track = player.audioTracks.first(where: { $0.trackId == id }) {
+        if let track = player.audioTracks.first(where: { $0.trackName == id }) {
             track.isSelected = true
         }
     }
     
     public func selectSubtitle(withID id: String?) {
-        if let id = id, let track = player.textTracks.first(where: { $0.trackId == id }) {
+        if let id = id, let track = player.textTracks.first(where: { $0.trackName == id }) {
             track.isSelected = true
         } else {
             player.deselectAllTextTracks()
