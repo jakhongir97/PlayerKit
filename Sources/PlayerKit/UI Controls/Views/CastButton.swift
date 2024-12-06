@@ -5,7 +5,11 @@ import GoogleCast
 struct CastButton: UIViewRepresentable {
     func makeUIView(context: Context) -> UIButton {
         let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: "airplayvideo"), for: .normal)
+        
+        let largeConfig = UIImage.SymbolConfiguration(pointSize: 30, weight: .bold, scale: .small)
+        let largeImage = UIImage(systemName: "airplayvideo", withConfiguration: largeConfig)
+        button.setImage(largeImage, for: .normal)
+        
         button.tintColor = .white
         setupCastButton(for: button)
         return button

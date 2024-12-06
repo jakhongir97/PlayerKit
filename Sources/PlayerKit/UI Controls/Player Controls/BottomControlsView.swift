@@ -10,7 +10,7 @@ struct BottomControlsView: View {
 
     var body: some View {
         VStack() {
-            HStack {
+            HStack() {
                 //PlaybackTimeView(playerManager: playerManager)
                 MediaOptionsMenu()
                 BufferingIndicatorView(playerManager: playerManager)

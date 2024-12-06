@@ -4,7 +4,7 @@ struct MediaOptionsMenu: View {
     @StateObject private var viewModel = MediaOptionsMenuViewModel()
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack() {
             PlaybackSpeedMenu()
 
             // Conditionally include SubtitleMenu

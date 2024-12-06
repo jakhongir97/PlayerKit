@@ -34,8 +34,9 @@ struct SubtitleMenu: View {
             }
         } label: {
             Image(systemName: "captions.bubble.fill")
-                .font(.system(size: 25, weight: .bold))
+                .font(.system(size: 30, weight: .bold))
                 .foregroundColor(.white)
+                .padding(5)
                 .contentShape(Rectangle())
         }
         .onTapGesture {

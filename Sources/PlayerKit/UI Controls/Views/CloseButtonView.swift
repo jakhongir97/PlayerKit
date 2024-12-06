@@ -11,6 +11,8 @@ public struct CloseButtonView: View {
         }) {
             Image(systemName: "xmark.circle.fill")
                 .font(.system(size: 30, weight: .bold))
+                .padding(5)
+                .contentShape(Rectangle())
                 .foregroundColor(.white)
         }
         .padding(.trailing)

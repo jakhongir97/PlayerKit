@@ -11,11 +11,14 @@ struct LockButtonView: View {
     var body: some View {
         Button(action: toggleLock) {
             Image(systemName: "lock.rectangle.fill")
-            .font(.system(size: 25, weight: .bold))
-            .foregroundColor(playerManager.isLocked ? .red : .white)
-            .padding(isIPhone ? 16 : 32)
-            .background(Color.clear)
-            .contentShape(Rectangle())
+                .font(.system(size: 30, weight: .bold))
+                .foregroundColor(.white)
+                .padding(5)
+                .contentShape(Rectangle())
+                .foregroundColor(playerManager.isLocked ? .red : .white)
+                .padding(isIPhone ? 16 : 32)
+                .background(Color.clear)
+                .contentShape(Rectangle())
         }
     }
     
