@@ -12,7 +12,6 @@ struct LockButtonView: View {
         Button(action: toggleLock) {
             Image(systemName: "lock.rectangle.fill")
                 .font(.system(size: 30, weight: .bold))
-                .foregroundColor(.white)
                 .padding(5)
                 .contentShape(Rectangle())
                 .foregroundColor(playerManager.isLocked ? .red : .white)
