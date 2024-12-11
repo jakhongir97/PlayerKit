@@ -11,13 +11,13 @@ let package = Package(
     targets: [
         .binaryTarget(
             name: "VLCKit",
-            url: "https://github.com/jakhongir97/PlayerKit/releases/download/1.0.0/VLCKit.xcframework.zip",
-            checksum: "008a221c89da2d43529eb4e2592d13440a01823d50359195494c8dfa2841d8d3"
+            url: "https://github.com/jakhongir97/PlayerKit/releases/download/1.0.2/VLCKit.xcframework.zip",
+            checksum: "8f9989c70697ab64c378862c1d8f5fa696bb853db7c6294eb113b69e6140fed3"
         ),
         .binaryTarget(
             name: "GoogleCast",
-            url: "https://github.com/jakhongir97/PlayerKit/releases/download/1.0.0/GoogleCast.xcframework.zip",
-            checksum: "dd6f57d4108a81dba2c0f32c412192c330f6508cf109d75aae02eb6f3284b1cb"
+            url: "https://github.com/jakhongir97/PlayerKit/releases/download/1.0.2/GoogleCast.xcframework.zip",
+            checksum: "64a2e1bf3e92bbe82e105cda874a00731406593b13d5112ccf39a8ea53477edd"
         ),
         .target(
             name: "PlayerKit",
