@@ -207,7 +207,12 @@ extension VLCPlayerWrapper: VLCPictureInPictureMediaControlling {
         return player.media?.length.value?.int64Value ?? 0
     }
 
-    public func seek(by offset: Int64) {
+    public func seek(by offset: Int64) async {
+        
+    }
+    
+    public func isMediaSeekable() -> Bool {
+        return player.isSeekable
     }
 
     public func isMediaPlaying() -> Bool {
