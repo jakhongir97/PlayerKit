@@ -59,7 +59,7 @@ public class PlayerManager: ObservableObject {
     }()
     
     private var currentProvider: PlayerProvider?
-    public var currentPlayer: PlayerProtocol?
+    public weak var currentPlayer: PlayerProtocol?
     private var lastPosition: Double = 0
     
     private var cancellables = Set<AnyCancellable>()

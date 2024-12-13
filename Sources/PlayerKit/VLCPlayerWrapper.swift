@@ -160,23 +160,6 @@ extension VLCPlayerWrapper: VLCMediaDelegate {
     }
 }
 
-// MARK: - GestureHandlingProtocol
-extension VLCPlayerWrapper: GestureHandlingProtocol {
-    public func handlePinchGesture(scale: CGFloat) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            self.player.videoAspectRatio = scale < 1 ? nil : self.currentAspectRatio()
-        }
-    }
-
-    private func currentAspectRatio() -> String {
-        let screenWidth = UIScreen.main.bounds.width
-        let screenHeight = UIScreen.main.bounds.height
-        return "\(Int(screenWidth)):\(Int(screenHeight))"
-    }
-}
-
 // MARK: - VLCMediaPlayer Notification Handlers
 extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
@@ -259,6 +242,23 @@ extension VLCPlayerWrapper: ViewRenderingProtocol {
     
     public func stopPiP() {
         pipController?.stopPictureInPicture()
+    }
+}
+
+// MARK: - GestureHandlingProtocol
+extension VLCPlayerWrapper: GestureHandlingProtocol {
+    public func handlePinchGesture(scale: CGFloat) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            self.player.videoAspectRatio = scale < 1 ? nil : self.currentAspectRatio()
+        }
+    }
+
+    private func currentAspectRatio() -> String {
+        let screenWidth = UIScreen.main.bounds.width
+        let screenHeight = UIScreen.main.bounds.height
+        return "\(Int(screenWidth)):\(Int(screenHeight))"
     }
 }
 

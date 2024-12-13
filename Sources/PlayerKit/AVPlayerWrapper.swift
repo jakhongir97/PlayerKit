@@ -21,7 +21,6 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     }
     
     deinit {
-        // Remove observers to prevent memory leaks
         playerItemStatusObserver = nil
         if let observer = playbackEndedObserver {
             NotificationCenter.default.removeObserver(observer)
