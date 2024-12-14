@@ -268,3 +268,10 @@ extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
         
     }
 }
+
+// MARK: - StreamingInfoProtocol
+extension VLCPlayerWrapper: StreamingInfoProtocol {
+    public func fetchStreamingInfo() -> StreamingInfo {
+        return StreamingInfo.placeholder
+    }
+}

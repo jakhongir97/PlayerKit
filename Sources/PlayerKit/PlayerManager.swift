@@ -18,6 +18,7 @@ public class PlayerManager: ObservableObject {
     @Published var isCastingAvailable: Bool = false
     @Published var areControlsVisible: Bool = true
     @Published var isLocked: Bool = false
+    @Published var userInteracting: Bool = false
     
     // Track identifiers
     @Published var selectedAudioTrackID: String?
@@ -317,6 +318,13 @@ extension PlayerManager {
         } else {
             controlVisibilityManager.showControls()
         }
+    }
+}
+
+// MARK: - Streaming Info Updates
+extension PlayerManager {
+    func fetchStreamingInfo() -> StreamingInfo {
+        return currentPlayer?.fetchStreamingInfo() ?? .placeholder
     }
 }
 

@@ -27,6 +27,7 @@ class ControlVisibilityManager {
 
     /// Hides the controls and stops the auto-hide timer
     func hideControls() {
+        guard playerManager?.userInteracting == false else { return showControls() }
         NotificationCenter.default.post(name: .PlayerKitControlsHidden, object: true)
         playerManager?.areControlsVisible = false
         stopAutoHideTimer()

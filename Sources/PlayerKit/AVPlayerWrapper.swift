@@ -259,3 +259,51 @@ extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
         PlayerManager.shared.isPiPActive = false
     }
 }
+
+// MARK: - StreamingInfoProtocol
+extension AVPlayerWrapper: StreamingInfoProtocol {
+    public func fetchStreamingInfo() -> StreamingInfo {
+        guard let playerItem = player?.currentItem else {
+            return StreamingInfo.placeholder
+        }
+        
+        // Extract Buffer Duration
+        let bufferDuration: Double
+        if let timeRange = playerItem.loadedTimeRanges.first?.timeRangeValue {
+            bufferDuration = CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration)
+        } else {
+            bufferDuration = 0
+        }
+        
+        // Extract Bitrates
+        let videoBitrate = playerItem.accessLog()?.events.last?.observedBitrate ?? 0
+        let bitrates = playerItem.accessLog()?.events.compactMap { "\($0.indicatedBitrate / 1_000) Кбит/с" } ?? ["Unknown"]
+        
+        // Extract Resolution
+        let videoWidth = playerItem.presentationSize.width
+        let videoHeight = playerItem.presentationSize.height
+        let resolution = videoWidth > 0 && videoHeight > 0 ? "\(Int(videoWidth))x\(Int(videoHeight))" : "Unknown"
+        
+        // Extract Audio & Video Codec
+        let videoCodec = playerItem.asset.tracks(withMediaType: .video).first?.formatDescriptions
+            .compactMap { CMFormatDescriptionGetMediaSubType($0 as! CMFormatDescription).description }
+            .first ?? "Unknown"
+        
+        let audioCodec = playerItem.asset.tracks(withMediaType: .audio).first?.formatDescriptions
+            .compactMap { CMFormatDescriptionGetMediaSubType($0 as! CMFormatDescription).description }
+            .first ?? "Unknown"
+        
+        return StreamingInfo(
+            server: "", // Placeholder for server info
+            bitrates: bitrates,
+            loadingSpeed: "\(videoBitrate / 1_000) Мбит/с",
+            bufferDuration: Int(bufferDuration),
+            videoCodec: videoCodec,
+            resolution: resolution,
+            videoBitrate: "\(videoBitrate / 1_000) Мбит/с",
+            audioCodec: audioCodec,
+            trackName: "Default", // Placeholder for track name
+            channels: "2, 48.0kHz" // Placeholder for channel info
+        )
+    }
+}
