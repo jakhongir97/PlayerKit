@@ -28,26 +28,11 @@ public struct PlayerView: View {
                 .edgesIgnoringSafeArea(.all)
             
             // Player controls
-            if playerManager.areControlsVisible && !playerManager.isLocked {
+            if playerManager.areControlsVisible {
                 PlayerControlsView(playerManager: playerManager)
                     .transition(.opacity)
                     .zIndex(1)
             }
-            
-            // Lock button on the vertically centered right side
-            if playerManager.areControlsVisible {
-                HStack {
-                    Spacer() // Push lock button to the right
-                    VStack {
-                        Spacer() // Center lock button vertically
-                        LockButtonView()
-                            .padding(.bottom , 30)
-                        Spacer() // Center lock button vertically
-                    }
-                }
-                .zIndex(2)
-            }
-            
         }
         .onReceive(playerManager.$shouldDissmiss) { shouldDissmiss in
             if shouldDissmiss {

@@ -18,16 +18,27 @@ struct PlayerControlsView: View {
             VStack {
                 // Top part: Title, description, cast button, settings menu
                 TopControlsView(playerManager: playerManager)
+                    .opacity(playerManager.isLocked ? 0 : 1)
 
                 Spacer()
 
                 // Middle part: Play/pause button (later: next/prev buttons)
-                MiddleControlsView(playerManager: playerManager)
+                HStack {
+                    InfoButtonView()
+                        .opacity(playerManager.isLocked ? 0 : 1)
+                    Spacer()
+                    
+                    MiddleControlsView(playerManager: playerManager)
+                        .opacity(playerManager.isLocked ? 0 : 1)
+                    Spacer()
+                    LockButtonView()
+                }
 
                 Spacer()
 
                 // Bottom part: Playback time, audio/subtitles menu, playback slider
                 BottomControlsView(playerManager: playerManager)
+                    .opacity(playerManager.isLocked ? 0 : 1)
             }
             .padding(isIPhone ? 16 : 32)
         }

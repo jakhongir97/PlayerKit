@@ -56,3 +56,15 @@ extension UIInterfaceOrientation {
     }
 }
 
+extension View {
+    /// Applies hierarchical rendering mode to an SF Symbol image if available.
+    @ViewBuilder
+    func hierarchicalSymbolRendering() -> some View {
+        if #available(iOS 15.0, *) {
+            self.symbolRenderingMode(.hierarchical)
+        } else {
+            self // For earlier versions, return the view unmodified
+        }
+    }
+}
+
