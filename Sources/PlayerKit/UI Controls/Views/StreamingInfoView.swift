@@ -8,22 +8,10 @@ struct StreamingInfoView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Group {
-                Text("Server: \(streamingInfo.server)")
-                Text("Bitrates: \(streamingInfo.bitrates.joined(separator: ", "))")
-                Text("Loading Speed: \(streamingInfo.loadingSpeed)")
-                Text("Buffer: \(streamingInfo.bufferDuration) sec")
-            }
-            Divider()
-            Group {
-                Text("Video Codec: \(streamingInfo.videoCodec)")
-                Text("Resolution: \(streamingInfo.resolution)")
                 Text("Video Bitrate: \(streamingInfo.videoBitrate)")
-            }
-            Divider()
-            Group {
-                Text("Audio Codec: \(streamingInfo.audioCodec)")
-                Text("Track Name: \(streamingInfo.trackName)")
-                Text("Channels: \(streamingInfo.channels)")
+                Text("Buffer: \(streamingInfo.bufferDuration)")
+                Text("Resolution: \(streamingInfo.resolution)")
+                Text("Frame Rate: \(streamingInfo.frameRate)")
             }
         }
         .padding()
@@ -36,7 +24,7 @@ struct StreamingInfoView: View {
         .onReceive(timer) { _ in
             updateStreamingInfo()
         }
-        .onDisappear() {
+        .onDisappear {
             PlayerManager.shared.userInteracting = false
         }
     }

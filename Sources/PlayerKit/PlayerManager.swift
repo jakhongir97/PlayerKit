@@ -353,6 +353,10 @@ extension PlayerManager {
         currentPlayer?.stop()
         currentPlayer = nil
         
+        currentTime = 0
+        duration = 0
+        seekTime = 0
+        
         isMediaReady = false
         isVideoEnded = false
         shouldDissmiss = false

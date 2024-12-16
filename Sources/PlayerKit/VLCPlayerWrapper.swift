@@ -15,6 +15,13 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
         setupObservers()
     }
     
+    func setupLogging() {
+        let logger = VLCConsoleLogger()
+        logger.level = .debug
+        logger.formatter.contextFlags = .levelContextModule
+        player.libraryInstance.loggers = [logger]
+    }
+    
     func setupObservers() {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDeviceLock), name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
     }
@@ -272,6 +279,60 @@ extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
 // MARK: - StreamingInfoProtocol
 extension VLCPlayerWrapper: StreamingInfoProtocol {
     public func fetchStreamingInfo() -> StreamingInfo {
-        return StreamingInfo.placeholder
+        guard let media = player.media else {
+            return .placeholder
+        }
+        
+        let tracksInfo = media.tracksInformation as? [VLCMedia.Track] ?? []
+        
+        // Extract resolution using helper method
+        let resolution = extractCurrentResolution()
+
+        // Extract frame rate
+        let frameRate = extractFrameRate(from: tracksInfo)
+
+        // VLC doesn't expose runtime bitrate or buffering info easily
+        let videoBitrate = extractVideoBitrate(from: media)
+
+        return StreamingInfo(
+            frameRate: frameRate,
+            videoBitrate: videoBitrate,
+            resolution: resolution,
+            bufferDuration: "0 sec"
+        )
     }
+
+    // MARK: - Helper Methods
+    private func extractCurrentResolution() -> String {
+        let videoSize = player.videoSize
+        let width = Int(videoSize.width)
+        let height = Int(videoSize.height)
+        
+        if width > 0 && height > 0 {
+            return "\(width)x\(height)"
+        }
+        return "Unknown"
+    }
+
+    private func extractFrameRate(from tracks: [VLCMedia.Track]) -> String {
+        for track in tracks {
+            if track.type == .video, let videoTrack = track.video {
+                let frameRate = videoTrack.frameRate
+                let frameRateDenominator = videoTrack.frameRateDenominator
+                if frameRate > 0, frameRateDenominator > 0 {
+                    let fps = Double(frameRate) / Double(frameRateDenominator)
+                    return "\(Int(fps)) fps"
+                }
+            }
+        }
+        return "Unknown"
+    }
+
+    private func extractVideoBitrate(from media: VLCMedia) -> String {
+        let bitrate = media.statistics.demuxBitrate
+        let bitrateMbps = Double(bitrate)
+        return String(format: "%.2f Mbps", bitrateMbps)
+    }
+    
 }
+

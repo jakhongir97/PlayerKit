@@ -267,43 +267,57 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
             return StreamingInfo.placeholder
         }
         
-        // Extract Buffer Duration
-        let bufferDuration: Double
-        if let timeRange = playerItem.loadedTimeRanges.first?.timeRangeValue {
-            bufferDuration = CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration)
-        } else {
-            bufferDuration = 0
-        }
+        // Extract Buffer Duration as String
+        let bufferDuration = formatBufferDuration(for: playerItem)
         
-        // Extract Bitrates
-        let videoBitrate = playerItem.accessLog()?.events.last?.observedBitrate ?? 0
-        let bitrates = playerItem.accessLog()?.events.compactMap { "\($0.indicatedBitrate / 1_000) Кбит/с" } ?? ["Unknown"]
+        // Extract Bitrate as String (if multiple bitrates are available, choose the first)
+        let videoBitrate = extractVideoBitrate(from: playerItem)
         
         // Extract Resolution
-        let videoWidth = playerItem.presentationSize.width
-        let videoHeight = playerItem.presentationSize.height
-        let resolution = videoWidth > 0 && videoHeight > 0 ? "\(Int(videoWidth))x\(Int(videoHeight))" : "Unknown"
+        let resolution = extractResolution(from: playerItem)
         
-        // Extract Audio & Video Codec
-        let videoCodec = playerItem.asset.tracks(withMediaType: .video).first?.formatDescriptions
-            .compactMap { CMFormatDescriptionGetMediaSubType($0 as! CMFormatDescription).description }
-            .first ?? "Unknown"
-        
-        let audioCodec = playerItem.asset.tracks(withMediaType: .audio).first?.formatDescriptions
-            .compactMap { CMFormatDescriptionGetMediaSubType($0 as! CMFormatDescription).description }
-            .first ?? "Unknown"
+        // Extract Frame Rate
+        let frameRate = extractFrameRate(from: playerItem)
         
         return StreamingInfo(
-            server: "", // Placeholder for server info
-            bitrates: bitrates,
-            loadingSpeed: "\(videoBitrate / 1_000) Мбит/с",
-            bufferDuration: Int(bufferDuration),
-            videoCodec: videoCodec,
+            frameRate: frameRate,
+            videoBitrate: videoBitrate,
             resolution: resolution,
-            videoBitrate: "\(videoBitrate / 1_000) Мбит/с",
-            audioCodec: audioCodec,
-            trackName: "Default", // Placeholder for track name
-            channels: "2, 48.0kHz" // Placeholder for channel info
+            bufferDuration: bufferDuration
         )
+    }
+    
+    // MARK: - Helper Methods
+    private func formatBufferDuration(for playerItem: AVPlayerItem) -> String {
+        guard let timeRange = playerItem.loadedTimeRanges.first?.timeRangeValue else {
+            return "0 sec"
+        }
+        let duration = CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration)
+        let intDuration = Int(duration.rounded())
+        return "\(intDuration) sec"
+    }
+    
+    private func extractVideoBitrate(from playerItem: AVPlayerItem) -> String {
+        let accessLogEvents = playerItem.accessLog()?.events ?? []
+        // Choose the first indicated bitrate if available
+        if let firstEvent = accessLogEvents.first {
+            let mbps = firstEvent.indicatedBitrate / 1_000_000
+            if mbps > 0 {
+                return String(format: "%.2f Mbps", mbps)
+            }
+        }
+        return "0 Mbps"
+    }
+    
+    private func extractResolution(from playerItem: AVPlayerItem) -> String {
+        let size = playerItem.presentationSize
+        return size.width > 0 && size.height > 0
+        ? "\(Int(size.width))x\(Int(size.height))"
+        : "Unknown"
+    }
+    
+    private func extractFrameRate(from playerItem: AVPlayerItem) -> String {
+        guard let videoTrack = playerItem.tracks.first?.currentVideoFrameRate else { return "Unknown" }
+        return "\(Int(videoTrack)) fps"
     }
 }
