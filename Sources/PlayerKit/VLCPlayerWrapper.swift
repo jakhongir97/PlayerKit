@@ -321,7 +321,8 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
                 let frameRateDenominator = videoTrack.frameRateDenominator
                 if frameRate > 0, frameRateDenominator > 0 {
                     let fps = Double(frameRate) / Double(frameRateDenominator)
-                    return "\(Int(fps)) fps"
+                    let roundedFps = Int(ceil(fps))
+                    return "\(roundedFps) fps"
                 }
             }
         }

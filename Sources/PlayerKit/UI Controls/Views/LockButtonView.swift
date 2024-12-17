@@ -14,6 +14,8 @@ struct LockButtonView: View {
                 .rotationEffect(.degrees(isLocked ? 0 : 360))
                 .scaleEffect(isLocked ? 1.1 : 1.0)
                 .animation(.easeInOut(duration: 0.3), value: isLocked)
+                .padding(5)
+                .contentShape(Rectangle())
         }
     }
     

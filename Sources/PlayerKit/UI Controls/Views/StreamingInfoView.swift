@@ -10,22 +10,20 @@ struct StreamingInfoView: View {
             Group {
                 Text("Video Bitrate: \(streamingInfo.videoBitrate)")
                 Text("Buffer: \(streamingInfo.bufferDuration)")
-                Text("Resolution: \(streamingInfo.resolution)")
                 Text("Frame Rate: \(streamingInfo.frameRate)")
+                Text("Resolution: \(streamingInfo.resolution)")
             }
         }
         .padding()
         .foregroundColor(.white)
+        .background(Color.white.opacity(0.1))
         .cornerRadius(16)
         .onAppear {
-            PlayerManager.shared.userInteracting = true
+            PlayerManager.shared.userInteracted()
             updateStreamingInfo()
         }
         .onReceive(timer) { _ in
             updateStreamingInfo()
-        }
-        .onDisappear {
-            PlayerManager.shared.userInteracting = false
         }
     }
     
