@@ -17,7 +17,11 @@ public class PlayerManager: ObservableObject {
     @Published var isPiPActive: Bool = false
     @Published var isCastingAvailable: Bool = false
     @Published var areControlsVisible: Bool = true
-    @Published var isLocked: Bool = false
+    @Published var isLocked: Bool = false {
+        didSet {
+            NotificationCenter.default.post(name: .PlayerKitLocked, object: isLocked)
+        }
+    }
     @Published var userInteracting: Bool = false
     
     // Track identifiers
@@ -357,6 +361,8 @@ extension PlayerManager {
         duration = 0
         seekTime = 0
         
+        userInteracting = false
+        isLocked = false
         isMediaReady = false
         isVideoEnded = false
         shouldDissmiss = false

@@ -46,4 +46,5 @@ extension Notification.Name {
     public static let PlayerKitPrevItem = Notification.Name("PlayerKitPrevItem")
     public static let PlayerKitMediaReady = Notification.Name("PlayerKitMediaReady")
     public static let PlayerKitControlsHidden = Notification.Name("PlayerKitControlsHidden")
+    public static let PlayerKitLocked = Notification.Name("PlayerKitLocked")
 }
