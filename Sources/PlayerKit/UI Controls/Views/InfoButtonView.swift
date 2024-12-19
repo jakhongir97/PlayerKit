@@ -1,8 +1,18 @@
 import SwiftUI
 
 struct InfoButtonView: View {
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
+    @Environment(\.verticalSizeClass) var verticalSizeClass
+
     @State private var showPopover = false
-    @State private var isLandscape = false
+
+    // Determine landscape orientation based on size classes.
+    // On an iPhone:
+    //  - Portrait: verticalSizeClass = .regular, horizontalSizeClass = .compact
+    //  - Landscape: verticalSizeClass = .compact
+    private var isLandscape: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
         Button(action: {
@@ -17,32 +27,20 @@ struct InfoButtonView: View {
                 .padding(5)
                 .contentShape(Rectangle())
         }
-        // Overlay StreamingInfoView with a slide-in/slide-out transition
         .overlay(
             Group {
                 if showPopover {
                     StreamingInfoView()
                         .frame(width: 250)
-                        .offset(x: isLandscape ? 40 : 0, y: isLandscape ? 0 : -110)
+                        .offset(
+                            x: isLandscape ? 40 : 0,
+                            y: isLandscape ? 0 : -110
+                        )
                         .transition(.opacity)
                         .zIndex(1)
                 }
             },
             alignment: .leading
         )
-        .onAppear {
-            // Check initial orientation
-            updateOrientation()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            // Update orientation on change
-            updateOrientation()
-        }
-    }
-
-    private func updateOrientation() {
-        let orientation = UIDevice.current.orientation
-        isLandscape = orientation.isValidInterfaceOrientation ? orientation.isLandscape : UIScreen.main.bounds.width > UIScreen.main.bounds.height
     }
 }
-
