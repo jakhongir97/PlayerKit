@@ -14,7 +14,7 @@ struct PlaybackSpeedMenu: View {
             }
         } label: {
             Image(systemName: "gauge.with.needle.fill")
-                .font(.system(size: 30, weight: .bold))
+                .font(.system(size: 30, weight: .light))
                 .foregroundColor(.white)
                 .padding(5)
                 .contentShape(Rectangle())

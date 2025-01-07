@@ -6,7 +6,7 @@ struct CastButton: UIViewRepresentable {
     func makeUIView(context: Context) -> UIButton {
         let button = UIButton(type: .system)
         
-        let largeConfig = UIImage.SymbolConfiguration(pointSize: 30, weight: .bold, scale: .small)
+        let largeConfig = UIImage.SymbolConfiguration(pointSize: 30, weight: .light, scale: .small)
         let largeImage = UIImage(systemName: "airplayvideo", withConfiguration: largeConfig)
         button.setImage(largeImage, for: .normal)
         

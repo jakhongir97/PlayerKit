@@ -9,14 +9,14 @@ struct TopControlsView: View {
             VStack(alignment: .leading) {
                 if let title = playerManager.playerItem?.title {
                     Text(title)
-                        .font(.title)
+                        .font(.system(size: 25))
                         .foregroundColor(.white)
                         .lineLimit(1)
                 }
                 
                 if let description = playerManager.playerItem?.description {
                     Text(description)
-                        .font(.subheadline)
+                        .font(.system(size: 15))
                         .foregroundColor(.gray)
                         .lineLimit(1)
                 }

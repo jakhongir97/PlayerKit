@@ -10,7 +10,7 @@ public struct CloseButtonView: View {
             presentationMode.wrappedValue.dismiss() // Dismiss the view
         }) {
             Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 30, weight: .bold))
+                .font(.system(size: 30, weight: .light))
                 .padding(5)
                 .contentShape(Rectangle())
                 .foregroundColor(.white)

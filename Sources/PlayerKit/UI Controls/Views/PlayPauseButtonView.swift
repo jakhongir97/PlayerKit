@@ -10,7 +10,7 @@ struct PlayPauseButtonView: View {
                 HapticsManager.shared.triggerImpactFeedback(style: .medium)
             }) {
                 Image(playerManager.isPlaying ? "pause" : "play", bundle: .module)
-                    .font(.system(size: 60, weight: .bold))
+                    .font(.system(size: 60, weight: .light))
                     .foregroundColor(.white)
             }
         }
