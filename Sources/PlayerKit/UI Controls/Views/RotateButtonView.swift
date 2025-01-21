@@ -6,7 +6,7 @@ struct RotateButtonView: View {
     var body: some View {
         Button(action: toggleOrientation) {
             Image(systemName: "rotate.right")
-                .font(.system(size: 30, weight: .light))
+                .font(.system(size: 30, weight: .medium))
                 .foregroundColor(.white)
                 .padding(5)
                 .contentShape(Rectangle())

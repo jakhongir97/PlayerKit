@@ -14,7 +14,7 @@ struct FeedbackView: View {
                 .frame(width: 30, height: 30)
                 .foregroundColor(.white)
             Text(text)
-                .font(.system(size: 36, weight: .light))
+                .font(.system(size: 36, weight: .medium))
                 .foregroundColor(.white)
         }
         .padding()

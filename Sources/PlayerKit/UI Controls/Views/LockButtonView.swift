@@ -9,7 +9,7 @@ struct LockButtonView: View {
         Button(action: toggleLock) {
             Image(systemName: "lock.circle")
                 .hierarchicalSymbolRendering()
-                .font(.system(size: 30, weight: .light))
+                .font(.system(size: 30, weight: .medium))
                 .foregroundColor(isLocked ? .red : .white)
                 .rotationEffect(.degrees(isLocked ? 0 : 360))
                 .scaleEffect(isLocked ? 1.1 : 1.0)

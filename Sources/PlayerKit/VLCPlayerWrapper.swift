@@ -145,15 +145,6 @@ extension VLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         let media = VLCMedia(url: url)
         player.media = media
-        player.media?.addOptions([
-            "network-caching": 300,
-            "clock-jitter": 0,
-            "ffmpeg-skip-frame": 0,
-            "ffmpeg-skip-idct": 0,
-            "keyint": 30,
-            "avcodec-fast": true,
-            "avcodec-threads": 2
-        ])
         player.media?.delegate = self
         
         // Seek to last position if provided
