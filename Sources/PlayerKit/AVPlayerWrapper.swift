@@ -75,7 +75,7 @@ extension AVPlayerWrapper: TimeControlProtocol {
     
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-        player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { finished in
+        player?.seek(to: cmTime, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity) { finished in
             completion?(finished)
         }
     }
