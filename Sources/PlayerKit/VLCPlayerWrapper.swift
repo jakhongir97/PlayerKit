@@ -83,8 +83,10 @@ extension VLCPlayerWrapper: TimeControlProtocol {
             completion?(false)
             return
         }
-        let position = Float(time / duration)
-        player.position = Double(position)
+
+        let vlcTime = VLCTime(number: NSNumber(value: time * 1000))
+        player.time = vlcTime
+
         completion?(true)
     }
 }

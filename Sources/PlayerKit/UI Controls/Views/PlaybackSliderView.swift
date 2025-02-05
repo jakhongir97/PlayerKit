@@ -10,9 +10,9 @@ struct PlaybackSliderView: View {
                 // Use MusicProgressSlider instead of default Slider
                 MusicProgressSlider(
                     value: Binding(
-                        get: { playerManager.isSeeking ? playerManager.seekTime : playerManager.currentTime },
+                        get: { playerManager.currentTime },
                         set: { newValue in
-                            playerManager.seekTime = newValue
+                            playerManager.seek(to: newValue)
                         }
                     ),
                     inRange: 0...max(playerManager.duration, 0.01),
@@ -21,11 +21,7 @@ struct PlaybackSliderView: View {
                     emptyColor: .white.opacity(0.3),
                     height: 40
                 ) { editing in
-                    if editing {
-                        playerManager.startSeeking()
-                    } else {
-                        playerManager.stopSeeking()
-                    }
+                    playerManager.isSeeking = editing
                 }
                 .frame(height: 40)
                 .padding(.vertical)

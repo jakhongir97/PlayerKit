@@ -8,7 +8,6 @@ public class PlayerManager: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var isBuffering: Bool = false
     @Published public var currentTime: Double = 0
-    @Published var seekTime: Double = 0
     @Published var duration: Double = 0
     @Published var bufferedDuration: Double = 0
     @Published var playbackSpeed: Float = 1.0
@@ -197,27 +196,6 @@ extension PlayerManager {
         playbackSpeed = speed
         playbackManager?.setPlaybackSpeed(speed)
     }
-    
-    // Start seeking
-    func startSeeking() {
-        isSeeking = true
-        // Pause playback if required while seeking
-        playbackManager?.pause()
-        userInteracted()
-    }
-    
-    // Stop seeking
-    func stopSeeking() {
-        isSeeking = false
-        // Resume playback or seek to new time
-        playbackManager?.seek(to: seekTime) { [weak self] success in
-            if success {
-                self?.currentTime = self?.seekTime ?? 0
-            }
-            self?.currentPlayer?.play()
-        }
-        userInteracted()
-    }
 }
 
 // MARK: - Track Management
@@ -359,7 +337,6 @@ extension PlayerManager {
         
         currentTime = 0
         duration = 0
-        seekTime = 0
         
         userInteracting = false
         isLocked = false
