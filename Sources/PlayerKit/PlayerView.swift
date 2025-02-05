@@ -3,6 +3,10 @@ import SwiftUI
 public struct PlayerView: View {
     @ObservedObject var playerManager = PlayerManager.shared
     @Environment(\.presentationMode) var presentationMode
+    
+    private var isIPhone: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
 
     public init(playerItem: PlayerItem? = nil) {
         playerManager.setPlayer()
@@ -32,6 +36,16 @@ public struct PlayerView: View {
                 PlayerControlsView(playerManager: playerManager)
                     .transition(.opacity)
                     .zIndex(1)
+            }
+            
+            if playerManager.gestureManager.isMultipleTapping {
+                VStack {
+                    Spacer()
+                    PlaybackSliderView(playerManager: playerManager)
+                }
+                .padding(isIPhone ? 16 : 32)
+                .transition(.opacity)
+                .zIndex(1)
             }
         }
         .onReceive(playerManager.$shouldDissmiss) { shouldDissmiss in
