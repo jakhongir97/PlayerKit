@@ -15,4 +15,7 @@ public protocol TimeControlProtocol: AnyObject {
     
     /// Updated seek method with optional completion handler
     func seek(to time: Double, completion: ((Bool) -> Void)?)
+    
+    func scrubForward(by seconds: TimeInterval)
+    func scrubBackward(by seconds: TimeInterval)
 }

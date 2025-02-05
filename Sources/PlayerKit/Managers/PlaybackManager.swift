@@ -23,6 +23,14 @@ class PlaybackManager {
     func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
         player.seek(to: time, completion: completion)
     }
+    
+    public func scrubForward(by seconds: TimeInterval) {
+        player.scrubForward(by: seconds)
+    }
+    
+    public func scrubBackward(by seconds: TimeInterval) {
+        player.scrubBackward(by: seconds)
+    }
 
     func setPlayer(_ player: PlayerProtocol) {
         self.player = player

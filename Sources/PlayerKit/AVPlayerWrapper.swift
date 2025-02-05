@@ -73,6 +73,14 @@ extension AVPlayerWrapper: TimeControlProtocol {
             completion?(finished)
         }
     }
+    
+    public func scrubForward(by seconds: TimeInterval) {
+        seek(to: currentTime + seconds)
+    }
+
+    public func scrubBackward(by seconds: TimeInterval) {
+        seek(to: currentTime - seconds)
+    }
 }
 
 // MARK: - TrackSelectionProtocol

@@ -71,6 +71,7 @@ public class PlayerManager: ObservableObject {
     private init() {
         AudioSessionManager.shared.configureAudioSession()
         setupGestureHandling()
+        subscribeToGameControllerEvents()
     }
     
     // MARK: - Player Setup
@@ -190,6 +191,14 @@ extension PlayerManager {
                 self?.currentTime = time
             }
         }
+    }
+    
+    public func scrubForward(by seconds: TimeInterval) {
+        playbackManager?.scrubForward(by: seconds)
+    }
+    
+    public func scrubBackward(by seconds: TimeInterval) {
+        playbackManager?.scrubBackward(by: seconds)
     }
     
     public func setPlaybackSpeed(_ speed: Float) {
@@ -317,10 +326,6 @@ extension PlayerManager {
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, let player = self.currentPlayer else { return }
-                guard !self.isSeeking else {
-                    self.userInteracted()
-                    return
-                }
                 
                 self.isPlaying = player.isPlaying
                 self.isBuffering = player.isBuffering
@@ -348,5 +353,50 @@ extension PlayerManager {
         selectedSubtitleTrackID = nil
         availableAudioTracks = []
         availableSubtitles = []
+    }
+}
+
+extension PlayerManager {
+    private func subscribeToGameControllerEvents() {
+        GameControllerManager.shared.controllerEventPublisher
+            .sink { [weak self] event in
+                guard let self = self else { return }
+                
+                switch event {
+                case .playPause:
+                    self.isPlaying ? self.pause() : self.play()
+                    
+                case .rewind:
+                    self.scrubBackward(by: 10)
+                    
+                case .fastForward:
+                    self.scrubForward(by: 10)
+                    
+                case .previousVideo:
+                    self.playPrevious()
+                    
+                case .nextVideo:
+                    self.playNext()
+                    
+                case .scrubStarted:
+                    self.isSeeking = true
+                    
+                case .scrubEnded:
+                    self.isSeeking = false
+                case .fastForwardAmount(let amount):
+                    self.scrubForward(by: amount)
+                case .rewindAmount(let amount):
+                    self.scrubBackward(by: amount)
+                case .closePlayer:
+                    self.shouldDissmiss = true
+                case .focusUp:
+                    break
+                case .focusDown:
+                    break
+                case .focusSelect:
+                    break
+                }
+            }
+            .store(in: &cancellables)
     }
 }

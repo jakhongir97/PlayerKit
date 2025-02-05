@@ -89,6 +89,14 @@ extension VLCPlayerWrapper: TimeControlProtocol {
 
         completion?(true)
     }
+    
+    public func scrubForward(by seconds: TimeInterval) {
+        seek(to: currentTime + seconds)
+    }
+    
+    public func scrubBackward(by seconds: TimeInterval) {
+        seek(to: currentTime - seconds)
+    }
 }
 
 // MARK: - TrackSelectionProtocol
