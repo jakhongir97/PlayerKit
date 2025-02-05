@@ -371,7 +371,5 @@ extension PlayerManager {
         selectedSubtitleTrackID = nil
         availableAudioTracks = []
         availableSubtitles = []
-        
-        ThumbnailManager.shared.thumbnailImage = nil
     }
 }

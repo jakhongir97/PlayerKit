@@ -269,13 +269,6 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
     }
 }
 
-// MARK: - ThumbnailGeneratorProtocol
-extension VLCPlayerWrapper: ThumbnailGeneratorProtocol {
-    public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        
-    }
-}
-
 // MARK: - StreamingInfoProtocol
 extension VLCPlayerWrapper: StreamingInfoProtocol {
     public func fetchStreamingInfo() -> StreamingInfo {

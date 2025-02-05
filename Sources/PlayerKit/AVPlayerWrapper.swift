@@ -9,12 +9,6 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playbackEndedObserver: Any?
     
-    // Lazy initialization for thumbnail generator
-    private lazy var thumbnailGenerator: AVPlayerThumbnailGenerator? = {
-        guard let asset = player?.currentItem?.asset else { return nil }
-        return AVPlayerThumbnailGenerator(asset: asset)
-    }()
-    
     // MARK: - Initializer
     public override init() {
         super.init()
@@ -225,19 +219,6 @@ extension AVPlayerWrapper: ViewRenderingProtocol {
     
     public func stopPiP() {
         pipController?.stopPictureInPicture()
-    }
-}
-
-// MARK: - ThumbnailGeneratorProtocol
-extension AVPlayerWrapper: ThumbnailGeneratorProtocol {
-    public func generateThumbnail(at time: Double, completion: @escaping (UIImage?) -> Void) {
-        guard let generator = thumbnailGenerator else {
-            print("AVPlayerWrapper: No asset available for thumbnail generation.")
-            completion(nil)
-            return
-        }
-        
-        generator.generateThumbnail(at: time, completion: completion)
     }
 }
 

@@ -7,5 +7,4 @@ public protocol PlayerProtocol: PlaybackControlProtocol,
                                 MediaLoadingProtocol,
                                 ViewRenderingProtocol,
                                 GestureHandlingProtocol,
-                                StreamingInfoProtocol,
-                                ThumbnailGeneratorProtocol {}
+                                StreamingInfoProtocol {}
