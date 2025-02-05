@@ -32,7 +32,7 @@ public class GestureManager: ObservableObject {
     
     // Constants
     private let tapDelay = 0.3 // Delay to distinguish single tap
-    private let multipleTapResetDelay = 1.0 // Delay to reset multiple tapping
+    private let multipleTapResetDelay = 0.6 // Delay to reset multiple tapping
     private let fastSeekBaseInterval: Double = 10.0 // Base seek interval
     
     // MARK: - System Volume Slider
