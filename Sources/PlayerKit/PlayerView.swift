@@ -38,7 +38,7 @@ public struct PlayerView: View {
                     .zIndex(1)
             }
             
-            if playerManager.gestureManager.isMultipleTapping {
+            if (playerManager.gestureManager.isMultipleTapping || playerManager.isSeeking) && !playerManager.areControlsVisible {
                 VStack {
                     Spacer()
                     PlaybackSliderView(playerManager: playerManager)

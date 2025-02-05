@@ -2,7 +2,7 @@ import AVKit
 import UIKit
 
 public class AVPlayerWrapper: NSObject, PlayerProtocol {
-    public var player: AVPlayer?
+    private var player: SmoothPlayer?
     private var playerView: AVPlayerView?
     private var pipController: AVPictureInPictureController?
     
@@ -159,7 +159,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         if let player = player {
             player.replaceCurrentItem(with: playerItem)
         } else {
-            player = AVPlayer(playerItem: playerItem)
+            player = SmoothPlayer(playerItem: playerItem)
             player?.allowsExternalPlayback = true
         }
         

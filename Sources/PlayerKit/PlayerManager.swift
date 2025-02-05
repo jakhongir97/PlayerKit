@@ -377,22 +377,28 @@ extension PlayerManager {
                     
                 case .nextVideo:
                     self.playNext()
-                    
+            
                 case .scrubStarted:
                     self.isSeeking = true
                     
                 case .scrubEnded:
                     self.isSeeking = false
+                    
                 case .fastForwardAmount(let amount):
                     self.scrubForward(by: amount)
+                    
                 case .rewindAmount(let amount):
                     self.scrubBackward(by: amount)
+                    
                 case .closePlayer:
                     self.shouldDissmiss = true
+                    
                 case .focusUp:
                     break
+                    
                 case .focusDown:
                     break
+                    
                 case .focusSelect:
                     break
                 }
