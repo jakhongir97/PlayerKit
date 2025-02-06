@@ -31,7 +31,11 @@ public class PlayerManager: ObservableObject {
     private var savedAudioTrackID: String?
     private var savedSubtitleTrackID: String?
     
-    @Published var selectedPlayerType: PlayerType = .avPlayer
+    @Published var selectedPlayerType: PlayerType = UserDefaults.standard.loadPlayerType() ?? .avPlayer {
+        didSet {
+            UserDefaults.standard.savePlayerType(selectedPlayerType)
+        }
+    }
     @Published var playerItem: PlayerItem?
     @Published var playerItems: [PlayerItem] = []
     @Published var currentPlayerItemIndex: Int = 0
@@ -76,7 +80,8 @@ public class PlayerManager: ObservableObject {
     
     // MARK: - Player Setup
     
-    public func setPlayer(type: PlayerType = .avPlayer) {
+    public func setPlayer(type: PlayerType? = nil) {
+        let type = type ?? UserDefaults.standard.loadPlayerType() ?? .avPlayer
         resetPlayer()
         selectedPlayerType = type
         let provider = PlayerFactory.getProvider(for: type)
@@ -100,7 +105,6 @@ public class PlayerManager: ObservableObject {
     
     public func switchPlayer(to type: PlayerType) {
         guard selectedPlayerType != type else { return } // No need to switch if already selected
-        
         // Store the last position before switching players
         lastPosition = currentPlayer?.currentTime ?? 0
         resetPlayer()

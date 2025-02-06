@@ -1,6 +1,6 @@
 import Foundation
 
-public enum PlayerType: String, CaseIterable, Identifiable {
+public enum PlayerType: String, CaseIterable, Identifiable, Codable {
     case vlcPlayer
     case avPlayer
 
