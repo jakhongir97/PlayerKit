@@ -9,19 +9,14 @@ struct BottomControlsView: View {
     }
 
     var body: some View {
-        VStack() {
-            HStack() {
-                //PlaybackTimeView(playerManager: playerManager)
-                MediaOptionsMenu()
-                BufferingIndicatorView(playerManager: playerManager)
-                Spacer()
-                PiPButton()
-                if isIPhone {
-                    RotateButtonView()
-                }
+        HStack() {
+            MediaOptionsMenu()
+            BufferingIndicatorView(playerManager: playerManager)
+            Spacer()
+            PiPButton()
+            if isIPhone {
+                RotateButtonView()
             }
-
-            PlaybackSliderView(playerManager: playerManager)
         }
     }
 }

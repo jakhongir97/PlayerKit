@@ -32,21 +32,9 @@ public struct PlayerView: View {
                 .edgesIgnoringSafeArea(.all)
             
             // Player controls
-            if playerManager.areControlsVisible {
-                PlayerControlsView(playerManager: playerManager)
-                    .transition(.opacity)
-                    .zIndex(1)
-            }
-            
-            if (playerManager.gestureManager.isMultipleTapping || playerManager.isSeeking) && !playerManager.areControlsVisible {
-                VStack {
-                    Spacer()
-                    PlaybackSliderView(playerManager: playerManager)
-                }
-                .padding(isIPhone ? 16 : 32)
+            PlayerControlsView(playerManager: playerManager)
                 .transition(.opacity)
                 .zIndex(1)
-            }
         }
         .onReceive(playerManager.$shouldDissmiss) { shouldDissmiss in
             if shouldDissmiss {
