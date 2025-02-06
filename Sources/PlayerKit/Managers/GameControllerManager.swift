@@ -10,7 +10,7 @@ final class GameControllerManager: ObservableObject {
     
     // MARK: - Scrubbing Properties
     private var scrubbingTimer: AnyCancellable?
-    private let scrubInterval = 1.0
+    private let scrubInterval = 0.1
     private var currentScrubDirection: ScrubDirection = .forward
     private var currentScrubSpeed: Double = 0.0
     private let baseScrubRatePerSecond = 5.0

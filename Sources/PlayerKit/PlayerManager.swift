@@ -31,7 +31,7 @@ public class PlayerManager: ObservableObject {
     private var savedAudioTrackID: String?
     private var savedSubtitleTrackID: String?
     
-    @Published var selectedPlayerType: PlayerType = .vlcPlayer
+    @Published var selectedPlayerType: PlayerType = .avPlayer
     @Published var playerItem: PlayerItem?
     @Published var playerItems: [PlayerItem] = []
     @Published var currentPlayerItemIndex: Int = 0
@@ -76,7 +76,7 @@ public class PlayerManager: ObservableObject {
     
     // MARK: - Player Setup
     
-    public func setPlayer(type: PlayerType = .vlcPlayer) {
+    public func setPlayer(type: PlayerType = .avPlayer) {
         resetPlayer()
         selectedPlayerType = type
         let provider = PlayerFactory.getProvider(for: type)

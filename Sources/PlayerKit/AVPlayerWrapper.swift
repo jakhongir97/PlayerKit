@@ -3,7 +3,7 @@ import UIKit
 
 public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var player: SmoothPlayer?
-    private var playerView: AVPlayerView?
+    private var playerView = AVPlayerView()
     private var pipController: AVPictureInPictureController?
     
     private var playerItemStatusObserver: NSKeyValueObservation?
@@ -160,6 +160,8 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             player.replaceCurrentItem(with: playerItem)
         } else {
             player = SmoothPlayer(playerItem: playerItem)
+            playerView.player = player
+            setupPiP()
             player?.allowsExternalPlayback = true
         }
         
@@ -197,23 +199,11 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
 // MARK: - ViewRenderingProtocol
 extension AVPlayerWrapper: ViewRenderingProtocol {
     public func getPlayerView() -> UIView {
-        if let playerView = playerView {
-            return playerView
-        }
-        
-        let newPlayerView = AVPlayerView()
-        newPlayerView.player = player
-        playerView = newPlayerView
-        setupPiP()
-        return newPlayerView
+        return playerView
     }
     
     public func setupPiP() {
-        guard let playerLayer = playerView?.playerLayer else {
-            print("AVPlayerWrapper: No playerLayer available for PiP.")
-            return
-        }
-        pipController = AVPictureInPictureController(playerLayer: playerLayer)
+        pipController = AVPictureInPictureController(playerLayer: playerView.playerLayer)
         pipController?.delegate = self
     }
     
@@ -233,8 +223,7 @@ extension AVPlayerWrapper: ViewRenderingProtocol {
 // MARK: - GestureHandlingProtocol
 extension AVPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
-        guard let playerLayer = playerView?.playerLayer else { return }
-        playerLayer.videoGravity = scale > 1 ? .resizeAspectFill : .resizeAspect
+        playerView.playerLayer.videoGravity = scale > 1 ? .resizeAspectFill : .resizeAspect
     }
 }
 
