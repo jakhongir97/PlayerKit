@@ -137,7 +137,7 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
     
     public func selectAudioTrack(withID id: String) {
         if let track = player.audioTracks.first(where: { $0.trackName == id }) {
-            track.isSelected = true
+            track.isSelectedExclusively = true
         }
     }
     
