@@ -14,6 +14,7 @@ struct PlayerControlsView: View {
             Color.black.opacity(0.5)
                 .edgesIgnoringSafeArea(.all)
                 .allowsHitTesting(false)  // Ensures the background doesn't block gestures
+                .opacity(playerManager.areControlsVisible ? 1 : 0)
 
             VStack {
                 // Top part: Title, description, cast button, settings menu
