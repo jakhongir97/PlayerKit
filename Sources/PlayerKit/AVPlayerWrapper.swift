@@ -15,6 +15,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     }
     
     deinit {
+        print("AvPlayerWrapper deinit")
         playerItemStatusObserver = nil
         if let observer = playbackEndedObserver {
             NotificationCenter.default.removeObserver(observer)

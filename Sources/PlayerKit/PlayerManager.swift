@@ -24,12 +24,12 @@ public class PlayerManager: ObservableObject {
     @Published var userInteracting: Bool = false
     
     // Track identifiers
-    @Published var selectedAudioTrackID: String?
-    @Published var selectedSubtitleTrackID: String?
+    @Published var selectedAudio: TrackInfo?
+    @Published var selectedSubtitle: TrackInfo?
     @Published var availableAudioTracks: [TrackInfo] = []
     @Published var availableSubtitles: [TrackInfo] = []
-    private var savedAudioTrackID: String?
-    private var savedSubtitleTrackID: String?
+    private var savedAudio: TrackInfo?
+    private var savedSubtitle: TrackInfo?
     
     @Published var selectedPlayerType: PlayerType = UserDefaults.standard.loadPlayerType() ?? .avPlayer {
         didSet {
@@ -107,6 +107,7 @@ public class PlayerManager: ObservableObject {
         guard selectedPlayerType != type else { return } // No need to switch if already selected
         // Store the last position before switching players
         lastPosition = currentPlayer?.currentTime ?? 0
+        saveCurrentTracks()
         resetPlayer()
         setPlayer(type: type)
         
@@ -139,7 +140,6 @@ public class PlayerManager: ObservableObject {
         if contentType == .movie {
             // Dismiss the player immediately for movies
             isVideoEnded = true
-            shouldDissmiss = true
         } else {
             // Check if there are more episodes to play
             playNext()
@@ -216,41 +216,49 @@ extension PlayerManager {
     public func refreshTrackInfo() {
         availableAudioTracks = trackManager?.availableAudioTracks ?? []
         availableSubtitles = trackManager?.availableSubtitles ?? []
-        
-        selectedAudioTrackID = trackManager?.currentAudioTrack?.id
-        selectedSubtitleTrackID = trackManager?.currentSubtitleTrack?.id
-        
+
+        selectedAudio = trackManager?.currentAudioTrack
+        selectedSubtitle = trackManager?.currentSubtitleTrack
+
         applySavedTrackIdentifiers()
     }
     
-    public func selectAudioTrack(withID id: String) {
-        selectedAudioTrackID = id
-        trackManager?.selectAudioTrack(withID: id)
+    public func selectAudioTrack(track: TrackInfo) {
+        selectedAudio = track
+        trackManager?.selectAudioTrack(withID: track.id)
         userInteracted()
     }
-    
-    public func selectSubtitle(withID id: String?) {
-        selectedSubtitleTrackID = id
-        trackManager?.selectSubtitle(withID: id)
+
+    public func selectSubtitle(track: TrackInfo?) {
+        selectedSubtitle = track
+        trackManager?.selectSubtitle(withID: track?.id)
         userInteracted()
     }
     
     private func saveCurrentTracks() {
-        savedAudioTrackID = selectedAudioTrackID
-        savedSubtitleTrackID = selectedSubtitleTrackID
+        savedAudio = selectedAudio
+        savedSubtitle = selectedSubtitle
     }
     
     private func applySavedTrackIdentifiers() {
-        if let audioID = savedAudioTrackID,
-           availableAudioTracks.contains(where: { $0.id == audioID }) {
-            selectAudioTrack(withID: audioID)
-            savedAudioTrackID = nil
+        if let savedAudio = savedAudio {
+            if let matchedAudio = availableAudioTracks.first(where: { $0.id == savedAudio.id }) {
+                selectAudioTrack(track: matchedAudio)
+                self.savedAudio = nil
+            } else if let matchedAudioByLang = availableAudioTracks.first(where: { $0.languageCode == savedAudio.languageCode }) {
+                selectAudioTrack(track: matchedAudioByLang)
+                self.savedAudio = nil
+            }
         }
         
-        if let subtitleID = savedSubtitleTrackID,
-           availableSubtitles.contains(where: { $0.id == subtitleID }) {
-            selectSubtitle(withID: subtitleID)
-            savedSubtitleTrackID = nil
+        if let savedSubtitle = savedSubtitle {
+            if let matchedSubtitle = availableSubtitles.first(where: { $0.id == savedSubtitle.id }) {
+                selectSubtitle(track: matchedSubtitle)
+                self.savedSubtitle = nil
+            } else if let matchedSubtitleByLang = availableSubtitles.first(where: { $0.languageCode == savedSubtitle.languageCode }) {
+                selectSubtitle(track: matchedSubtitleByLang)
+                self.savedSubtitle = nil
+            }
         }
     }
 }
@@ -353,8 +361,8 @@ extension PlayerManager {
         isVideoEnded = false
         shouldDissmiss = false
         
-        selectedAudioTrackID = nil
-        selectedSubtitleTrackID = nil
+        selectedAudio = nil
+        selectedSubtitle = nil
         availableAudioTracks = []
         availableSubtitles = []
     }

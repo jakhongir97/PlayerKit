@@ -3,7 +3,7 @@ import Foundation
 
 class SubtitleMenuViewModel: ObservableObject {
     @Published var availableSubtitles: [TrackInfo] = []
-    @Published var selectedSubtitleTrackID: String?
+    @Published var selectedSubtitle: TrackInfo?
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -16,26 +16,26 @@ class SubtitleMenuViewModel: ObservableObject {
             .assign(to: \.availableSubtitles, on: self)
             .store(in: &cancellables)
         
-        // Subscribe to selected subtitle track ID from PlayerManager
-        playerManager.$selectedSubtitleTrackID
+        // Subscribe to selected subtitle from PlayerManager
+        playerManager.$selectedSubtitle
             .receive(on: RunLoop.main)
-            .assign(to: \.selectedSubtitleTrackID, on: self)
+            .assign(to: \.selectedSubtitle, on: self)
             .store(in: &cancellables)
     }
     
     // Computed property to get the index of the selected subtitle
     var selectedSubtitleIndex: Int? {
-        guard let selectedID = selectedSubtitleTrackID else { return nil }
-        return availableSubtitles.firstIndex(where: { $0.id == selectedID })
+        guard let selected = selectedSubtitle else { return nil }
+        return availableSubtitles.firstIndex(where: { $0.id == selected.id })
     }
     
     // Function to select subtitle by index
     func selectSubtitle(index: Int?) {
-        if let index = index, let trackID = availableSubtitles[safe: index]?.id {
-            PlayerManager.shared.selectSubtitle(withID: trackID)
+        if let index = index, let track = availableSubtitles[safe: index] {
+            PlayerManager.shared.selectSubtitle(track: track)
         } else {
             // User selected "Turn Off Subtitles"
-            PlayerManager.shared.selectSubtitle(withID: nil)
+            PlayerManager.shared.selectSubtitle(track: nil)
         }
     }
     
