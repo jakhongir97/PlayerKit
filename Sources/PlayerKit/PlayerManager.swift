@@ -97,7 +97,6 @@ public class PlayerManager: ObservableObject {
         playbackManager = PlaybackManager(player: player, playerManager: self)
         trackManager = TrackManager(player: player)
         
-        refreshTrackInfo()
         observePlayerState()
     }
     
@@ -108,7 +107,6 @@ public class PlayerManager: ObservableObject {
         // Store the last position before switching players
         lastPosition = currentPlayer?.currentTime ?? 0
         saveCurrentTracks()
-        resetPlayer()
         setPlayer(type: type)
         
         // Reload the current media if videoURL is already set
@@ -365,6 +363,8 @@ extension PlayerManager {
         selectedSubtitle = nil
         availableAudioTracks = []
         availableSubtitles = []
+        
+        cancellables.removeAll()
     }
 }
 

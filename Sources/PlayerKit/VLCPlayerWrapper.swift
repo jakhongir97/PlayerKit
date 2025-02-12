@@ -5,6 +5,7 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     private let playerView = VLCPlayerView()
     public var pipController: VLCPictureInPictureWindowControlling?
     private var drawableProxy: VLCPlayerDrawableProxy?
+    private var lastPosition: Double?
     
     public override init() {
         self.player = VLCMediaPlayer()
@@ -141,12 +142,14 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
     
     public func selectAudioTrack(withID id: String) {
         if let track = player.audioTracks.first(where: { $0.trackName == id }) {
-            track.isSelectedExclusively = true
+            player.deselectAllAudioTracks()
+            track.isSelected = true
         }
     }
     
     public func selectSubtitle(withID id: String?) {
         if let id = id, let track = player.textTracks.first(where: { $0.trackName == id }) {
+            player.deselectAllTextTracks()
             track.isSelected = true
         } else {
             player.deselectAllTextTracks()
@@ -158,13 +161,9 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
 extension VLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         let media = VLCMedia(url: url)
+        self.lastPosition = lastPosition
         player.media = media
         player.media?.delegate = self
-        
-        // Seek to last position if provided
-        if let position = lastPosition {
-            player.time = VLCTime(number: NSNumber(value: position * 1000)) // VLCTime expects milliseconds
-        }
         player.play()
     }
 }
@@ -175,25 +174,25 @@ extension VLCPlayerWrapper: VLCMediaDelegate {
         DispatchQueue.main.async { [weak self] in
             PlayerManager.shared.isMediaReady = true
         }
+        if let position = lastPosition {
+            player.time = VLCTime(number: NSNumber(value: position * 1000))
+        }
     }
     
     public func mediaMetaDataDidChange(_ aMedia: VLCMedia) {
+        DispatchQueue.main.async {
+            PlayerManager.shared.refreshTrackInfo()
+        }
     }
 }
 
 // MARK: - VLCMediaPlayer Notification Handlers
 extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
-        DispatchQueue.main.async {
-            PlayerManager.shared.refreshTrackInfo()
-        }
-        switch newState {
-        case .stopped:
+        if newState == .stopped {
             DispatchQueue.main.async {
                 PlayerManager.shared.videoDidEnd()
             }
-        default:
-            break
         }
     }
     
@@ -245,14 +244,8 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
         }
         
         let tracksInfo = media.tracksInformation as? [VLCMedia.Track] ?? []
-        
-        // Extract resolution using helper method
         let resolution = extractCurrentResolution()
-        
-        // Extract frame rate
         let frameRate = extractFrameRate(from: tracksInfo)
-        
-        // VLC doesn't expose runtime bitrate or buffering info easily
         let videoBitrate = extractVideoBitrate(from: media)
         
         return StreamingInfo(

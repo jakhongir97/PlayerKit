@@ -44,7 +44,8 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
     
     public func stop() {
         player?.pause()
-        player?.seek(to: .zero)
+        player?.replaceCurrentItem(with: nil)
+        player = nil
     }
 }
 
