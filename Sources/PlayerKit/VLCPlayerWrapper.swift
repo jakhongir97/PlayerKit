@@ -3,14 +3,17 @@ import VLCKit
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
     private let playerView = VLCPlayerView()
-    private weak var pipController: VLCPictureInPictureWindowControlling?
-
+    public var pipController: VLCPictureInPictureWindowControlling?
+    private var drawableProxy: VLCPlayerDrawableProxy?
+    
     public override init() {
         self.player = VLCMediaPlayer()
         super.init()
-
+        
+        drawableProxy = VLCPlayerDrawableProxy(wrapper: self)
+        
         player.delegate = self
-        player.drawable = self
+        player.drawable = drawableProxy
         
         setupObservers()
     }
@@ -25,16 +28,16 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     func setupObservers() {
         NotificationCenter.default.addObserver(self, selector: #selector(handleDeviceLock), name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
     }
-
+    
     @objc private func handleDeviceLock() {
         player.pause()
     }
-
+    
     deinit {
         print("VLCPlayerWrapper deinit")
         NotificationCenter.default.removeObserver(self, name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
     }
-
+    
 }
 
 // MARK: - PlaybackControlProtocol
@@ -42,20 +45,20 @@ extension VLCPlayerWrapper: PlaybackControlProtocol {
     public var isPlaying: Bool {
         return player.isPlaying
     }
-
+    
     public var playbackSpeed: Float {
         get { return player.rate }
         set { player.rate = newValue }
     }
-
+    
     public func play() {
         player.play()
     }
-
+    
     public func pause() {
         player.pause()
     }
-
+    
     public func stop() {
         player.stop()
     }
@@ -70,11 +73,11 @@ extension VLCPlayerWrapper: TimeControlProtocol {
     public var duration: Double {
         return Double(player.media?.length.intValue ?? 0) / 1000
     }
-
+    
     public var bufferedDuration: Double {
         return duration * Double(player.position)
     }
-
+    
     public var isBuffering: Bool {
         return player.state == .buffering && !isPlaying
     }
@@ -84,10 +87,10 @@ extension VLCPlayerWrapper: TimeControlProtocol {
             completion?(false)
             return
         }
-
+        
         let vlcTime = VLCTime(number: NSNumber(value: time * 1000))
         player.time = vlcTime
-
+        
         completion?(true)
     }
     
@@ -198,52 +201,6 @@ extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     }
 }
 
-// MARK: - VLCPictureInPictureMediaControlling
-extension VLCPlayerWrapper: VLCPictureInPictureMediaControlling {
-    public func mediaTime() -> Int64 {
-        return player.time.value?.int64Value ?? 0
-    }
-    
-    public func mediaLength() -> Int64 {
-        return player.media?.length.value?.int64Value ?? 0
-    }
-
-    public func seek(by offset: Int64) async {
-        
-    }
-    
-    public func isMediaSeekable() -> Bool {
-        return player.isSeekable
-    }
-
-    public func isMediaPlaying() -> Bool {
-        return player.isPlaying
-    }
-}
-
-// MARK: - VLCPictureInPictureDrawable
-extension VLCPlayerWrapper: VLCPictureInPictureDrawable {
-    public func mediaController() -> (any VLCPictureInPictureMediaControlling)! {
-        return self
-    }
-    
-    public func pictureInPictureReady() -> (((any VLCPictureInPictureWindowControlling)?) -> Void)! {
-        return { [weak self] controller in
-            self?.pipController = controller
-        }
-    }
-}
-
-// MARK: - VLCDrawable
-extension VLCPlayerWrapper: VLCDrawable {
-    public func addSubview(_ view: UIView) {
-        playerView.addSubview(view)
-    }
-
-    public func bounds() -> CGRect {
-        return playerView.bounds
-    }
-}
 
 // MARK: - ViewRenderingProtocol
 extension VLCPlayerWrapper: ViewRenderingProtocol {
@@ -272,7 +229,7 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
             self.player.videoAspectRatio = scale < 1 ? nil : self.currentAspectRatio()
         }
     }
-
+    
     private func currentAspectRatio() -> String {
         let screenWidth = UIScreen.main.bounds.width
         let screenHeight = UIScreen.main.bounds.height
@@ -291,13 +248,13 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
         
         // Extract resolution using helper method
         let resolution = extractCurrentResolution()
-
+        
         // Extract frame rate
         let frameRate = extractFrameRate(from: tracksInfo)
-
+        
         // VLC doesn't expose runtime bitrate or buffering info easily
         let videoBitrate = extractVideoBitrate(from: media)
-
+        
         return StreamingInfo(
             frameRate: frameRate,
             videoBitrate: videoBitrate,
@@ -305,7 +262,7 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
             bufferDuration: "0 sec"
         )
     }
-
+    
     // MARK: - Helper Methods
     private func extractCurrentResolution() -> String {
         let videoSize = player.videoSize
@@ -317,7 +274,7 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
         }
         return "Unknown"
     }
-
+    
     private func extractFrameRate(from tracks: [VLCMedia.Track]) -> String {
         for track in tracks {
             if track.type == .video, let videoTrack = track.video {
@@ -332,7 +289,7 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
         }
         return "Unknown"
     }
-
+    
     private func extractVideoBitrate(from media: VLCMedia) -> String {
         let bitrate = media.statistics.demuxBitrate
         let bitrateMbps = Double(bitrate)
