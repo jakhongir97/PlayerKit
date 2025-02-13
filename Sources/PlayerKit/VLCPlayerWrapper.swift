@@ -222,10 +222,20 @@ extension VLCPlayerWrapper: ViewRenderingProtocol {
 // MARK: - GestureHandlingProtocol
 extension VLCPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
+        guard !UIDevice.current.isPortrait else { return }
+        scale > 1 ? setGravityToFill() : setGravityToDefault()
+    }
+    
+    public func setGravityToDefault() {
+        guard player.videoAspectRatio != nil else { return }
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            
-            self.player.videoAspectRatio = scale < 1 ? nil : self.currentAspectRatio()
+            self?.player.videoAspectRatio = nil
+        }
+    }
+    
+    public func setGravityToFill() {
+        DispatchQueue.main.async { [weak self] in
+            self?.player.videoAspectRatio = self?.currentAspectRatio()
         }
     }
     

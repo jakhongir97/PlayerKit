@@ -225,7 +225,17 @@ extension AVPlayerWrapper: ViewRenderingProtocol {
 // MARK: - GestureHandlingProtocol
 extension AVPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
-        playerView.playerLayer.videoGravity = scale > 1 ? .resizeAspectFill : .resizeAspect
+        guard !UIDevice.current.isPortrait else { return }
+        scale > 1 ? setGravityToFill() : setGravityToDefault()
+    }
+    
+    public func setGravityToDefault() {
+        guard playerView.playerLayer.videoGravity != .resizeAspect else { return }
+        playerView.playerLayer.videoGravity = .resizeAspect
+    }
+    
+    public func setGravityToFill() {
+        playerView.playerLayer.videoGravity = .resizeAspectFill
     }
 }
 

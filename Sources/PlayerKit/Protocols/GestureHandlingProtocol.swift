@@ -9,4 +9,6 @@ import Foundation
 
 public protocol GestureHandlingProtocol: AnyObject {
     func handlePinchGesture(scale: CGFloat)
+    func setGravityToDefault()
+    func setGravityToFill()
 }

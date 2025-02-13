@@ -48,3 +48,21 @@ extension Notification.Name {
     public static let PlayerKitControlsHidden = Notification.Name("PlayerKitControlsHidden")
     public static let PlayerKitLocked = Notification.Name("PlayerKitLocked")
 }
+
+extension UIDevice {
+    var interfaceOrientation: UIInterfaceOrientation? {
+        return UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.interfaceOrientation
+    }
+    
+    var isPortrait: Bool {
+        guard let orientation = interfaceOrientation else { return false }
+        return orientation == .portrait || orientation == .portraitUpsideDown
+    }
+    
+    var isLandscape: Bool {
+        guard let orientation = interfaceOrientation else { return false }
+        return orientation == .landscapeLeft || orientation == .landscapeRight
+    }
+}

@@ -21,6 +21,7 @@ struct RotateButtonView: View {
             setDeviceOrientation(.landscapeRight)
         } else {
             setDeviceOrientation(.portrait)
+            PlayerManager.shared.setGravityToDefault()
         }
     }
 }

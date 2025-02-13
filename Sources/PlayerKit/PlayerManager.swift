@@ -60,6 +60,7 @@ public class PlayerManager: ObservableObject {
     var trackManager: TrackManager?
     let castManager = CastManager.shared
     let gestureManager = GestureManager()
+    let orientationManager = OrientationManager()
     
     // Lazy initialization for controlVisibilityManager
     lazy var controlVisibilityManager: ControlVisibilityManager = {
@@ -301,6 +302,10 @@ extension PlayerManager {
         gestureManager.onZoom = { [weak self] scale in
             self?.currentPlayer?.handlePinchGesture(scale: scale)
         }
+    }
+    
+    public func setGravityToDefault() {
+        currentPlayer?.setGravityToDefault()
     }
 }
 

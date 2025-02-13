@@ -11,6 +11,9 @@ class OrientationManager: ObservableObject {
             .publisher(for: UIDevice.orientationDidChangeNotification)
             .sink { [weak self] _ in
                 self?.orientation = UIDevice.current.orientation
+                if UIDevice.current.orientation == .portrait || UIDevice.current.orientation == .portraitUpsideDown || UIDevice.current.isPortrait {
+                    PlayerManager.shared.setGravityToDefault()
+                }
             }
     }
 }
