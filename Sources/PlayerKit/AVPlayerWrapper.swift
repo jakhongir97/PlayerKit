@@ -248,6 +248,13 @@ extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
     public func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         PlayerManager.shared.isPiPActive = false
     }
+    
+    public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController) async -> Bool {
+        DispatchQueue.main.async { [weak self] in
+            self?.setGravityToDefault()
+        }
+        return true
+    }
 }
 
 // MARK: - StreamingInfoProtocol
