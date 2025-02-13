@@ -349,6 +349,8 @@ extension PlayerManager {
     public func resetPlayer() {
         currentPlayer?.stop()
         currentPlayer = nil
+        trackManager = nil
+        playbackManager = nil
         
         currentTime = 0
         duration = 0

@@ -142,15 +142,13 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
     
     public func selectAudioTrack(withID id: String) {
         if let track = player.audioTracks.first(where: { $0.trackName == id }) {
-            player.deselectAllAudioTracks()
-            track.isSelected = true
+            track.isSelectedExclusively = true
         }
     }
     
     public func selectSubtitle(withID id: String?) {
         if let id = id, let track = player.textTracks.first(where: { $0.trackName == id }) {
-            player.deselectAllTextTracks()
-            track.isSelected = true
+            track.isSelectedExclusively = true
         } else {
             player.deselectAllTextTracks()
         }
@@ -175,7 +173,9 @@ extension VLCPlayerWrapper: VLCMediaDelegate {
             PlayerManager.shared.isMediaReady = true
         }
         if let position = lastPosition {
-            player.time = VLCTime(number: NSNumber(value: position * 1000))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.player.time = VLCTime(number: NSNumber(value: position * 1000))
+            }
         }
     }
     
