@@ -11,6 +11,7 @@ struct PlaybackSpeedMenu: View {
                 speedOption(1.0, label: "1.0x (Normal)")
                 speedOption(1.25)
                 speedOption(1.5)
+                speedOption(2.0)
             }
         } label: {
             Image(systemName: "gauge.with.needle.fill")
