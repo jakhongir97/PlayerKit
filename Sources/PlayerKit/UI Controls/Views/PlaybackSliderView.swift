@@ -25,6 +25,7 @@ struct PlaybackSliderView: View {
                 }
                 .frame(height: 40)
                 .padding(.vertical)
+                .padding(.horizontal, 5)
                 .contentShape(Rectangle()) // Ensures full slider area is tappable
 
             }
