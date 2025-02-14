@@ -289,7 +289,7 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
         guard let timeRange = playerItem.loadedTimeRanges.first?.timeRangeValue else {
             return "0 sec"
         }
-        let duration = CMTimeGetSeconds(timeRange.start) + CMTimeGetSeconds(timeRange.duration)
+        let duration = CMTimeGetSeconds(timeRange.duration)
         let intDuration = Int(duration.rounded())
         return "\(intDuration) sec"
     }

@@ -1,11 +1,13 @@
 import SwiftUI
 
-struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
+struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
     @Binding var value: T
+    @Binding var bufferedValue: T // New binding for buffered progress
     let inRange: ClosedRange<T>
     let activeFillColor: Color
     let fillColor: Color
     let emptyColor: Color
+    let bufferedColor: Color // New color for buffered progress
     let height: CGFloat
     let onEditingChanged: (Bool) -> Void
     
@@ -17,18 +19,22 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
     
     init(
         value: Binding<T>,
+        bufferedValue: Binding<T>, // New buffered value binding
         inRange: ClosedRange<T>,
         activeFillColor: Color,
         fillColor: Color,
         emptyColor: Color,
+        bufferedColor: Color, // New color
         height: CGFloat,
         onEditingChanged: @escaping (Bool) -> Void
     ) {
         self._value = value
+        self._bufferedValue = bufferedValue // Assign new binding
         self.inRange = inRange
         self.activeFillColor = activeFillColor
         self.fillColor = fillColor
         self.emptyColor = emptyColor
+        self.bufferedColor = bufferedColor // Assign new color
         self.height = height
         self.onEditingChanged = onEditingChanged
     }
@@ -40,6 +46,20 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
                     ZStack(alignment: .center) {
                         Capsule()
                             .fill(emptyColor)
+                        
+                        // Buffered progress layer (NEW)
+                        if #available(iOS 15.0, *) {
+                            Capsule()
+                                .fill(bufferedColor)
+                                .mask({
+                                    HStack {
+                                        Rectangle()
+                                            .frame(width: max(bounds.size.width * CGFloat(getPrgPercentage(bufferedValue)), 0), alignment: .leading)
+                                        Spacer(minLength: 0)
+                                    }
+                                })
+                        }
+                        
                         if #available(iOS 15.0, *) {
                             Capsule()
                                 .fill(isActive ? activeFillColor : fillColor)
@@ -92,7 +112,8 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
                     let prg = max(min((localRealProgress + localTempProgress), 1), 0)
                     progressDuration = inRange.upperBound * prg
                     value = max(min(getPrgValue(), inRange.upperBound), inRange.lowerBound)
-                }.onEnded { value in
+                }
+                .onEnded { value in
                     localRealProgress = max(min(localRealProgress + localTempProgress, 1), 0)
                     localTempProgress = 0
                     progressDuration = inRange.upperBound * localRealProgress
@@ -108,7 +129,7 @@ struct MusicProgressSlider<T: BinaryFloatingPoint>: View {
             .onChange(of: value) { newValue in
                 if !isActive {
                     localRealProgress = getPrgPercentage(newValue)
-                    progressDuration = newValue // Ensure progressDuration updates as value changes
+                    progressDuration = newValue
                 }
             }
         }
