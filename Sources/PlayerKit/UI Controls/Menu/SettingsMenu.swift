@@ -7,11 +7,8 @@ struct SettingsMenu: View {
             PlayerMenu()
 
         } label: {
-            Image(systemName: "ellipsis.circle.fill")
-                .font(.system(size: 30, weight: .medium))
-                .foregroundColor(.white)
-                .padding(5)
-                .contentShape(Rectangle())
+            Image(systemName: "ellipsis")
+                .circularGlassIcon()
         }
         .onTapGesture {
             PlayerManager.shared.userInteracted()

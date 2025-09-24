@@ -9,13 +9,9 @@ public struct CloseButtonView: View {
             playerManager.shouldDissmiss = true
             presentationMode.wrappedValue.dismiss() // Dismiss the view
         }) {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 30, weight: .medium))
-                .padding(5)
-                .contentShape(Rectangle())
-                .foregroundColor(.white)
+            Image(systemName: "xmark")
+                .circularGlassIcon()
         }
-        .padding(.trailing)
     }
 }
 

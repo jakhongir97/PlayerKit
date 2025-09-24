@@ -14,11 +14,10 @@ struct PlaybackSpeedMenu: View {
                 speedOption(2.0)
             }
         } label: {
-            Image(systemName: "gauge.with.needle.fill")
-                .font(.system(size: 30, weight: .medium))
+            Image(systemName: "gauge.with.needle")
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.white)
-                .padding(5)
-                .contentShape(Rectangle())
+                .padding(10)
         }
         .onTapGesture {
             viewModel.userInteracted()

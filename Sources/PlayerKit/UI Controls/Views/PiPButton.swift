@@ -13,10 +13,9 @@ struct PiPButton: View {
         }) {
             // Change the image based on whether PiP is active
             Image(systemName: playerManager.isPiPActive ? "pip.fill" : "pip")
-                .font(.system(size: 30, weight: .medium))
+                .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(.white)
-                .padding(5)
-                .contentShape(Rectangle())
+                .padding(10)
         }
     }
 }

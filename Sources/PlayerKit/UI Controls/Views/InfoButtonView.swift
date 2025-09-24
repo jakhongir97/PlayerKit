@@ -20,12 +20,8 @@ struct InfoButtonView: View {
                 showPopover.toggle()
             }
         }) {
-            Image(systemName: "info.circle")
-                .hierarchicalSymbolRendering()
-                .font(.system(size: 30, weight: .medium))
-                .foregroundColor(.white)
-                .padding(5)
-                .contentShape(Rectangle())
+            Image(systemName: "info")
+                .circularGlassIcon()
         }
         .overlay(
             Group {

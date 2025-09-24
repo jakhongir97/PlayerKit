@@ -68,3 +68,15 @@ extension View {
     }
 }
 
+extension View {
+    @ViewBuilder
+    func glassStyleIfAvailable() -> some View {
+        if #available(iOS 26.0, *) {
+            self
+                .glassEffect(.clear)
+                .buttonStyle(.glass)
+        } else {
+            self
+        }
+    }
+}
