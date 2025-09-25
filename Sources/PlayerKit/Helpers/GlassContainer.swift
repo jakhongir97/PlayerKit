@@ -1,36 +1,30 @@
 import SwiftUI
 
-// MARK: - Modifier
-private struct GlassMenuPill: ViewModifier {
-    var insets: EdgeInsets
-    var height: CGFloat = 36
-
+/// MARK: - Glass background for the capsule container
+struct GlassCapsuleBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            GlassEffectContainer() {
-                content
-                    .padding(insets)
-                    .frame(height: height)     // stable geometry during Menu rehost
-                    .contentShape(Capsule())   // stable hit area
-                    .buttonStyle(.plain)
-            }
-            .transaction { $0.animation = nil } // prevent one-frame morph
+            content.glassEffect(.clear, in: .capsule)
+        } else if #available(iOS 15.0, *) {
+            content
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.white.opacity(0.12)))
         } else {
             content
-                .padding(insets)
-                .frame(height: height)
-                //.background(.ultraThinMaterial, in: Capsule())
-                .contentShape(Capsule())
-                .buttonStyle(.plain)
+                .background(
+                    BlurView(style: .systemThinMaterial) // iOS 13/14 fallback
+                        .clipShape(Capsule())
+                )
+                .overlay(Capsule().stroke(Color.white.opacity(0.12)))
         }
     }
 }
 
-public extension View {
-    /// Group controls into a capsule with proper glass handling on iOS 26+ and safe fallback below.
-    func glassMenuPill(insets: EdgeInsets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8),
-                       height: CGFloat = 36) -> some View {
-        modifier(GlassMenuPill(insets: insets, height: height))
+// iOS 13/14 blur fallback
+private struct BlurView: UIViewRepresentable {
+    var style: UIBlurEffect.Style = .systemThinMaterial
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        UIVisualEffectView(effect: UIBlurEffect(style: style))
     }
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
 }
-

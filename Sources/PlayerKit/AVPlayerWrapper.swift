@@ -172,6 +172,12 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             guard let self = self else { return }
             if item.status == .readyToPlay {
                 // Tracks are now available; refresh track info
+                if let asset = item.asset as? AVURLAsset {
+                    asset.loadValuesAsynchronously(forKeys: ["availableMediaCharacteristicsWithMediaSelectionOptions"]) {
+                        self.ensureAudibleTrackSelectedIfNeeded(item: item)
+                    }
+                }
+                
                 DispatchQueue.main.async {
                     PlayerManager.shared.isMediaReady = true
                 }
@@ -317,4 +323,38 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
         guard let videoTrack = playerItem.tracks.first?.currentVideoFrameRate else { return "Unknown" }
         return "\(Int(videoTrack)) fps"
     }
+}
+
+extension AVPlayerWrapper {
+    private func ensureAudibleTrackSelectedIfNeeded(item: AVPlayerItem) {
+        guard let asset = item.asset as? AVURLAsset,
+              let group = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return }
+
+        // If auto didn’t pick (common when all variants have DEFAULT=NO)
+        if item.currentMediaSelection.selectedMediaOption(in: group) == nil {
+            // Try device languages first: AVMediaSelectionGroup expects a Locale, not [String]
+            var pick: AVMediaSelectionOption? = nil
+            for languageCode in Locale.preferredLanguages {
+                let locale = Locale(identifier: languageCode)
+                let preferredOptions = AVMediaSelectionGroup.mediaSelectionOptions(from: group.options, with: locale)
+                if let preferred = preferredOptions.first {
+                    pick = preferred
+                    break
+                }
+            }
+            pick = pick
+                ?? group.defaultOption
+                ?? group.options.first(where: { $0.isPlayable })
+                ?? group.options.first
+
+            if let pick = pick {
+                item.select(pick, in: group)
+            } else if group.allowsEmptySelection, let first = group.options.first {
+                // As a last resort, avoid silent playback on groups that allow empty selection
+                item.select(first, in: group)
+            }
+        }
+
+    }
+
 }

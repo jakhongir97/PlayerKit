@@ -22,16 +22,16 @@ struct PlaybackSliderView: View {
                     fillColor: .white.opacity(0.5),
                     emptyColor: .white.opacity(0.3),
                     bufferedColor: .white.opacity(0.1), // Light gray for buffered progress
-                    height: 40
+                    height: 45
                 ) { editing in
                     playerManager.isSeeking = editing
                 }
-                .frame(height: 40)
+                .frame(height: 45)
                 .padding(.vertical)
                 .padding(.horizontal, 5)
                 .contentShape(Rectangle())
             }
-            .frame(height: 44)
+            .frame(height: 50)
         }
     }
 }

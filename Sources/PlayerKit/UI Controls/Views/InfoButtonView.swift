@@ -27,9 +27,9 @@ struct InfoButtonView: View {
             Group {
                 if showPopover {
                     StreamingInfoView()
-                        .frame(width: 250)
+                        .frame(width: 200)
                         .offset(
-                            x: isLandscape ? 40 : 0,
+                            x: isLandscape ? 60 : 0,
                             y: isLandscape ? 0 : -110
                         )
                         .transition(.opacity)
