@@ -2,8 +2,13 @@ import SwiftUI
 import Combine
 
 struct StreamingInfoView: View {
+    private let playerManager: PlayerManager
     @State var streamingInfo: StreamingInfo = .placeholder
     private let timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+    
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -15,14 +20,14 @@ struct StreamingInfoView: View {
         .padding(12)
         .glassBackgroundCompat(cornerRadius: 16)
         .onAppear {
-            PlayerManager.shared.userInteracted()
+            playerManager.userInteracted()
             updateStreamingInfo()
         }
         .onReceive(timer) { _ in updateStreamingInfo() }
     }
 
     private func updateStreamingInfo() {
-        streamingInfo = PlayerManager.shared.fetchStreamingInfo()
+        streamingInfo = playerManager.fetchStreamingInfo()
     }
 
     // MARK: - UI

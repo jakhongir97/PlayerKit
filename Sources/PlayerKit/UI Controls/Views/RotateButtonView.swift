@@ -1,7 +1,12 @@
 import SwiftUI
 
 struct RotateButtonView: View {
+    private let playerManager: PlayerManager
     @State private var isLandscape: Bool = false  // Track orientation state
+    
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
+    }
 
     var body: some View {
         Button(action: toggleOrientation) {
@@ -10,6 +15,9 @@ struct RotateButtonView: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
+        .accessibilityLabel("Rotate player")
+        .accessibilityHint("Toggles between portrait and landscape")
+        .accessibilityIdentifier("player.rotate")
     }
     
     private func toggleOrientation() {
@@ -20,7 +28,7 @@ struct RotateButtonView: View {
             setDeviceOrientation(.landscapeRight)
         } else {
             setDeviceOrientation(.portrait)
-            PlayerManager.shared.setGravityToDefault()
+            playerManager.setGravityToDefault()
         }
     }
 }

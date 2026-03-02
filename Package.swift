@@ -22,7 +22,10 @@ let package = Package(
         .target(
             name: "PlayerKit",
             dependencies: ["VLCKit", "GoogleCast"],
-            path: "Sources"
+            path: "Sources/PlayerKit",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "PlayerKitTests",
@@ -30,4 +33,3 @@ let package = Package(
         ),
     ]
 )
-

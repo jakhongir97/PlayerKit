@@ -2,23 +2,26 @@ import Combine
 import Foundation
 
 class PlayerMenuViewModel: ObservableObject {
-    @Published var selectedPlayerType: PlayerType = PlayerManager.shared.selectedPlayerType
+    @Published var selectedPlayerType: PlayerType
+    private let playerManager: PlayerManager
 
     private var cancellables = Set<AnyCancellable>()
 
-    init() {
-        PlayerManager.shared.$selectedPlayerType
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
+        selectedPlayerType = playerManager.selectedPlayerType
+        
+        playerManager.$selectedPlayerType
             .receive(on: RunLoop.main)
             .assign(to: \.selectedPlayerType, on: self)
             .store(in: &cancellables)
     }
 
     func switchPlayer(to type: PlayerType) {
-        PlayerManager.shared.switchPlayer(to: type)
+        playerManager.switchPlayer(to: type)
     }
 
     func userInteracted() {
-        PlayerManager.shared.userInteracted()
+        playerManager.userInteracted()
     }
 }
-

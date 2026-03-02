@@ -11,6 +11,9 @@ struct CastButton: UIViewRepresentable {
         button.setImage(largeImage, for: .normal)
         
         button.tintColor = .white
+        button.accessibilityLabel = "Cast options"
+        button.accessibilityHint = "Shows AirPlay and Chromecast options"
+        button.accessibilityIdentifier = "player.cast"
         setupCastButton(for: button)
         return button
     }
@@ -53,4 +56,3 @@ struct CastButton: UIViewRepresentable {
         }
     }
 }
-

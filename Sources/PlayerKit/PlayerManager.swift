@@ -40,11 +40,12 @@ public class PlayerManager: ObservableObject {
     @Published var playerItems: [PlayerItem] = []
     @Published var currentPlayerItemIndex: Int = 0
     @Published public var contentType: PlayerContentType = .movie
-    @Published var shouldDissmiss: Bool = false {
+    @Published var shouldDismiss: Bool = false {
         didSet {
             playbackManager?.stop()
         }
     }
+    @Published public private(set) var lastError: PlayerKitError?
     @Published public var isMediaReady: Bool = false {
         didSet {
             if isMediaReady {
@@ -71,11 +72,16 @@ public class PlayerManager: ObservableObject {
     public weak var currentPlayer: PlayerProtocol?
     private var lastPosition: Double = 0
     
-    private var cancellables = Set<AnyCancellable>()
+    private var stateCancellables = Set<AnyCancellable>()
+    private var longLivedCancellables = Set<AnyCancellable>()
     
     private init() {
-        AudioSessionManager.shared.configureAudioSession()
+        configureAudioSessionCallbacks()
+        configureCastCallbacks()
         setupGestureHandling()
+        configureOrientationCallbacks()
+        AudioSessionManager.shared.configureAudioSession()
+        subscribeToCastState()
         subscribeToGameControllerEvents()
     }
     
@@ -93,6 +99,7 @@ public class PlayerManager: ObservableObject {
         currentProvider = provider
         let player = provider.createPlayer()
         currentPlayer = player
+        bindPlayerCallbacks(player)
         
         // Initialize managers with the player instance
         playbackManager = PlaybackManager(player: player, playerManager: self)
@@ -118,11 +125,15 @@ public class PlayerManager: ObservableObject {
     
     public func load(playerItem: PlayerItem) {
         self.playerItem = playerItem
+        if playerItems.isEmpty {
+            contentType = playerItem.episodeIndex == nil ? .movie : .episode
+        }
         load(url: playerItem.url, lastPosition: playerItem.lastPosition)
     }
     
     public func loadEpisodes(playerItems: [PlayerItem], currentIndex: Int = 0 ) {
         self.playerItems = playerItems
+        contentType = .episode
         currentPlayerItemIndex = currentIndex
         guard let playerItem = playerItems[safe: currentIndex] else { return }
         load(playerItem: playerItem)
@@ -130,6 +141,9 @@ public class PlayerManager: ObservableObject {
     
     // Loads a media URL into the current player
     private func load(url: URL, lastPosition: Double? = nil) {
+        clearError()
+        isMediaReady = false
+        isVideoEnded = false
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         userInteracted()
     }
@@ -170,6 +184,27 @@ public class PlayerManager: ObservableObject {
 
 // MARK: - Playback Controls
 extension PlayerManager {
+    public func reportError(_ error: PlayerKitError) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.reportError(error)
+            }
+            return
+        }
+        lastError = error
+        NotificationCenter.default.post(name: .PlayerKitDidFail, object: error)
+    }
+
+    public func clearError() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.clearError()
+            }
+            return
+        }
+        lastError = nil
+    }
+
     public func play() {
         playbackManager?.play()
         isPlaying = true
@@ -302,6 +337,22 @@ extension PlayerManager {
         gestureManager.onZoom = { [weak self] scale in
             self?.currentPlayer?.handlePinchGesture(scale: scale)
         }
+        
+        gestureManager.isLockedProvider = { [weak self] in
+            self?.isLocked ?? false
+        }
+        
+        gestureManager.currentTimeProvider = { [weak self] in
+            self?.currentPlayer?.currentTime ?? self?.currentTime ?? 0
+        }
+        
+        gestureManager.durationProvider = { [weak self] in
+            self?.currentPlayer?.duration ?? self?.duration ?? 0
+        }
+        
+        gestureManager.onControlsVisibilityChange = { [weak self] isVisible in
+            self?.areControlsVisible = isVisible
+        }
     }
     
     public func setGravityToDefault() {
@@ -337,6 +388,16 @@ extension PlayerManager {
 // MARK: - Player State Observation
 extension PlayerManager {
     private func observePlayerState() {
+        stateCancellables.removeAll()
+        
+        if let stateSource = currentPlayer as? PlayerStateSource {
+            stateSource.onRuntimeStateChange = { [weak self] state in
+                self?.applyRuntimeState(state)
+            }
+            stateSource.startRuntimeStateUpdates()
+            return
+        }
+
         Timer.publish(every: 0.5, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
@@ -348,10 +409,19 @@ extension PlayerManager {
                 self.duration = player.duration
                 self.bufferedDuration = player.bufferedDuration
             }
-            .store(in: &cancellables)
+            .store(in: &stateCancellables)
     }
     
     public func resetPlayer() {
+        if let stateSource = currentPlayer as? PlayerStateSource {
+            stateSource.stopRuntimeStateUpdates()
+            stateSource.onRuntimeStateChange = nil
+        }
+        
+        if let eventSource = currentPlayer as? PlayerEventSource {
+            eventSource.lifecycleReporter = nil
+        }
+        
         currentPlayer?.stop()
         currentPlayer = nil
         trackManager = nil
@@ -364,18 +434,141 @@ extension PlayerManager {
         isLocked = false
         isMediaReady = false
         isVideoEnded = false
-        shouldDissmiss = false
+        shouldDismiss = false
+        clearError()
         
         selectedAudio = nil
         selectedSubtitle = nil
         availableAudioTracks = []
         availableSubtitles = []
+        playerItem = nil
+        playerItems = []
+        currentPlayerItemIndex = 0
+        contentType = .movie
         
-        cancellables.removeAll()
+        stateCancellables.removeAll()
     }
 }
 
 extension PlayerManager {
+    private func bindPlayerCallbacks(_ player: PlayerProtocol) {
+        if let eventSource = player as? PlayerEventSource {
+            eventSource.lifecycleReporter = self
+        }
+    }
+    
+    private func configureCastCallbacks() {
+        castManager.currentPlayerItemProvider = { [weak self] in
+            self?.playerItem
+        }
+        
+        castManager.onError = { [weak self] error in
+            self?.reportError(error)
+        }
+        
+        castManager.onDismissRequested = { [weak self] in
+            self?.shouldDismiss = true
+        }
+    }
+    
+    private func configureAudioSessionCallbacks() {
+        AudioSessionManager.shared.onPauseRequested = { [weak self] in
+            self?.pause()
+        }
+        
+        AudioSessionManager.shared.onResumeRequested = { [weak self] in
+            self?.play()
+        }
+    }
+    
+    private func configureOrientationCallbacks() {
+        orientationManager.onPortraitOrientation = { [weak self] in
+            self?.setGravityToDefault()
+        }
+    }
+    
+    private func applyRuntimeState(_ state: PlayerRuntimeState) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.applyRuntimeState(state)
+            }
+            return
+        }
+        
+        isPlaying = state.isPlaying
+        isBuffering = state.isBuffering
+        currentTime = state.currentTime
+        duration = state.duration
+        bufferedDuration = state.bufferedDuration
+    }
+}
+
+extension PlayerManager: PlayerLifecycleReporting {
+    func playerDidBecomeReady() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.playerDidBecomeReady()
+            }
+            return
+        }
+        isMediaReady = true
+    }
+    
+    func playerDidUpdateTracks() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.playerDidUpdateTracks()
+            }
+            return
+        }
+        refreshTrackInfo()
+    }
+    
+    func playerDidEndPlayback() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.playerDidEndPlayback()
+            }
+            return
+        }
+        videoDidEnd()
+    }
+    
+    func playerDidChangePiPState(isActive: Bool) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.playerDidChangePiPState(isActive: isActive)
+            }
+            return
+        }
+        isPiPActive = isActive
+    }
+    
+    func playerDidFail(with error: PlayerKitError) {
+        reportError(error)
+    }
+}
+
+extension PlayerManager {
+    private func subscribeToCastState() {
+        isCasting = castManager.isCasting
+        isCastingAvailable = castManager.isCastingAvailable
+
+        castManager.$isCasting
+            .receive(on: RunLoop.main)
+            .sink { [weak self] value in
+                self?.isCasting = value
+            }
+            .store(in: &longLivedCancellables)
+
+        castManager.$isCastingAvailable
+            .receive(on: RunLoop.main)
+            .sink { [weak self] value in
+                self?.isCastingAvailable = value
+            }
+            .store(in: &longLivedCancellables)
+    }
+
     private func subscribeToGameControllerEvents() {
         GameControllerManager.shared.controllerEventPublisher
             .sink { [weak self] event in
@@ -410,7 +603,7 @@ extension PlayerManager {
                     self.scrubBackward(by: amount)
                     
                 case .closePlayer:
-                    self.shouldDissmiss = true
+                    self.shouldDismiss = true
                     
                 case .focusUp:
                     break
@@ -422,6 +615,6 @@ extension PlayerManager {
                     break
                 }
             }
-            .store(in: &cancellables)
+            .store(in: &longLivedCancellables)
     }
 }

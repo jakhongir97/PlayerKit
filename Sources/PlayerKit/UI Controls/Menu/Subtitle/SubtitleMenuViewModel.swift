@@ -5,10 +5,11 @@ class SubtitleMenuViewModel: ObservableObject {
     @Published var availableSubtitles: [TrackInfo] = []
     @Published var selectedSubtitle: TrackInfo?
     
+    private let playerManager: PlayerManager
     private var cancellables = Set<AnyCancellable>()
     
-    init() {
-        let playerManager = PlayerManager.shared
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
         
         // Subscribe to available subtitles from PlayerManager
         playerManager.$availableSubtitles
@@ -32,14 +33,14 @@ class SubtitleMenuViewModel: ObservableObject {
     // Function to select subtitle by index
     func selectSubtitle(index: Int?) {
         if let index = index, let track = availableSubtitles[safe: index] {
-            PlayerManager.shared.selectSubtitle(track: track)
+            playerManager.selectSubtitle(track: track)
         } else {
             // User selected "Turn Off Subtitles"
-            PlayerManager.shared.selectSubtitle(track: nil)
+            playerManager.selectSubtitle(track: nil)
         }
     }
     
     func userInteracted() {
-        PlayerManager.shared.userInteracted()
+        playerManager.userInteracted()
     }
 }

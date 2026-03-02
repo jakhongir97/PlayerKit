@@ -25,14 +25,14 @@ struct PlayerControlsView: View {
 
                 // Middle part: Play/pause button (later: next/prev buttons)
                 HStack {
-                    InfoButtonView()
+                    InfoButtonView(playerManager: playerManager)
                         .opacity((playerManager.isLocked || !playerManager.areControlsVisible) ? 0 : 1)
                     Spacer()
                     
                     MiddleControlsView(playerManager: playerManager)
                         .opacity((playerManager.isLocked || !playerManager.areControlsVisible) ? 0 : 1)
                     Spacer()
-                    LockButtonView()
+                    LockButtonView(playerManager: playerManager)
                         .opacity(!playerManager.areControlsVisible ? 0 : 1)
                 }
 

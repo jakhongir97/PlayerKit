@@ -2,6 +2,8 @@ import AVFoundation
 
 class AudioSessionManager: NSObject {
     static let shared = AudioSessionManager()
+    var onPauseRequested: (() -> Void)?
+    var onResumeRequested: (() -> Void)?
     
     private override init() {
         super.init()
@@ -46,15 +48,13 @@ class AudioSessionManager: NSObject {
         switch type {
         case .began:
             print("AudioSessionManager: Audio interruption began.")
-            // Pause the player
-            PlayerManager.shared.pause()
+            onPauseRequested?()
         case .ended:
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 if options.contains(.shouldResume) {
                     print("AudioSessionManager: Audio interruption ended. Resuming playback.")
-                    // Resume playback
-                    PlayerManager.shared.play()
+                    onResumeRequested?()
                 }
             }
         @unknown default:
@@ -70,11 +70,9 @@ class AudioSessionManager: NSObject {
         switch reason {
         case .oldDeviceUnavailable:
             print("AudioSessionManager: Audio output route changed. Pausing playback.")
-            // Pause the player
-            PlayerManager.shared.pause()
+            onPauseRequested?()
         default:
             break
         }
     }
 }
-

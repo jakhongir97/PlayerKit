@@ -5,10 +5,11 @@ class AudioMenuViewModel: ObservableObject {
     @Published var availableAudioTracks: [TrackInfo] = []
     @Published var selectedAudio: TrackInfo?
     
+    private let playerManager: PlayerManager
     private var cancellables = Set<AnyCancellable>()
     
-    init() {
-        let playerManager = PlayerManager.shared
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
 
         playerManager.$availableAudioTracks
             .receive(on: RunLoop.main)
@@ -29,11 +30,11 @@ class AudioMenuViewModel: ObservableObject {
     
     func selectAudioTrack(index: Int) {
         if let track = availableAudioTracks[safe: index] {
-            PlayerManager.shared.selectAudioTrack(track: track)
+            playerManager.selectAudioTrack(track: track)
         }
     }
     
     func userInteracted() {
-        PlayerManager.shared.userInteracted()
+        playerManager.userInteracted()
     }
 }

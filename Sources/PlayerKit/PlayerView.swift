@@ -1,20 +1,22 @@
 import SwiftUI
 
 public struct PlayerView: View {
-    @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject var playerManager: PlayerManager
     @Environment(\.presentationMode) var presentationMode
     
     private var isIPhone: Bool {
         UIDevice.current.userInterfaceIdiom == .phone
     }
 
-    public init(playerItem: PlayerItem? = nil) {
+    public init(playerItem: PlayerItem? = nil, playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
         playerManager.setPlayer()
         guard let playerItem = playerItem else { return }
         playerManager.load(playerItem: playerItem)
     }
     
-    public init(playerItems: [PlayerItem], currentIndex: Int = 0) {
+    public init(playerItems: [PlayerItem], currentIndex: Int = 0, playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
         playerManager.setPlayer()
         playerManager.loadEpisodes(playerItems: playerItems, currentIndex: currentIndex) // Load episodes list
     }
@@ -22,7 +24,7 @@ public struct PlayerView: View {
     public var body: some View {
         ZStack {
             // Full-screen PlayerRenderingView
-            PlayerRenderingView()
+            PlayerRenderingView(playerManager: playerManager)
                 .id(playerManager.selectedPlayerType)
                 .edgesIgnoringSafeArea(.all)
 
@@ -36,8 +38,8 @@ public struct PlayerView: View {
                 .transition(.opacity)
                 .zIndex(1)
         }
-        .onReceive(playerManager.$shouldDissmiss) { shouldDissmiss in
-            if shouldDissmiss {
+        .onReceive(playerManager.$shouldDismiss) { shouldDismiss in
+            if shouldDismiss {
                 presentationMode.wrappedValue.dismiss()
                 NotificationCenter.default.post(name: .PlayerKitDidClose, object: nil)
             }

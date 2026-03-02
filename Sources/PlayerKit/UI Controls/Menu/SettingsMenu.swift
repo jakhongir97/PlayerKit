@@ -1,19 +1,25 @@
 import SwiftUI
 
 struct SettingsMenu: View {
+    private let playerManager: PlayerManager
+    
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
+    }
 
     var body: some View {
         Menu {
-            PlayerMenu()
+            PlayerMenu(playerManager: playerManager)
 
         } label: {
             Image(systemName: "ellipsis")
                 .circularGlassIcon()
         }
+        .accessibilityLabel("Settings")
+        .accessibilityHint("Opens player settings")
+        .accessibilityIdentifier("player.settingsMenu")
         .onTapGesture {
-            PlayerManager.shared.userInteracted()
+            playerManager.userInteracted()
         }
     }
 }
-
-

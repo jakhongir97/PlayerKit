@@ -8,7 +8,7 @@ struct BottomControlsView: View {
 
     var body: some View {
         HStack {
-            MediaOptionsMenu()
+            MediaOptionsMenu(playerManager: playerManager)
             BufferingIndicatorView(playerManager: playerManager)
             Spacer()
 
@@ -16,8 +16,8 @@ struct BottomControlsView: View {
                 // Groups glass shapes & renders them as one, avoiding flash/morphs
                 GlassEffectContainer {
                     HStack {
-                        PiPButton()
-                        if isIPhone { RotateButtonView() }
+                        PiPButton(playerManager: playerManager)
+                        if isIPhone { RotateButtonView(playerManager: playerManager) }
                     }
                     .padding(pillInsets)
                     .contentShape(Capsule())
@@ -27,8 +27,8 @@ struct BottomControlsView: View {
             } else if #available(iOS 15.0, *) {
                 // Fallback for iOS 15–25: material-based "glass"
                 HStack {
-                    PiPButton()
-                    if isIPhone { RotateButtonView() }
+                    PiPButton(playerManager: playerManager)
+                    if isIPhone { RotateButtonView(playerManager: playerManager) }
                 }
                 .padding(pillInsets)
                 .background(.ultraThinMaterial, in: Capsule())
@@ -37,8 +37,8 @@ struct BottomControlsView: View {
             } else {
                 // Very old fallback
                 HStack {
-                    PiPButton()
-                    if isIPhone { RotateButtonView() }
+                    PiPButton(playerManager: playerManager)
+                    if isIPhone { RotateButtonView(playerManager: playerManager) }
                 }
                 .padding(pillInsets)
                 .background(Color.white.opacity(0.10))
@@ -48,4 +48,3 @@ struct BottomControlsView: View {
         }
     }
 }
-

@@ -15,6 +15,9 @@ class CastManager: NSObject {
     
     // MARK: - Private Properties
     private var sessionManager: GCKSessionManager!
+    var currentPlayerItemProvider: (() -> PlayerItem?)?
+    var onError: ((PlayerKitError) -> Void)?
+    var onDismissRequested: (() -> Void)?
     
     // MARK: - Initializer
     private override init() {
@@ -55,6 +58,7 @@ class CastManager: NSObject {
     // MARK: - Cast State Management
     private func addCastStateListener() {
         NotificationCenter.default.addObserver(self, selector: #selector(castStateDidChange), name: .gckCastStateDidChange, object: nil)
+        castStateDidChange()
     }
     
     @objc private func castStateDidChange() {
@@ -68,10 +72,18 @@ class CastManager: NSObject {
     // MARK: - Media Playback
     func playMediaOnCast() {
         guard let remoteMediaClient = sessionManager.currentCastSession?.remoteMediaClient else {
+            onError?(.castSessionUnavailable)
             print("Error: No active cast session.")
             return
         }
-        guard let playerItem = PlayerManager.shared.playerItem else { return }
+        guard let playerItem = currentPlayerItemProvider?() else {
+            onError?(.unknown("No media selected for casting."))
+            return
+        }
+        guard playerItem.castVideoUrl != nil else {
+            onError?(.castURLMissing)
+            return
+        }
         
         let mediaLoadRequest = createMediaLoadRequest(for: playerItem)
         let request = remoteMediaClient.loadMedia(with: mediaLoadRequest)
@@ -79,7 +91,7 @@ class CastManager: NSObject {
         isCasting = true
         
         GCKCastContext.sharedInstance().presentDefaultExpandedMediaControls()
-        PlayerManager.shared.shouldDissmiss = true
+        onDismissRequested?()
     }
     
     private func createMediaLoadRequest(for playerItem: PlayerItem) -> GCKMediaLoadRequestData {
@@ -129,9 +141,9 @@ extension CastManager: GCKSessionManagerListener {
         playMediaOnCast()
     }
     
-    func sessionManager(_ sessionManager: GCKSessionManager, didResumeSession session: GCKCastSession) {
+    func sessionManager(_ sessionManager: GCKSessionManager, didResumeSession session: GCKSession) {
         print("Cast session resumed")
-        session.remoteMediaClient?.add(self)
+        (session as? GCKCastSession)?.remoteMediaClient?.add(self)
         isConnectedToCastDevice = true
     }
     
@@ -170,6 +182,7 @@ extension CastManager: GCKRequestDelegate {
     }
     
     func request(_ request: GCKRequest, didFailWithError error: GCKError) {
+        onError?(.unknown("Cast request failed: \(error.localizedDescription)"))
         print("Cast request failed with error: \(error.localizedDescription)")
     }
 }
@@ -180,4 +193,3 @@ extension CastManager: GCKLoggerDelegate {
         print("Google Cast Log - Function: \(function) Message: \(message)")
     }
 }
-

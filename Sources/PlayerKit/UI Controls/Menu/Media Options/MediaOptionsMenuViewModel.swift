@@ -5,10 +5,11 @@ class MediaOptionsMenuViewModel: ObservableObject {
     @Published var hasSubtitles: Bool = false
     @Published var hasAudioTracks: Bool = false
 
+    private let playerManager: PlayerManager
     private var cancellables = Set<AnyCancellable>()
 
-    init() {
-        let playerManager = PlayerManager.shared
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
 
         // Observe availableSubtitles
         playerManager.$availableSubtitles
@@ -25,4 +26,3 @@ class MediaOptionsMenuViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 }
-

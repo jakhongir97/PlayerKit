@@ -132,11 +132,6 @@ final class GameControllerManager: ObservableObject {
         gamepad.buttonX.pressedChangedHandler = { [weak self] _, _, pressed in
             if pressed { self?.controllerEventPublisher.send(.focusSelect) }
         }
-        
-        // X Button -> Select Focused Item
-        gamepad.buttonX.pressedChangedHandler = { [weak self] _, _, pressed in
-            if pressed { self?.controllerEventPublisher.send(.focusSelect) }
-        }
     }
 
     /// Helper to schedule `.scrubEnded` after a small delay.
@@ -179,4 +174,3 @@ final class GameControllerManager: ObservableObject {
         controllerEventPublisher.send(.scrubEnded)
     }
 }
-

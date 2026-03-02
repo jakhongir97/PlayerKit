@@ -6,6 +6,10 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var pipController: VLCPictureInPictureWindowControlling?
     private var drawableProxy: VLCPlayerDrawableProxy?
     private var lastPosition: Double?
+    private var shouldEmitRuntimeState = false
+    
+    weak var lifecycleReporter: PlayerLifecycleReporting?
+    var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
     
     public override init() {
         self.player = VLCMediaPlayer()
@@ -54,14 +58,17 @@ extension VLCPlayerWrapper: PlaybackControlProtocol {
     
     public func play() {
         player.play()
+        emitRuntimeState()
     }
     
     public func pause() {
         player.pause()
+        emitRuntimeState()
     }
     
     public func stop() {
         player.stop()
+        emitRuntimeState()
     }
 }
 
@@ -93,6 +100,7 @@ extension VLCPlayerWrapper: TimeControlProtocol {
         player.time = vlcTime
         
         completion?(true)
+        emitRuntimeState()
     }
     
     public func scrubForward(by seconds: TimeInterval) {
@@ -163,25 +171,28 @@ extension VLCPlayerWrapper: MediaLoadingProtocol {
         player.media = media
         player.media?.delegate = self
         player.play()
+        emitRuntimeState()
     }
 }
 
 // MARK: - VLCMediaDelegate
 extension VLCPlayerWrapper: VLCMediaDelegate {
     public func mediaDidFinishParsing(_ aMedia: VLCMedia) {
-        DispatchQueue.main.async { [weak self] in
-            PlayerManager.shared.isMediaReady = true
+        DispatchQueue.main.async {
+            self.lifecycleReporter?.playerDidBecomeReady()
+            self.emitRuntimeState()
         }
         if let position = lastPosition {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.player.time = VLCTime(number: NSNumber(value: position * 1000))
+                self?.emitRuntimeState()
             }
         }
     }
     
     public func mediaMetaDataDidChange(_ aMedia: VLCMedia) {
         DispatchQueue.main.async {
-            PlayerManager.shared.refreshTrackInfo()
+            self.lifecycleReporter?.playerDidUpdateTracks()
         }
     }
 }
@@ -191,12 +202,21 @@ extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
     public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
         if newState == .stopped {
             DispatchQueue.main.async {
-                PlayerManager.shared.videoDidEnd()
+                self.lifecycleReporter?.playerDidEndPlayback()
+                self.emitRuntimeState()
             }
+        } else if newState == .error {
+            DispatchQueue.main.async {
+                self.lifecycleReporter?.playerDidFail(with: .mediaLoadFailed("VLC playback error"))
+                self.emitRuntimeState()
+            }
+        } else {
+            emitRuntimeState()
         }
     }
     
     public func mediaPlayerTimeChanged(_ aNotification: Notification) {
+        emitRuntimeState()
     }
 }
 
@@ -253,7 +273,7 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
             return .placeholder
         }
         
-        let tracksInfo = media.tracksInformation as? [VLCMedia.Track] ?? []
+        let tracksInfo = media.tracksInformation
         let resolution = extractCurrentResolution()
         let frameRate = extractFrameRate(from: tracksInfo)
         let videoBitrate = extractVideoBitrate(from: media)
@@ -301,3 +321,29 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
     
 }
 
+extension VLCPlayerWrapper: PlayerEventSource {}
+
+extension VLCPlayerWrapper: PlayerStateSource {
+    func startRuntimeStateUpdates() {
+        shouldEmitRuntimeState = true
+        emitRuntimeState()
+    }
+    
+    func stopRuntimeStateUpdates() {
+        shouldEmitRuntimeState = false
+    }
+}
+
+extension VLCPlayerWrapper {
+    private func emitRuntimeState() {
+        guard shouldEmitRuntimeState else { return }
+        let state = PlayerRuntimeState(
+            isPlaying: isPlaying,
+            isBuffering: isBuffering,
+            currentTime: currentTime,
+            duration: duration,
+            bufferedDuration: bufferedDuration
+        )
+        onRuntimeStateChange?(state)
+    }
+}

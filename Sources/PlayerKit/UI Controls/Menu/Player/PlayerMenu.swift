@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct PlayerMenu: View {
-    @ObservedObject private var viewModel = PlayerMenuViewModel()
+    @StateObject private var viewModel: PlayerMenuViewModel
+    
+    init(playerManager: PlayerManager = .shared) {
+        _viewModel = StateObject(wrappedValue: PlayerMenuViewModel(playerManager: playerManager))
+    }
 
     var body: some View {
         Menu {
@@ -22,6 +26,9 @@ struct PlayerMenu: View {
                 .padding()
                 .foregroundColor(.white)
         }
+        .accessibilityLabel("Player backend")
+        .accessibilityHint("Selects AVPlayer or VLC backend")
+        .accessibilityIdentifier("player.backendMenu")
         .onTapGesture {
             viewModel.userInteracted()
         }

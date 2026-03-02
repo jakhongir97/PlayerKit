@@ -3,7 +3,11 @@ import AVFoundation
 import VLCKit
 
 struct PlayerRenderingView: View {
-    @ObservedObject var playerManager = PlayerManager.shared
+    @ObservedObject var playerManager: PlayerManager
+    
+    init(playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
+    }
 
     var body: some View {
         ZStack {
@@ -12,6 +16,7 @@ struct PlayerRenderingView: View {
             } else {
                 Text("No video loaded.")
                     .foregroundColor(.white)
+                    .accessibilityIdentifier("player.emptyState")
             }
         }
         .background(Color.black)

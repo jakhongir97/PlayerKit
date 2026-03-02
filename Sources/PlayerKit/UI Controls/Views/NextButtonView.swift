@@ -4,7 +4,7 @@ struct NextButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
     private var isDisabled: Bool {
-        false
+        playerManager.playerItems.isEmpty || playerManager.currentPlayerItemIndex >= playerManager.playerItems.count - 1
     }
 
     var body: some View {
@@ -18,6 +18,8 @@ struct NextButtonView: View {
         }
         .disabled(isDisabled)
         .animation(.easeInOut(duration: 0.2), value: isDisabled) // Smooth transition
+        .accessibilityLabel("Next episode")
+        .accessibilityHint("Plays the next episode")
+        .accessibilityIdentifier("player.next")
     }
 }
-

@@ -1,15 +1,20 @@
 import SwiftUI
 
 struct LockButtonView: View {
-    @ObservedObject var playerManager: PlayerManager = PlayerManager.shared  // Access shared lock state
+    @ObservedObject var playerManager: PlayerManager
+    
+    init(playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
+    }
 
     var body: some View {
-        let isLocked = playerManager.isLocked
-        
         Button(action: toggleLock) {
-            Image(systemName: "lock")
+            Image(systemName: playerManager.isLocked ? "lock.fill" : "lock.open")
                 .circularGlassIcon()
         }
+        .accessibilityLabel(playerManager.isLocked ? "Unlock controls" : "Lock controls")
+        .accessibilityHint("Prevents accidental control interactions")
+        .accessibilityIdentifier("player.lock")
     }
     
     private func toggleLock() {

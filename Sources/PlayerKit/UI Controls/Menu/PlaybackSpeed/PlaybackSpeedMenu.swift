@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct PlaybackSpeedMenu: View {
-    @ObservedObject var viewModel = PlaybackSpeedViewModel()
+    @StateObject private var viewModel: PlaybackSpeedViewModel
+    
+    init(playerManager: PlayerManager = .shared) {
+        _viewModel = StateObject(wrappedValue: PlaybackSpeedViewModel(playerManager: playerManager))
+    }
 
     var body: some View {
         Menu {
@@ -19,6 +23,9 @@ struct PlaybackSpeedMenu: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
+        .accessibilityLabel("Playback speed")
+        .accessibilityHint("Opens playback speed options")
+        .accessibilityIdentifier("player.speedMenu")
         .onTapGesture {
             viewModel.userInteracted()
         }
@@ -37,4 +44,3 @@ struct PlaybackSpeedMenu: View {
         }
     }
 }
-

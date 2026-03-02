@@ -5,7 +5,7 @@ struct TopControlsView: View {
 
     var body: some View {
         HStack {
-            CloseButtonView()
+            CloseButtonView(playerManager: playerManager)
             VStack(alignment: .leading) {
                 if let title = playerManager.playerItem?.title {
                     Text(title)
@@ -25,8 +25,7 @@ struct TopControlsView: View {
             Spacer()
             
             SharingMenuView()
-            SettingsMenu()
+            SettingsMenu(playerManager: playerManager)
         }
     }
 }
-

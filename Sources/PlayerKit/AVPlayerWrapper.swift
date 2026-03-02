@@ -8,6 +8,12 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playbackEndedObserver: Any?
+    private var timeObserverToken: Any?
+    private weak var timeObserverPlayer: AVPlayer?
+    private var shouldEmitRuntimeState = false
+    
+    weak var lifecycleReporter: PlayerLifecycleReporting?
+    var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
     
     // MARK: - Initializer
     public override init() {
@@ -17,9 +23,8 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     deinit {
         print("AvPlayerWrapper deinit")
         playerItemStatusObserver = nil
-        if let observer = playbackEndedObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
+        removePlaybackEndedObserver()
+        removeRuntimeTimeObserver()
     }
 }
 
@@ -36,16 +41,22 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
     
     public func play() {
         player?.play()
+        emitRuntimeState()
     }
     
     public func pause() {
         player?.pause()
+        emitRuntimeState()
     }
     
     public func stop() {
         player?.pause()
         player?.replaceCurrentItem(with: nil)
+        playerItemStatusObserver = nil
+        removePlaybackEndedObserver()
+        removeRuntimeTimeObserver()
         player = nil
+        emitRuntimeState()
     }
 }
 
@@ -71,8 +82,9 @@ extension AVPlayerWrapper: TimeControlProtocol {
     
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
-        player?.seek(to: cmTime, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity) { finished in
+        player?.seek(to: cmTime, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity) { [weak self] finished in
             completion?(finished)
+            self?.emitRuntimeState()
         }
     }
     
@@ -110,9 +122,9 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
     }
     
     public var currentAudioTrack: TrackInfo? {
-        guard let asset = player?.currentItem?.asset,
-              let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
-              let selectedOption = player?.currentItem?.selectedMediaOption(in: audioGroup) else { return nil }
+        guard let currentItem = player?.currentItem,
+              let audioGroup = currentItem.asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
+              let selectedOption = currentItem.currentMediaSelection.selectedMediaOption(in: audioGroup) else { return nil }
         let id = selectedOption.extendedLanguageTag ?? selectedOption.locale?.identifier ?? UUID().uuidString
         let name = selectedOption.displayName
         let languageCode = selectedOption.extendedLanguageTag ?? selectedOption.locale?.languageCode
@@ -120,9 +132,9 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
     }
     
     public var currentSubtitleTrack: TrackInfo? {
-        guard let asset = player?.currentItem?.asset,
-              let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
-              let selectedOption = player?.currentItem?.selectedMediaOption(in: subtitleGroup) else { return nil }
+        guard let currentItem = player?.currentItem,
+              let subtitleGroup = currentItem.asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
+              let selectedOption = currentItem.currentMediaSelection.selectedMediaOption(in: subtitleGroup) else { return nil }
         let id = selectedOption.extendedLanguageTag ?? selectedOption.locale?.identifier ?? UUID().uuidString
         let name = selectedOption.displayName
         let languageCode = selectedOption.extendedLanguageTag ?? selectedOption.locale?.languageCode
@@ -166,6 +178,10 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             setupPiP()
             player?.allowsExternalPlayback = true
         }
+        configureRuntimeStateObserverIfNeeded()
+
+        playerItemStatusObserver = nil
+        removePlaybackEndedObserver()
         
         // Observe the player item's status
         playerItemStatusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
@@ -175,11 +191,20 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
                 if let asset = item.asset as? AVURLAsset {
                     asset.loadValuesAsynchronously(forKeys: ["availableMediaCharacteristicsWithMediaSelectionOptions"]) {
                         self.ensureAudibleTrackSelectedIfNeeded(item: item)
+                        DispatchQueue.main.async {
+                            self.lifecycleReporter?.playerDidUpdateTracks()
+                        }
                     }
                 }
                 
                 DispatchQueue.main.async {
-                    PlayerManager.shared.isMediaReady = true
+                    self.lifecycleReporter?.playerDidBecomeReady()
+                    self.emitRuntimeState()
+                }
+            } else if item.status == .failed {
+                let description = item.error?.localizedDescription ?? "Unknown AVPlayer item error"
+                DispatchQueue.main.async {
+                    self.lifecycleReporter?.playerDidFail(with: .mediaLoadFailed(description))
                 }
             }
         }
@@ -190,8 +215,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             object: playerItem,
             queue: .main
         ) { [weak self] _ in
-            // Notify PlayerManager that playback ended
-            PlayerManager.shared.videoDidEnd()
+            self?.lifecycleReporter?.playerDidEndPlayback()
         }
         
         // Seek to last position if provided, else start from the beginning
@@ -201,6 +225,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         }
         
         player?.play()
+        emitRuntimeState()
     }
 }
 
@@ -248,18 +273,33 @@ extension AVPlayerWrapper: GestureHandlingProtocol {
 // MARK: - AVPictureInPictureControllerDelegate
 extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
     public func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        PlayerManager.shared.isPiPActive = true
+        lifecycleReporter?.playerDidChangePiPState(isActive: true)
     }
     
     public func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        PlayerManager.shared.isPiPActive = false
+        lifecycleReporter?.playerDidChangePiPState(isActive: false)
     }
     
     public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController) async -> Bool {
-        DispatchQueue.main.async { [weak self] in
-            self?.setGravityToDefault()
+        await MainActor.run {
+            setGravityToDefault()
         }
         return true
+    }
+}
+
+extension AVPlayerWrapper: PlayerEventSource {}
+
+extension AVPlayerWrapper: PlayerStateSource {
+    func startRuntimeStateUpdates() {
+        shouldEmitRuntimeState = true
+        configureRuntimeStateObserverIfNeeded()
+        emitRuntimeState()
+    }
+    
+    func stopRuntimeStateUpdates() {
+        shouldEmitRuntimeState = false
+        removeRuntimeTimeObserver()
     }
 }
 
@@ -326,6 +366,43 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
 }
 
 extension AVPlayerWrapper {
+    private func emitRuntimeState() {
+        guard shouldEmitRuntimeState else { return }
+        let state = PlayerRuntimeState(
+            isPlaying: isPlaying,
+            isBuffering: isBuffering,
+            currentTime: currentTime,
+            duration: duration,
+            bufferedDuration: bufferedDuration
+        )
+        onRuntimeStateChange?(state)
+    }
+    
+    private func configureRuntimeStateObserverIfNeeded() {
+        guard shouldEmitRuntimeState,
+              let player = player,
+              timeObserverToken == nil else { return }
+        
+        let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
+            self?.emitRuntimeState()
+        }
+        timeObserverPlayer = player
+    }
+    
+    private func removeRuntimeTimeObserver() {
+        guard let timeObserverToken else { return }
+        timeObserverPlayer?.removeTimeObserver(timeObserverToken)
+        self.timeObserverToken = nil
+        timeObserverPlayer = nil
+    }
+    
+    private func removePlaybackEndedObserver() {
+        guard let observer = playbackEndedObserver else { return }
+        NotificationCenter.default.removeObserver(observer)
+        playbackEndedObserver = nil
+    }
+
     private func ensureAudibleTrackSelectedIfNeeded(item: AVPlayerItem) {
         guard let asset = item.asset as? AVURLAsset,
               let group = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return }

@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct SubtitleMenu: View {
-    @ObservedObject var viewModel = SubtitleMenuViewModel()
+    @StateObject private var viewModel: SubtitleMenuViewModel
+    
+    init(playerManager: PlayerManager = .shared) {
+        _viewModel = StateObject(wrappedValue: SubtitleMenuViewModel(playerManager: playerManager))
+    }
     
     var body: some View {
         Menu {
@@ -38,9 +42,11 @@ struct SubtitleMenu: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
+        .accessibilityLabel("Subtitles")
+        .accessibilityHint("Opens subtitle options")
+        .accessibilityIdentifier("player.subtitleMenu")
         .onTapGesture {
             viewModel.userInteracted()
         }
     }
 }
-

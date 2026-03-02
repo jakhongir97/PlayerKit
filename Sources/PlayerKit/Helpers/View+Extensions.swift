@@ -11,9 +11,7 @@ extension View {
 
             if #available(iOS 16.0, *) {
                 let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: orientationMask)
-                do {
-                    try windowScene.requestGeometryUpdate(geometryPreferences)
-                } catch {
+                windowScene.requestGeometryUpdate(geometryPreferences) { error in
                     print("Failed to set orientation: \(error)")
                 }
             } else {
@@ -50,6 +48,8 @@ extension UIInterfaceOrientation {
             return .landscapeRight
         case .portraitUpsideDown:
             return .portraitUpsideDown
+        case .unknown:
+            return .portrait
         @unknown default:
             return .portrait
         }

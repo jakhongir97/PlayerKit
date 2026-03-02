@@ -1,10 +1,15 @@
 import SwiftUI
 
 struct InfoButtonView: View {
+    private let playerManager: PlayerManager
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     @Environment(\.verticalSizeClass) var verticalSizeClass
 
     @State private var showPopover = false
+    
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
+    }
 
     // Determine landscape orientation based on size classes.
     // On an iPhone:
@@ -23,10 +28,13 @@ struct InfoButtonView: View {
             Image(systemName: "info")
                 .circularGlassIcon()
         }
+        .accessibilityLabel("Streaming information")
+        .accessibilityHint("Shows bitrate, buffer, frame rate and resolution")
+        .accessibilityIdentifier("player.info")
         .overlay(
             Group {
                 if showPopover {
-                    StreamingInfoView()
+                    StreamingInfoView(playerManager: playerManager)
                         .frame(width: 200)
                         .offset(
                             x: isLandscape ? 60 : 0,

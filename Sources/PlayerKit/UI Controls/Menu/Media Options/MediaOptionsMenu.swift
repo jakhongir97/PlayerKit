@@ -1,22 +1,28 @@
 import SwiftUI
 
 struct MediaOptionsMenu: View {
-    @StateObject private var viewModel = MediaOptionsMenuViewModel()
+    @StateObject private var viewModel: MediaOptionsMenuViewModel
+    private let playerManager: PlayerManager
 
     private let insets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
+    
+    init(playerManager: PlayerManager = .shared) {
+        self.playerManager = playerManager
+        _viewModel = StateObject(wrappedValue: MediaOptionsMenuViewModel(playerManager: playerManager))
+    }
 
     var body: some View {
         if #available(iOS 26.0, *) {
             GlassEffectContainer {
                 HStack {
-                    PlaybackSpeedMenu()
+                    PlaybackSpeedMenu(playerManager: playerManager)
 
                     if viewModel.hasSubtitles {
-                        SubtitleMenu()
+                        SubtitleMenu(playerManager: playerManager)
                     }
 
                     if viewModel.hasAudioTracks {
-                        AudioMenu()
+                        AudioMenu(playerManager: playerManager)
                     }
                 }
                 .padding(insets)
@@ -28,10 +34,10 @@ struct MediaOptionsMenu: View {
         } else if #available(iOS 15.0, *) {
             // iOS 15–25: material-based "glass"
             HStack {
-                PlaybackSpeedMenu()
+                PlaybackSpeedMenu(playerManager: playerManager)
 
-                if viewModel.hasSubtitles { SubtitleMenu() }
-                if viewModel.hasAudioTracks { AudioMenu() }
+                if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
+                if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
             }
             .padding(insets)
             .background(.ultraThinMaterial, in: Capsule())
@@ -42,10 +48,10 @@ struct MediaOptionsMenu: View {
         } else {
             // Very old fallback
             HStack {
-                PlaybackSpeedMenu()
+                PlaybackSpeedMenu(playerManager: playerManager)
 
-                if viewModel.hasSubtitles { SubtitleMenu() }
-                if viewModel.hasAudioTracks { AudioMenu() }
+                if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
+                if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
             }
             .padding(insets)
             .background(Color.white.opacity(0.10))

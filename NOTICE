@@ -1,0 +1,9 @@
+# Notice
+
+PlayerKit is distributed under the MIT License (see `LICENSE`).
+
+This package depends on third-party binary frameworks that are distributed under their own licenses and terms:
+- VLCKit
+- GoogleCast
+
+When redistributing binaries that include these frameworks, review and comply with each framework's license and usage terms.

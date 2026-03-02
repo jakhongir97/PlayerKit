@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct AudioMenu: View {
-    @ObservedObject var viewModel = AudioMenuViewModel()
+    @StateObject private var viewModel: AudioMenuViewModel
+    
+    init(playerManager: PlayerManager = .shared) {
+        _viewModel = StateObject(wrappedValue: AudioMenuViewModel(playerManager: playerManager))
+    }
     
     var body: some View {
         Menu {
@@ -25,6 +29,9 @@ struct AudioMenu: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
+        .accessibilityLabel("Audio tracks")
+        .accessibilityHint("Opens audio track options")
+        .accessibilityIdentifier("player.audioMenu")
         .onTapGesture {
             viewModel.userInteracted()
         }

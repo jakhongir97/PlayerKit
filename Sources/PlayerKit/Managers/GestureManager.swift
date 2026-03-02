@@ -13,6 +13,10 @@ public class GestureManager: ObservableObject {
     var onSeek: ((_ newTime: Double) -> Void)?
     var onToggleControls: (() -> Void)?
     var onZoom: ((_ scale: CGFloat) -> Void)?
+    var isLockedProvider: (() -> Bool)?
+    var currentTimeProvider: (() -> Double)?
+    var durationProvider: (() -> Double)?
+    var onControlsVisibilityChange: ((Bool) -> Void)?
     
     // MARK: - Private Properties
     private var accumulatedInterval: Double = 0.0
@@ -49,7 +53,7 @@ public class GestureManager: ObservableObject {
     private let centerRegionBottomRatio: CGFloat = 0.66 // End of the center region (66% of height)
 
     func handleVerticalSwipe(at location: CGPoint, translation: CGSize, in size: CGSize) {
-        guard !PlayerManager.shared.isLocked else { return }
+        guard !isLocked() else { return }
 
         // Calculate screen boundaries for horizontal and vertical regions
         let leftRegionEndX = size.width * leftRegionWidthRatio
@@ -94,7 +98,7 @@ public class GestureManager: ObservableObject {
     // MARK: - Public Methods
     
     func handlePinch(scale: CGFloat) {
-        guard !PlayerManager.shared.isLocked else { return }
+        guard !isLocked() else { return }
         onZoom?(scale)  // Trigger the zoom action
     }
     
@@ -110,8 +114,8 @@ public class GestureManager: ObservableObject {
         case .singleTapPending:
             invalidateTapDelayTimer()
             gestureState = .multipleTapping
-            if initialTime == nil { initialTime = PlayerManager.shared.currentPlayer?.currentTime }
-            PlayerManager.shared.areControlsVisible = false
+            if initialTime == nil { initialTime = currentTimeProvider?() }
+            onControlsVisibilityChange?(false)
             lastSeekDirection = direction
             handleMultipleTap(direction: direction)
             startMultipleTapResetTimer()
@@ -119,7 +123,7 @@ public class GestureManager: ObservableObject {
         case .multipleTapping:
             if direction != lastSeekDirection {
                 resetAccumulatedInterval()
-                initialTime = PlayerManager.shared.currentPlayer?.currentTime
+                initialTime = currentTimeProvider?()
                 lastSeekDirection = direction
             }
             handleMultipleTap(direction: direction)
@@ -138,7 +142,7 @@ public class GestureManager: ObservableObject {
     }
     
     private func handleMultipleTap(direction: SeekDirection) {
-        guard !PlayerManager.shared.isLocked else { return }
+        guard !isLocked() else { return }
         isMultipleTapping = true
         seekDirection = direction
         accumulatedInterval += fastSeekBaseInterval
@@ -151,11 +155,11 @@ public class GestureManager: ObservableObject {
     }
     
     private func performSeek() {
-        guard let currentPlayer = PlayerManager.shared.currentPlayer,
-              let initialTime = initialTime else { return }
+        guard let initialTime,
+              let duration = durationProvider?() else { return }
         
-        let newTime = max(0, min(currentPlayer.duration, initialTime + (seekDirection == .forward ? accumulatedInterval : -accumulatedInterval)))
-        PlayerManager.shared.seek(to: newTime)
+        let newTime = max(0, min(duration, initialTime + (seekDirection == .forward ? accumulatedInterval : -accumulatedInterval)))
+        onSeek?(newTime)
     }
     
     private func showVisualFeedback() {
@@ -220,5 +224,8 @@ public class GestureManager: ObservableObject {
         initialTime = nil
         lastSeekDirection = nil
     }
-}
 
+    private func isLocked() -> Bool {
+        isLockedProvider?() ?? false
+    }
+}

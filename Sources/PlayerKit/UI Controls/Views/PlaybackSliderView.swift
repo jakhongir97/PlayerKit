@@ -2,6 +2,12 @@ import SwiftUI
 
 struct PlaybackSliderView: View {
     @ObservedObject var playerManager: PlayerManager
+    
+    private var accessibilityValueText: String {
+        let current = playerManager.currentTime.asTimeString(style: .positional)
+        let total = playerManager.duration.asTimeString(style: .positional)
+        return "\(current) of \(total)"
+    }
 
     var body: some View {
         VStack {
@@ -30,9 +36,12 @@ struct PlaybackSliderView: View {
                 .padding(.vertical)
                 .padding(.horizontal, 5)
                 .contentShape(Rectangle())
+                .accessibilityLabel("Playback position")
+                .accessibilityValue(accessibilityValueText)
+                .accessibilityHint("Drag to seek through the media")
+                .accessibilityIdentifier("player.timeline")
             }
             .frame(height: 50)
         }
     }
 }
-

@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct PiPButton: View {
-    @ObservedObject var playerManager = PlayerManager.shared  // Observe PlayerManager's PiP state
+    @ObservedObject var playerManager: PlayerManager
+    
+    init(playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
+    }
 
     var body: some View {
         Button(action: {
@@ -17,6 +21,8 @@ struct PiPButton: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
+        .accessibilityLabel(playerManager.isPiPActive ? "Stop Picture in Picture" : "Start Picture in Picture")
+        .accessibilityHint("Toggles Picture in Picture mode")
+        .accessibilityIdentifier("player.pip")
     }
 }
-

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - '*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Package Manifest
+        run: swift package describe
+
+      - name: Verify Binary Target Artifacts
+        run: ./scripts/verify_binary_targets.sh
+
+      - name: Build for iOS Simulator
+        run: xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS Simulator' build -quiet
+
+      - name: Build for iOS Device
+        run: xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS' build -quiet
