@@ -74,6 +74,8 @@ Playback errors are surfaced through:
 - Changelog: `CHANGELOG.md`
 - Release runbook: `RELEASE.md`
 - Binary artifact verification script: `scripts/verify_binary_targets.sh`
+- Third-party notice verification script: `scripts/verify_third_party_notices.sh`
+- Simulator unit-test runner: `scripts/run_unit_tests.sh`
 
 ## Open Source Standards
 
@@ -81,6 +83,7 @@ Playback errors are surfaced through:
 - Code of Conduct: `CODE_OF_CONDUCT.md`
 - Security policy: `SECURITY.md`
 - Distribution notices: `NOTICE`
+- Third-party dependency notices: `THIRD_PARTY_NOTICES.md`
 
 ## License
 

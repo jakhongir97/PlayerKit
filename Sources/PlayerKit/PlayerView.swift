@@ -3,22 +3,18 @@ import SwiftUI
 public struct PlayerView: View {
     @ObservedObject var playerManager: PlayerManager
     @Environment(\.presentationMode) var presentationMode
+    @State private var didBootstrapPlayer = false
     
-    private var isIPhone: Bool {
-        UIDevice.current.userInterfaceIdiom == .phone
-    }
+    private let loadMode: LoadMode
 
     public init(playerItem: PlayerItem? = nil, playerManager: PlayerManager = .shared) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
-        playerManager.setPlayer()
-        guard let playerItem = playerItem else { return }
-        playerManager.load(playerItem: playerItem)
+        loadMode = .single(playerItem)
     }
     
     public init(playerItems: [PlayerItem], currentIndex: Int = 0, playerManager: PlayerManager = .shared) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
-        playerManager.setPlayer()
-        playerManager.loadEpisodes(playerItems: playerItems, currentIndex: currentIndex) // Load episodes list
+        loadMode = .episodes(playerItems, currentIndex)
     }
 
     public var body: some View {
@@ -44,6 +40,31 @@ public struct PlayerView: View {
                 NotificationCenter.default.post(name: .PlayerKitDidClose, object: nil)
             }
         }
+        .onAppear {
+            bootstrapPlayerIfNeeded()
+        }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
+    }
+    
+    private func bootstrapPlayerIfNeeded() {
+        guard !didBootstrapPlayer else { return }
+        didBootstrapPlayer = true
+        
+        playerManager.setPlayer()
+        
+        switch loadMode {
+        case .single(let playerItem):
+            guard let playerItem else { return }
+            playerManager.load(playerItem: playerItem)
+        case .episodes(let items, let index):
+            playerManager.loadEpisodes(playerItems: items, currentIndex: index)
+        }
+    }
+}
+
+private extension PlayerView {
+    enum LoadMode {
+        case single(PlayerItem?)
+        case episodes([PlayerItem], Int)
     }
 }

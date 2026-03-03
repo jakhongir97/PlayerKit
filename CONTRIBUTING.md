@@ -16,8 +16,10 @@ Run the same core checks used for release readiness:
 ```bash
 swift package describe
 ./scripts/verify_binary_targets.sh
+./scripts/verify_third_party_notices.sh
 xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS Simulator' build
 xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS' build
+./scripts/run_unit_tests.sh
 ```
 
 ## Pull Requests

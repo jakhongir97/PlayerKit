@@ -17,6 +17,7 @@ This document is the release checklist for stable public distribution.
 
 - Ensure `LICENSE` remains MIT.
 - Update `NOTICE` if binary dependencies or their distribution terms change.
+- Update `THIRD_PARTY_NOTICES.md` when binary target source URLs or upstream terms references change.
 
 ## 3) Validate package and artifacts
 
@@ -25,8 +26,10 @@ Run locally:
 ```bash
 swift package describe
 ./scripts/verify_binary_targets.sh
+./scripts/verify_third_party_notices.sh
 xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS Simulator' build
 xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS' build
+./scripts/run_unit_tests.sh
 ```
 
 ## 4) If binary frameworks changed

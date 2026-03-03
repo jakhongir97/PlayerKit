@@ -59,7 +59,7 @@ public class PlayerManager: ObservableObject {
     // Managers for different responsibilities
     var playbackManager: PlaybackManager?
     var trackManager: TrackManager?
-    let castManager = CastManager.shared
+    lazy var castManager = CastManager.shared
     let gestureManager = GestureManager()
     let orientationManager = OrientationManager()
     
@@ -71,23 +71,20 @@ public class PlayerManager: ObservableObject {
     private var currentProvider: PlayerProvider?
     public weak var currentPlayer: PlayerProtocol?
     private var lastPosition: Double = 0
+    private var integrationsConfigured = false
     
     private var stateCancellables = Set<AnyCancellable>()
     private var longLivedCancellables = Set<AnyCancellable>()
     
     private init() {
-        configureAudioSessionCallbacks()
-        configureCastCallbacks()
         setupGestureHandling()
         configureOrientationCallbacks()
-        AudioSessionManager.shared.configureAudioSession()
-        subscribeToCastState()
-        subscribeToGameControllerEvents()
     }
     
     // MARK: - Player Setup
     
     public func setPlayer(type: PlayerType? = nil) {
+        configureIntegrationsIfNeeded()
         let type = type ?? UserDefaults.standard.loadPlayerType() ?? .avPlayer
         resetPlayer()
         selectedPlayerType = type
@@ -311,14 +308,17 @@ extension PlayerManager {
 // MARK: - Chromecast Controls
 extension PlayerManager {
     public func playOnChromecast() {
+        configureIntegrationsIfNeeded()
         castManager.playMediaOnCast()
     }
     
     public func pauseChromecast() {
+        configureIntegrationsIfNeeded()
         castManager.pauseCast()
     }
     
     public func stopChromecast() {
+        configureIntegrationsIfNeeded()
         castManager.stopCast()
     }
 }
@@ -451,6 +451,16 @@ extension PlayerManager {
 }
 
 extension PlayerManager {
+    private func configureIntegrationsIfNeeded() {
+        guard !integrationsConfigured else { return }
+        configureAudioSessionCallbacks()
+        configureCastCallbacks()
+        AudioSessionManager.shared.configureAudioSession()
+        subscribeToCastState()
+        subscribeToGameControllerEvents()
+        integrationsConfigured = true
+    }
+    
     private func bindPlayerCallbacks(_ player: PlayerProtocol) {
         if let eventSource = player as? PlayerEventSource {
             eventSource.lifecycleReporter = self

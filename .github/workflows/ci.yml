@@ -29,8 +29,14 @@ jobs:
       - name: Verify Binary Target Artifacts
         run: ./scripts/verify_binary_targets.sh
 
+      - name: Verify Third-Party Notices
+        run: ./scripts/verify_third_party_notices.sh
+
       - name: Build for iOS Simulator
         run: xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS Simulator' build -quiet
+
+      - name: Run Unit Tests (iOS Simulator)
+        run: ./scripts/run_unit_tests.sh
 
       - name: Build for iOS Device
         run: xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS' build -quiet

@@ -7,3 +7,5 @@ This package depends on third-party binary frameworks that are distributed under
 - GoogleCast
 
 When redistributing binaries that include these frameworks, review and comply with each framework's license and usage terms.
+
+Detailed references and upstream links are documented in `THIRD_PARTY_NOTICES.md`.

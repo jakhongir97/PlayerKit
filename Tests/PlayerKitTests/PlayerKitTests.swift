@@ -6,6 +6,7 @@ final class PlayerKitTests: XCTestCase {
         super.setUp()
         PlayerManager.shared.resetPlayer()
         PlayerManager.shared.clearError()
+        PlayerManager.shared.setPlayer()
     }
     
     override func tearDown() {
