@@ -1,6 +1,9 @@
 import SwiftUI
 import Combine
+#if os(iOS)
+import AVFoundation
 import MediaPlayer
+#endif
 
 public class GestureManager: ObservableObject {
     // MARK: - Published Properties
@@ -29,8 +32,13 @@ public class GestureManager: ObservableObject {
     private var initialTime: Double?
     
     // MARK: - Volume and Brightness Properties
+    #if os(iOS)
     private var initialBrightness: CGFloat = UIScreen.main.brightness
     private var initialVolume: Float = AVAudioSession.sharedInstance().outputVolume
+    #else
+    private var initialBrightness: CGFloat = 0.5
+    private var initialVolume: Float = 0.5
+    #endif
     private var volumeSensitivity: CGFloat = 0.01
     private var brightnessSensitivity: CGFloat = 0.01
     
@@ -40,10 +48,12 @@ public class GestureManager: ObservableObject {
     private let fastSeekBaseInterval: Double = 10.0 // Base seek interval
     
     // MARK: - System Volume Slider
+    #if os(iOS)
     private lazy var systemVolumeSlider: UISlider = {
         let volumeView = MPVolumeView()
         return volumeView.subviews.compactMap { $0 as? UISlider }.first ?? UISlider()
     }()
+    #endif
     
     // MARK: - Handle Vertical Swipe (Volume & Brightness)
     // Define screen regions for gestures
@@ -74,6 +84,7 @@ public class GestureManager: ObservableObject {
     
     // Adjust volume based on vertical drag gesture
     private func adjustVolume(translation: CGFloat) {
+        #if os(iOS)
         let volumeDelta = Float(-translation) * Float(volumeSensitivity)
         let newVolume = max(0.0, min(1.0, initialVolume + volumeDelta))
         
@@ -81,18 +92,23 @@ public class GestureManager: ObservableObject {
             self.systemVolumeSlider.setValue(newVolume, animated: true)
             self.systemVolumeSlider.sendActions(for: .valueChanged)
         }
+        #endif
     }
     
     // Adjust brightness based on vertical drag gesture
     private func adjustBrightness(translation: CGFloat) {
+        #if os(iOS)
         let brightnessDelta = -translation * brightnessSensitivity
         UIScreen.main.brightness = max(0.0, min(1.0, initialBrightness + brightnessDelta))
+        #endif
     }
     
     // Reset volume/brightness to initial states when swipe ends
     func resetInitialStates() {
+        #if os(iOS)
         initialVolume = AVAudioSession.sharedInstance().outputVolume
         initialBrightness = UIScreen.main.brightness
+        #endif
     }
     
     // MARK: - Public Methods

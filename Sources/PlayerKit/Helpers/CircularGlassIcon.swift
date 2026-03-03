@@ -26,9 +26,9 @@ private struct CircularGlassIcon: ViewModifier {
 
     private struct GlassCircle: ViewModifier {
         func body(content: Content) -> some View {
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, *) {
                 content.glassEffect(.clear, in: .circle)
-            } else if #available(iOS 15.0, *) {
+            } else if #available(iOS 15.0, macOS 12.0, *) {
                 // Material-based fallback
                 content
                     .background(.ultraThinMaterial, in: Circle())

@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 public protocol PlayerProtocol: PlaybackControlProtocol,
                                 TimeControlProtocol,

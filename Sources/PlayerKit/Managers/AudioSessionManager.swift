@@ -1,29 +1,30 @@
+import Foundation
+
+#if os(iOS)
 import AVFoundation
 
 class AudioSessionManager: NSObject {
     static let shared = AudioSessionManager()
     var onPauseRequested: (() -> Void)?
     var onResumeRequested: (() -> Void)?
-    
+
     private override init() {
         super.init()
         setupNotifications()
     }
-    
+
     func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            
-            // Set the audio session category, mode, and options
+
+            // Configure iOS playback audio session.
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setActive(true)
-            
-            print("AudioSessionManager: Audio session configured successfully.")
         } catch {
             print("AudioSessionManager: Failed to configure audio session: \(error)")
         }
     }
-    
+
     private func setupNotifications() {
         NotificationCenter.default.addObserver(
             self,
@@ -31,7 +32,7 @@ class AudioSessionManager: NSObject {
             name: AVAudioSession.interruptionNotification,
             object: nil
         )
-        
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleRouteChange),
@@ -39,40 +40,46 @@ class AudioSessionManager: NSObject {
             object: nil
         )
     }
-    
+
     @objc private func handleInterruption(notification: Notification) {
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-        
+
         switch type {
         case .began:
-            print("AudioSessionManager: Audio interruption began.")
             onPauseRequested?()
         case .ended:
             if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                 if options.contains(.shouldResume) {
-                    print("AudioSessionManager: Audio interruption ended. Resuming playback.")
                     onResumeRequested?()
                 }
             }
         @unknown default:
-            print("AudioSessionManager: Unknown audio interruption.")
+            break
         }
     }
-    
+
     @objc private func handleRouteChange(notification: Notification) {
         guard let userInfo = notification.userInfo,
               let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
-        
-        switch reason {
-        case .oldDeviceUnavailable:
-            print("AudioSessionManager: Audio output route changed. Pausing playback.")
+
+        if reason == .oldDeviceUnavailable {
             onPauseRequested?()
-        default:
-            break
         }
     }
 }
+#else
+final class AudioSessionManager {
+    static let shared = AudioSessionManager()
+    var onPauseRequested: (() -> Void)?
+    var onResumeRequested: (() -> Void)?
+
+    private init() {}
+
+    // macOS uses default system audio handling.
+    func configureAudioSession() {}
+}
+#endif

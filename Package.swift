@@ -3,7 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "PlayerKit",
-    platforms: [.iOS(.v14)],
+    platforms: [
+        .iOS(.v14),
+        .macOS(.v14),
+    ],
     products: [
         .library(name: "PlayerKit", targets: ["PlayerKit"]),
     ],
@@ -21,7 +24,10 @@ let package = Package(
         ),
         .target(
             name: "PlayerKit",
-            dependencies: ["VLCKit", "GoogleCast"],
+            dependencies: [
+                .target(name: "VLCKit", condition: .when(platforms: [.iOS])),
+                .target(name: "GoogleCast", condition: .when(platforms: [.iOS])),
+            ],
             path: "Sources/PlayerKit",
             resources: [
                 .process("Resources")

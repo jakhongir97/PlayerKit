@@ -1,3 +1,4 @@
+#if canImport(GoogleCast) && canImport(UIKit)
 import GoogleCast
 import AVFoundation
 import UIKit
@@ -193,3 +194,34 @@ extension CastManager: GCKLoggerDelegate {
         print("Google Cast Log - Function: \(function) Message: \(message)")
     }
 }
+#else
+import Foundation
+import Combine
+
+class CastManager: NSObject {
+    static let shared = CastManager()
+
+    @Published var isCasting = false
+    @Published var isCastingAvailable = false
+    @Published var isConnectedToCastDevice = false
+
+    var currentPlayerItemProvider: (() -> PlayerItem?)?
+    var onError: ((PlayerKitError) -> Void)?
+    var onDismissRequested: (() -> Void)?
+
+    private override init() {
+        super.init()
+    }
+
+    func playMediaOnCast() {
+        onError?(.castSessionUnavailable)
+    }
+
+    func pauseCast() {}
+
+    func stopCast() {
+        isCasting = false
+        isConnectedToCastDevice = false
+    }
+}
+#endif

@@ -1,30 +1,51 @@
+#if canImport(UIKit)
 import UIKit
+public typealias PKImpactFeedbackStyle = UIImpactFeedbackGenerator.FeedbackStyle
+public typealias PKNotificationFeedbackType = UINotificationFeedbackGenerator.FeedbackType
+#else
+import Foundation
+
+public enum PKImpactFeedbackStyle {
+    case light
+    case medium
+    case heavy
+    case soft
+    case rigid
+}
+
+public enum PKNotificationFeedbackType {
+    case success
+    case warning
+    case error
+}
+#endif
 
 class HapticsManager {
     static let shared = HapticsManager()
 
     private init() {}
 
-    /// Triggers a haptic feedback of type `impact`.
-    /// - Parameter style: The style of impact (light, medium, heavy, soft, rigid).
-    func triggerImpactFeedback(style: UIImpactFeedbackGenerator.FeedbackStyle) {
+    func triggerImpactFeedback(style: PKImpactFeedbackStyle) {
+        #if canImport(UIKit)
         let generator = UIImpactFeedbackGenerator(style: style)
         generator.prepare()
         generator.impactOccurred()
+        #endif
     }
 
-    /// Triggers a haptic feedback of type `notification`.
-    /// - Parameter type: The type of notification (success, warning, error).
-    func triggerNotificationFeedback(type: UINotificationFeedbackGenerator.FeedbackType) {
+    func triggerNotificationFeedback(type: PKNotificationFeedbackType) {
+        #if canImport(UIKit)
         let generator = UINotificationFeedbackGenerator()
         generator.prepare()
         generator.notificationOccurred(type)
+        #endif
     }
 
-    /// Triggers a haptic feedback of type `selection`.
     func triggerSelectionFeedback() {
+        #if canImport(UIKit)
         let generator = UISelectionFeedbackGenerator()
         generator.prepare()
         generator.selectionChanged()
+        #endif
     }
 }

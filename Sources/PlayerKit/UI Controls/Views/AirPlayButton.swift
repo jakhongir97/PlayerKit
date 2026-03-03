@@ -10,18 +10,23 @@ struct AirPlayButton: View {
     }
 }
 
+#if canImport(UIKit)
 struct AirPlayRoutePickerView: UIViewRepresentable {
-
     func makeUIView(context: Context) -> AVRoutePickerView {
         let routePickerView = AVRoutePickerView()
-        routePickerView.activeTintColor = .blue  // Customize active color
-        routePickerView.tintColor = .white       // Customize default tint color
-
+        routePickerView.activeTintColor = .blue
+        routePickerView.tintColor = .white
         return routePickerView
     }
 
-    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {
-        // No need to update the view in this case
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+#else
+struct AirPlayRoutePickerView: View {
+    var body: some View {
+        Image(systemName: "airplayaudio")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(.white)
     }
 }
-
+#endif

@@ -3,9 +3,8 @@ import SwiftUI
 struct PlayerControlsView: View {
     @ObservedObject var playerManager: PlayerManager
     
-    // Determine if the device is an iPhone
     private var isIPhone: Bool {
-        UIDevice.current.userInterfaceIdiom == .phone
+        PlayerKitPlatform.isPhone
     }
 
     var body: some View {

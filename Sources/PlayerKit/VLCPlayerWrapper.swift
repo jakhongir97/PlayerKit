@@ -1,4 +1,6 @@
+#if canImport(VLCKit) && canImport(UIKit)
 import VLCKit
+import UIKit
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
@@ -347,3 +349,6 @@ extension VLCPlayerWrapper {
         onRuntimeStateChange?(state)
     }
 }
+#else
+public typealias VLCPlayerWrapper = AVPlayerWrapper
+#endif

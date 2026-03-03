@@ -12,7 +12,7 @@ struct MediaOptionsMenu: View {
     }
 
     var body: some View {
-        if #available(iOS 26.0, *) {
+        if #available(iOS 26.0, macOS 26.0, *) {
             GlassEffectContainer {
                 HStack {
                     PlaybackSpeedMenu(playerManager: playerManager)
@@ -31,7 +31,7 @@ struct MediaOptionsMenu: View {
             .glassEffect(.clear, in: .capsule)
             .clipShape(Capsule())
             .transaction { $0.animation = nil }
-        } else if #available(iOS 15.0, *) {
+        } else if #available(iOS 15.0, macOS 12.0, *) {
             // iOS 15–25: material-based "glass"
             HStack {
                 PlaybackSpeedMenu(playerManager: playerManager)

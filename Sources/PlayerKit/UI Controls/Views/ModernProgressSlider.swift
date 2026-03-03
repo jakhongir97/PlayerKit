@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
     @Binding var value: T
@@ -163,4 +162,3 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         ((localRealProgress + localTempProgress) * (inRange.upperBound - inRange.lowerBound)) + inRange.lowerBound
     }
 }
-

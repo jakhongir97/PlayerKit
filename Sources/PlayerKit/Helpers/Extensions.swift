@@ -5,7 +5,11 @@
 //  Created by Jakhongir Nematov on 08/10/24.
 //
 
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // Add a safe subscript for collections to avoid index out of range errors
 extension Collection {
@@ -34,9 +38,13 @@ extension BinaryFloatingPoint {
     }
 }
 
-extension UIImage {
-    static func fromFramework(named name: String) -> UIImage? {
-        return UIImage(named: name, in: .module, compatibleWith: nil)
+extension PKImage {
+    static func fromFramework(named name: String) -> PKImage? {
+        #if canImport(UIKit)
+        UIImage(named: name, in: .module, compatibleWith: nil)
+        #else
+        Bundle.module.image(forResource: NSImage.Name(name))
+        #endif
     }
 }
 
@@ -50,20 +58,22 @@ extension Notification.Name {
     public static let PlayerKitLocked = Notification.Name("PlayerKitLocked")
 }
 
+#if canImport(UIKit)
 extension UIDevice {
     var interfaceOrientation: UIInterfaceOrientation? {
-        return UIApplication.shared.connectedScenes
+        UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
             .first?.interfaceOrientation
     }
-    
+
     var isPortrait: Bool {
         guard let orientation = interfaceOrientation else { return false }
         return orientation == .portrait || orientation == .portraitUpsideDown
     }
-    
+
     var isLandscape: Bool {
         guard let orientation = interfaceOrientation else { return false }
         return orientation == .landscapeLeft || orientation == .landscapeRight
     }
 }
+#endif

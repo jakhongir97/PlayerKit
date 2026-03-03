@@ -1,13 +1,19 @@
 import AVKit
+#if canImport(UIKit)
 import UIKit
+#endif
 
 public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var player: SmoothPlayer?
     private var playerView = AVPlayerView()
+    private var currentSourceURL: URL?
+    #if os(iOS)
     private var pipController: AVPictureInPictureController?
+    #endif
     
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playbackEndedObserver: Any?
+    private var playbackFailedObserver: Any?
     private var timeObserverToken: Any?
     private weak var timeObserverPlayer: AVPlayer?
     private var shouldEmitRuntimeState = false
@@ -55,6 +61,7 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
         playerItemStatusObserver = nil
         removePlaybackEndedObserver()
         removeRuntimeTimeObserver()
+        currentSourceURL = nil
         player = nil
         emitRuntimeState()
     }
@@ -169,6 +176,8 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
 // MARK: - MediaLoadingProtocol
 extension AVPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
+        currentSourceURL = url
+        debugLog("Loading AVPlayer item. url=\(url.debugDescription) resume=\(lastPosition?.description ?? "nil")")
         let playerItem = AVPlayerItem(url: url)
         if let player = player {
             player.replaceCurrentItem(with: playerItem)
@@ -186,11 +195,16 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         // Observe the player item's status
         playerItemStatusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard let self = self else { return }
+            self.debugLog("Item status changed: \(item.status.rawValue) url=\(self.currentSourceURL?.debugDescription ?? "nil")")
             if item.status == .readyToPlay {
                 // Tracks are now available; refresh track info
                 if let asset = item.asset as? AVURLAsset {
                     asset.loadValuesAsynchronously(forKeys: ["availableMediaCharacteristicsWithMediaSelectionOptions"]) {
                         self.ensureAudibleTrackSelectedIfNeeded(item: item)
+                        self.debugLog(
+                            "Item ready. tracks audio=\(self.availableAudioTracks.count) " +
+                            "subtitle=\(self.availableSubtitles.count)"
+                        )
                         DispatchQueue.main.async {
                             self.lifecycleReporter?.playerDidUpdateTracks()
                         }
@@ -203,6 +217,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
                 }
             } else if item.status == .failed {
                 let description = item.error?.localizedDescription ?? "Unknown AVPlayer item error"
+                self.debugLog("Item failed. \(self.failureDiagnostics(for: item))")
                 DispatchQueue.main.async {
                     self.lifecycleReporter?.playerDidFail(with: .mediaLoadFailed(description))
                 }
@@ -215,7 +230,19 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             object: playerItem,
             queue: .main
         ) { [weak self] _ in
+            self?.debugLog("Playback ended.")
             self?.lifecycleReporter?.playerDidEndPlayback()
+        }
+
+        playbackFailedObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemFailedToPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self else { return }
+            let underlyingError = (notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
+                .localizedDescription ?? "Unknown"
+            self.debugLog("Failed to play to end. url=\(self.currentSourceURL?.debugDescription ?? "nil") underlying=\(underlyingError)")
         }
         
         // Seek to last position if provided, else start from the beginning
@@ -231,32 +258,40 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
 
 // MARK: - ViewRenderingProtocol
 extension AVPlayerWrapper: ViewRenderingProtocol {
-    public func getPlayerView() -> UIView {
+    public func getPlayerView() -> PKView {
         return playerView
     }
     
     public func setupPiP() {
+        #if os(iOS)
         pipController = AVPictureInPictureController(playerLayer: playerView.playerLayer)
         pipController?.delegate = self
+        #endif
     }
     
     public func startPiP() {
+        #if os(iOS)
         if AVPictureInPictureController.isPictureInPictureSupported() {
             pipController?.startPictureInPicture()
         } else {
             print("PiP is not supported on this device.")
         }
+        #endif
     }
     
     public func stopPiP() {
+        #if os(iOS)
         pipController?.stopPictureInPicture()
+        #endif
     }
 }
 
 // MARK: - GestureHandlingProtocol
 extension AVPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
+        #if os(iOS)
         guard !UIDevice.current.isPortrait else { return }
+        #endif
         scale > 1 ? setGravityToFill() : setGravityToDefault()
     }
     
@@ -271,6 +306,7 @@ extension AVPlayerWrapper: GestureHandlingProtocol {
 }
 
 // MARK: - AVPictureInPictureControllerDelegate
+#if os(iOS)
 extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
     public func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         lifecycleReporter?.playerDidChangePiPState(isActive: true)
@@ -287,6 +323,7 @@ extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
         return true
     }
 }
+#endif
 
 extension AVPlayerWrapper: PlayerEventSource {}
 
@@ -398,9 +435,15 @@ extension AVPlayerWrapper {
     }
     
     private func removePlaybackEndedObserver() {
-        guard let observer = playbackEndedObserver else { return }
-        NotificationCenter.default.removeObserver(observer)
-        playbackEndedObserver = nil
+        if let observer = playbackEndedObserver {
+            NotificationCenter.default.removeObserver(observer)
+            playbackEndedObserver = nil
+        }
+
+        if let failedObserver = playbackFailedObserver {
+            NotificationCenter.default.removeObserver(failedObserver)
+            playbackFailedObserver = nil
+        }
     }
 
     private func ensureAudibleTrackSelectedIfNeeded(item: AVPlayerItem) {
@@ -434,4 +477,27 @@ extension AVPlayerWrapper {
 
     }
 
+    private func failureDiagnostics(for item: AVPlayerItem) -> String {
+        let nsError = item.error as NSError?
+        let domain = nsError?.domain ?? "unknown"
+        let code = nsError?.code ?? -1
+        let reason = nsError?.localizedFailureReason ?? "none"
+        let suggestion = nsError?.localizedRecoverySuggestion ?? "none"
+
+        var errorLogSummary = "none"
+        if let event = item.errorLog()?.events.last {
+            errorLogSummary =
+                "errorDomain=\(event.errorDomain) status=\(event.errorStatusCode) " +
+                "comment=\(event.errorComment ?? "none") uri=\(event.uri ?? "none")"
+        }
+
+        return
+            "url=\(currentSourceURL?.debugDescription ?? "nil") " +
+            "domain=\(domain) code=\(code) reason=\(reason) suggestion=\(suggestion) " +
+            "errorLog=\(errorLogSummary)"
+    }
+
+    private func debugLog(_ message: String) {
+        print("[PlayerKit][AVPlayerWrapper] \(message)")
+    }
 }

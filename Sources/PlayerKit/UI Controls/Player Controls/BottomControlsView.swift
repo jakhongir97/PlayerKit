@@ -3,7 +3,7 @@ import SwiftUI
 struct BottomControlsView: View {
     @ObservedObject var playerManager: PlayerManager
 
-    private var isIPhone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
+    private var isIPhone: Bool { PlayerKitPlatform.isPhone }
     private let pillInsets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
 
     var body: some View {
@@ -12,7 +12,7 @@ struct BottomControlsView: View {
             BufferingIndicatorView(playerManager: playerManager)
             Spacer()
 
-            if #available(iOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, *) {
                 // Groups glass shapes & renders them as one, avoiding flash/morphs
                 GlassEffectContainer {
                     HStack {
@@ -24,7 +24,7 @@ struct BottomControlsView: View {
                     .glassEffect(.clear, in: .capsule)   // single capsule around the row
                 }
                 .transaction { $0.animation = nil }     // avoids one-frame flicker on Menu rehost
-            } else if #available(iOS 15.0, *) {
+            } else if #available(iOS 15.0, macOS 12.0, *) {
                 // Fallback for iOS 15–25: material-based "glass"
                 HStack {
                     PiPButton(playerManager: playerManager)

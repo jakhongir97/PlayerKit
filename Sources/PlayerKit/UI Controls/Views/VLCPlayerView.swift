@@ -1,3 +1,4 @@
+#if canImport(VLCKit) && canImport(UIKit)
 import UIKit
 import VLCKit
 
@@ -18,9 +19,10 @@ public class VLCPlayerView: UIView {
 
     public override func layoutSubviews() {
         super.layoutSubviews()
-        
+
         for subview in subviews {
             subview.frame = bounds
         }
     }
 }
+#endif

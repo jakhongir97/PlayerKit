@@ -1,6 +1,5 @@
 import SwiftUI
 import AVFoundation
-import VLCKit
 
 struct PlayerRenderingView: View {
     @ObservedObject var playerManager: PlayerManager
@@ -23,14 +22,24 @@ struct PlayerRenderingView: View {
     }
 }
 
+#if canImport(UIKit)
 struct PlayerViewRepresentable: UIViewRepresentable {
-    let playerView: UIView
+    let playerView: PKView
 
-    func makeUIView(context: Context) -> UIView {
-        return playerView
+    func makeUIView(context: Context) -> PKView {
+        playerView
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {
-        // No need to update, since the view is managed by the player wrapper
-    }
+    func updateUIView(_ uiView: PKView, context: Context) {}
 }
+#else
+struct PlayerViewRepresentable: NSViewRepresentable {
+    let playerView: PKView
+
+    func makeNSView(context: Context) -> PKView {
+        playerView
+    }
+
+    func updateNSView(_ nsView: PKView, context: Context) {}
+}
+#endif

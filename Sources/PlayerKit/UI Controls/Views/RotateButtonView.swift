@@ -22,13 +22,19 @@ struct RotateButtonView: View {
     
     private func toggleOrientation() {
         isLandscape.toggle()
-        
-        // Use the extension's method to change orientation
+
+        #if canImport(UIKit)
+        // Use the extension's method to change orientation on iOS.
         if isLandscape {
-            setDeviceOrientation(.landscapeRight)
+            self.setDeviceOrientation(.landscapeRight)
         } else {
-            setDeviceOrientation(.portrait)
+            self.setDeviceOrientation(.portrait)
             playerManager.setGravityToDefault()
         }
+        #else
+        if !isLandscape {
+            playerManager.setGravityToDefault()
+        }
+        #endif
     }
 }

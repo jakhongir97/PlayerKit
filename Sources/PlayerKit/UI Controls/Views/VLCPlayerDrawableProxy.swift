@@ -5,6 +5,7 @@
 //  Created by Jakhongir Nematov on 12/02/25.
 //
 
+#if canImport(VLCKit) && canImport(UIKit)
 import UIKit
 import VLCKit
 
@@ -71,4 +72,4 @@ extension VLCPlayerDrawableProxy: VLCPictureInPictureMediaControlling {
         return wrapper?.player.isPlaying ?? false
     }
 }
-
+#endif
