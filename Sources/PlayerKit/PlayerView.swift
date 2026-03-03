@@ -12,6 +12,11 @@ public struct PlayerView: View {
         loadMode = .single(playerItem)
     }
     
+    public init(playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
+        loadMode = .none
+    }
+    
     public init(playerItems: [PlayerItem], currentIndex: Int = 0, playerManager: PlayerManager = .shared) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .episodes(playerItems, currentIndex)
@@ -50,9 +55,11 @@ public struct PlayerView: View {
         guard !didBootstrapPlayer else { return }
         didBootstrapPlayer = true
         
-        playerManager.setPlayer()
+        playerManager.ensurePlayerConfigured()
         
         switch loadMode {
+        case .none:
+            return
         case .single(let playerItem):
             guard let playerItem else { return }
             playerManager.load(playerItem: playerItem)
@@ -64,6 +71,7 @@ public struct PlayerView: View {
 
 private extension PlayerView {
     enum LoadMode {
+        case none
         case single(PlayerItem?)
         case episodes([PlayerItem], Int)
     }

@@ -107,4 +107,40 @@ final class PlayerKitTests: XCTestCase {
         AudioSessionManager.shared.onPauseRequested?()
         XCTAssertFalse(manager.isPlaying)
     }
+
+    func testPlayerFacadeLoadURLCreatesDefaultPlayerItem() {
+        let manager = PlayerManager.shared
+        let player = Player(playerManager: manager)
+        let url = URL(string: "https://example.com/movie.m3u8")!
+
+        player.load(url: url)
+
+        XCTAssertEqual(manager.playerItem?.url, url)
+        XCTAssertEqual(manager.playerItem?.title, "movie.m3u8")
+        XCTAssertEqual(manager.contentType, .movie)
+    }
+
+    func testPlayerFacadeLoadEpisodesSetsEpisodeContext() {
+        let manager = PlayerManager.shared
+        let player = Player(playerManager: manager)
+        let episode1 = PlayerItem(title: "Episode 1", url: URL(string: "https://example.com/e1.m3u8")!, episodeIndex: 1)
+        let episode2 = PlayerItem(title: "Episode 2", url: URL(string: "https://example.com/e2.m3u8")!, episodeIndex: 2)
+
+        player.load(playerItems: [episode1, episode2], currentIndex: 1)
+
+        XCTAssertEqual(manager.contentType, .episode)
+        XCTAssertEqual(manager.currentPlayerItemIndex, 1)
+        XCTAssertEqual(manager.playerItem?.title, "Episode 2")
+    }
+
+    func testPlayerFacadePlayPauseUpdatesPlaybackState() {
+        let manager = PlayerManager.shared
+        let player = Player(playerManager: manager)
+
+        player.play()
+        XCTAssertTrue(manager.isPlaying)
+
+        player.pause()
+        XCTAssertFalse(manager.isPlaying)
+    }
 }

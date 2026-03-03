@@ -91,6 +91,17 @@ public class PlayerManager: ObservableObject {
         let provider = PlayerFactory.getProvider(for: type)
         setupPlayer(provider: provider)
     }
+
+    func ensurePlayerConfigured(type: PlayerType? = nil) {
+        if let type, selectedPlayerType != type {
+            setPlayer(type: type)
+            return
+        }
+
+        if currentPlayer == nil {
+            setPlayer(type: type)
+        }
+    }
     
     private func setupPlayer(provider: PlayerProvider) {
         currentProvider = provider

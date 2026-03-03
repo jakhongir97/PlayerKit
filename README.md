@@ -36,16 +36,24 @@ import SwiftUI
 import PlayerKit
 
 struct ContentView: View {
+    private let player = PlayerKit.Player()
+
     var body: some View {
-        PlayerView(
-            playerItem: PlayerItem(
-                title: "Demo",
-                url: URL(string: "https://example.com/video.m3u8")!
-            )
-        )
+        player.makeView()
+            .onAppear {
+                player.load(url: URL(string: "https://example.com/video.m3u8")!)
+                player.play()
+            }
     }
 }
 ```
+
+You can also use `PlayerView(playerItem:)` directly if you prefer a view-first API.
+
+## Dubber Integration
+
+- Integration guide: [`docs/playerkit-integration.md`](docs/playerkit-integration.md)
+- Upstream reference: [dubber/docs/playerkit-integration.md](https://github.com/AzimjonNajmiddinov/dubber/blob/main/docs/playerkit-integration.md)
 
 ## Versioning and Stability
 

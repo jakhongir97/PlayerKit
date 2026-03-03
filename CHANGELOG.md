@@ -14,6 +14,8 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Portable simulator test runner script (`scripts/run_unit_tests.sh`) for local and CI environments.
 - Error reporting API with `PlayerKitError` and `PlayerKitDidFail` notifications.
 - Unit-test baseline for core state and model behavior.
+- Public `Player` facade API (`PlayerKit.Player`) for lightweight embed/integration flows.
+- Dubber HLS integration guide (`docs/playerkit-integration.md`) with end-to-end session/start/play examples.
 
 ### Changed
 - `Package.swift` now explicitly processes package resources.
@@ -23,6 +25,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Player UI/menu viewmodels now support injected `PlayerManager` instances (default `.shared`) for better testability and composition.
 - Runtime integrations (audio session, cast subscriptions, controller events) are configured lazily on first player setup.
 - CI now executes simulator unit tests and validates third-party notice coverage for binary targets.
+- `PlayerView(playerManager:)` now bootstraps non-destructively to preserve active playback state when using external manager/facade ownership.
 
 ### Fixed
 - Player state subscription lifecycle split into long-lived vs resettable subscriptions.
