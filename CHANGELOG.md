@@ -16,6 +16,8 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Unit-test baseline for core state and model behavior.
 - Public `Player` facade API (`PlayerKit.Player`) for lightweight embed/integration flows.
 - Dubber HLS integration guide (`docs/playerkit-integration.md`) with end-to-end session/start/play examples.
+- Built-in Dubber control button in player top controls (opt-in via `DubberConfiguration`).
+- Dubber integration primitives (`DubberConfiguration`, Dubber client, and manager facade methods).
 
 ### Changed
 - `Package.swift` now explicitly processes package resources.
@@ -26,6 +28,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Runtime integrations (audio session, cast subscriptions, controller events) are configured lazily on first player setup.
 - CI now executes simulator unit tests and validates third-party notice coverage for binary targets.
 - `PlayerView(playerManager:)` now bootstraps non-destructively to preserve active playback state when using external manager/facade ownership.
+- Player manager now supports safe async swapping from source HLS to Dubber-generated master HLS while preserving playback position.
 
 ### Fixed
 - Player state subscription lifecycle split into long-lived vs resettable subscriptions.

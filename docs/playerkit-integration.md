@@ -16,14 +16,27 @@ This guide shows how to use PlayerKit with Dubber's HLS proxy flow documented at
 import PlayerKit
 
 func playDubbedHLS(sourceURL: URL) async throws {
-    let sessionId = try await DubAPI.startSession(videoURL: sourceURL, language: "uz")
-    let masterURL = DubAPI.masterPlaylistURL(sessionId: sessionId)
-
     let player = PlayerKit.Player()
-    player.load(url: masterURL)
+    player.configureDubber(DubberConfiguration())
+    player.load(url: sourceURL)
     player.play()
+
+    // User taps the Dub button in PlayerKit controls.
+    // PlayerKit sends sourceURL to Dubber and replaces playback URL
+    // with /api/instant-dub/{sessionId}/master.m3u8 automatically.
 }
 ```
+
+## Built-in Dub Button
+
+When `DubberConfiguration` is set, PlayerKit displays a Dub button in top controls:
+
+- Tap button => `POST /api/instant-dub/start` with current media URL
+- PlayerKit receives `session_id`
+- PlayerKit builds `/api/instant-dub/{session_id}/master.m3u8`
+- Playback switches to the returned dubbed HLS master while preserving position
+
+If Dubber is not configured, the button is hidden.
 
 ## SwiftUI Example
 

@@ -55,6 +55,17 @@ You can also use `PlayerView(playerItem:)` directly if you prefer a view-first A
 - Integration guide: [`docs/playerkit-integration.md`](docs/playerkit-integration.md)
 - Upstream reference: [dubber/docs/playerkit-integration.md](https://github.com/AzimjonNajmiddinov/dubber/blob/main/docs/playerkit-integration.md)
 
+To enable in-player dubbing button support:
+
+```swift
+@MainActor
+func setupDubber(player: PlayerKit.Player) {
+    player.configureDubber(DubberConfiguration())
+}
+```
+
+Once configured, the player shows a `Dub` action button in the top controls and switches the current HLS stream to Dubber's returned master playlist.
+
 ## Versioning and Stability
 
 PlayerKit follows Semantic Versioning:

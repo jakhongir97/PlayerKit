@@ -13,6 +13,16 @@ public final class Player {
         playerManager.ensurePlayerConfigured(type: playerType)
     }
 
+    @MainActor
+    public func configureDubber(_ configuration: DubberConfiguration?) {
+        playerManager.configureDubber(configuration)
+    }
+
+    @MainActor
+    public func startDubbedPlayback(language: String? = nil, translateFrom: String? = nil) async {
+        await playerManager.startDubbedPlayback(language: language, translateFrom: translateFrom)
+    }
+
     public func load(
         url: URL,
         title: String? = nil,

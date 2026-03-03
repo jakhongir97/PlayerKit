@@ -143,4 +143,42 @@ final class PlayerKitTests: XCTestCase {
         player.pause()
         XCTAssertFalse(manager.isPlaying)
     }
+
+    @MainActor
+    func testConfigureDubberTogglesFeatureState() {
+        let manager = PlayerManager.shared
+
+        manager.configureDubber(nil)
+        XCTAssertFalse(manager.isDubberEnabled)
+
+        manager.configureDubber(DubberConfiguration())
+        XCTAssertTrue(manager.isDubberEnabled)
+    }
+
+    @MainActor
+    func testStartDubbedPlaybackWithoutConfigurationReportsError() async {
+        let manager = PlayerManager.shared
+        let movie = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
+
+        manager.load(playerItem: movie)
+        manager.configureDubber(nil)
+
+        await manager.startDubbedPlayback()
+
+        XCTAssertEqual(manager.lastError, .dubberNotConfigured)
+        XCTAssertFalse(manager.isDubLoading)
+    }
+
+    @MainActor
+    func testStartDubbedPlaybackWithoutSourceReportsError() async {
+        let manager = PlayerManager.shared
+
+        manager.playerItem = nil
+        manager.configureDubber(DubberConfiguration())
+
+        await manager.startDubbedPlayback()
+
+        XCTAssertEqual(manager.lastError, .dubberSourceMissing)
+        XCTAssertFalse(manager.isDubLoading)
+    }
 }

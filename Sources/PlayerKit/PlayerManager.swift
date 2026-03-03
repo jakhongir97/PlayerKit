@@ -46,6 +46,9 @@ public class PlayerManager: ObservableObject {
         }
     }
     @Published public private(set) var lastError: PlayerKitError?
+    @Published public private(set) var isDubLoading: Bool = false
+    @Published public private(set) var dubSessionID: String?
+    @Published var isDubberEnabled: Bool = false
     @Published public var isMediaReady: Bool = false {
         didSet {
             if isMediaReady {
@@ -72,6 +75,8 @@ public class PlayerManager: ObservableObject {
     public weak var currentPlayer: PlayerProtocol?
     private var lastPosition: Double = 0
     private var integrationsConfigured = false
+    private var dubberConfiguration: DubberConfiguration?
+    private let dubberClient = DubberClient()
     
     private var stateCancellables = Set<AnyCancellable>()
     private var longLivedCancellables = Set<AnyCancellable>()
@@ -138,6 +143,64 @@ public class PlayerManager: ObservableObject {
         }
         load(url: playerItem.url, lastPosition: playerItem.lastPosition)
     }
+
+    @MainActor
+    public func configureDubber(_ configuration: DubberConfiguration?) {
+        dubberConfiguration = configuration
+        isDubberEnabled = configuration != nil
+    }
+
+    @MainActor
+    public func startDubbedPlayback(language: String? = nil, translateFrom: String? = nil) async {
+        guard !isDubLoading else { return }
+        guard let configuration = dubberConfiguration else {
+            reportError(.dubberNotConfigured)
+            return
+        }
+        guard let sourceItem = playerItem else {
+            reportError(.dubberSourceMissing)
+            return
+        }
+
+        ensurePlayerConfigured()
+        isDubLoading = true
+        clearError()
+        userInteracted()
+
+        do {
+            let sessionID = try await dubberClient.startSession(
+                sourceURL: sourceItem.url,
+                configuration: configuration,
+                language: language,
+                translateFrom: translateFrom
+            )
+
+            let masterURL = dubberClient.masterPlaylistURL(sessionID: sessionID, configuration: configuration)
+            let resumePosition = currentPlayer?.currentTime ?? currentTime
+            let dubbedItem = PlayerItem(
+                title: sourceItem.title,
+                description: sourceItem.description,
+                url: masterURL,
+                posterUrl: sourceItem.posterUrl,
+                castVideoUrl: sourceItem.castVideoUrl,
+                lastPosition: resumePosition,
+                episodeIndex: sourceItem.episodeIndex
+            )
+
+            dubSessionID = sessionID
+            playerItem = dubbedItem
+            if !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count {
+                playerItems[currentPlayerItemIndex] = dubbedItem
+            }
+            load(url: masterURL, lastPosition: resumePosition)
+        } catch let playerError as PlayerKitError {
+            reportError(playerError)
+        } catch {
+            reportError(.dubberRequestFailed(error.localizedDescription))
+        }
+
+        isDubLoading = false
+    }
     
     public func loadEpisodes(playerItems: [PlayerItem], currentIndex: Int = 0 ) {
         self.playerItems = playerItems
@@ -154,6 +217,10 @@ public class PlayerManager: ObservableObject {
         isVideoEnded = false
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         userInteracted()
+    }
+
+    var canStartDubbedPlayback: Bool {
+        isDubberEnabled && !isDubLoading && playerItem != nil
     }
     
     public func videoDidEnd() {
@@ -456,6 +523,8 @@ extension PlayerManager {
         playerItems = []
         currentPlayerItemIndex = 0
         contentType = .movie
+        isDubLoading = false
+        dubSessionID = nil
         
         stateCancellables.removeAll()
     }

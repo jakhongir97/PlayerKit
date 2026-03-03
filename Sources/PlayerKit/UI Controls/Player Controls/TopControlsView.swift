@@ -25,6 +25,9 @@ struct TopControlsView: View {
             Spacer()
             
             SharingMenuView()
+            if playerManager.isDubberEnabled {
+                DubberButton(playerManager: playerManager)
+            }
             SettingsMenu(playerManager: playerManager)
         }
     }
