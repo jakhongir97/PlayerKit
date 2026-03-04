@@ -64,7 +64,7 @@ func setupDubber(player: PlayerKit.Player) {
 }
 ```
 
-Once configured, the player shows a `Dub` action button in the top controls and switches the current HLS stream to Dubber's returned master playlist.
+Once configured, the player shows a `Dub` action button in the top controls, opens Dubber's SSE event stream, and switches to `/api/instant-dub/{sessionId}/master.m3u8` once enough dubbed segments are ready.
 
 ## Versioning and Stability
 

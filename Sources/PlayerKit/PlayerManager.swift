@@ -48,6 +48,11 @@ public class PlayerManager: ObservableObject {
     @Published public private(set) var lastError: PlayerKitError?
     @Published public private(set) var isDubLoading: Bool = false
     @Published public private(set) var dubSessionID: String?
+    @Published public private(set) var dubStatus: String?
+    @Published public private(set) var dubProgressMessage: String?
+    @Published public private(set) var dubSegmentsReady: Int = 0
+    @Published public private(set) var dubTotalSegments: Int = 0
+    @Published public private(set) var dubWarningMessage: String?
     @Published var isDubberEnabled: Bool = false
     @Published public var isMediaReady: Bool = false {
         didSet {
@@ -77,7 +82,11 @@ public class PlayerManager: ObservableObject {
     private var integrationsConfigured = false
     private var dubberConfiguration: DubberConfiguration?
     private let dubberClient = DubberClient()
-    private var dubberPollTask: Task<Void, Never>?
+    private var dubberEventsTask: Task<Void, Never>?
+    private var dubberStallWatchdogTask: Task<Void, Never>?
+    private var dubberSessionStartedAt: Date?
+    private var dubberLastEventAt: Date?
+    private var dubberEventCount: Int = 0
     private var hasAutoSelectedDubTrack = false
     private var hasLoadedDubbedMaster = false
     private var hasAppliedSourceAudioFallback = false
@@ -157,11 +166,24 @@ public class PlayerManager: ObservableObject {
     public func configureDubber(_ configuration: DubberConfiguration?) {
         dubberConfiguration = configuration
         isDubberEnabled = configuration != nil
+        if let configuration {
+            debugLog(
+                "Dubber configured. base=\(configuration.baseURL.debugDescription) " +
+                "timeout=\(dubDebugInterval(configuration.eventStreamRequestTimeout)) " +
+                "reconnect_delay=\(dubDebugInterval(configuration.eventStreamReconnectDelay)) " +
+                "max_retries=\(retryBudgetLabel(configuration))"
+            )
+        } else {
+            debugLog("Dubber disabled.")
+        }
     }
 
     @MainActor
     public func startDubbedPlayback(language: String? = nil, translateFrom: String? = nil) async {
-        guard !isDubLoading else { return }
+        guard !isDubLoading else {
+            debugLog("Ignoring duplicate dubbed playback start while already loading.")
+            return
+        }
         guard let configuration = dubberConfiguration else {
             reportError(.dubberNotConfigured)
             return
@@ -172,7 +194,8 @@ public class PlayerManager: ObservableObject {
         }
 
         ensurePlayerConfigured()
-        cancelDubberPolling()
+        cancelDubberEvents()
+        cancelDubberStallWatchdog()
         saveCurrentTracks()
         hasAutoSelectedDubTrack = false
         hasLoadedDubbedMaster = false
@@ -181,7 +204,15 @@ public class PlayerManager: ObservableObject {
         hasDubSwitchFailed = false
         dubTargetLanguageCode = (language ?? configuration.defaultLanguage).lowercased()
         activeDubSourceItem = sourceItem
+        dubberSessionStartedAt = Date()
+        dubberLastEventAt = nil
+        dubberEventCount = 0
         isDubLoading = true
+        dubStatus = nil
+        dubProgressMessage = "Starting..."
+        dubSegmentsReady = 0
+        dubTotalSegments = 0
+        dubWarningMessage = nil
         clearError()
         userInteracted()
         debugLog(
@@ -200,12 +231,8 @@ public class PlayerManager: ObservableObject {
 
             dubSessionID = sessionID
             debugLog("Dub session started. session_id=\(sessionID)")
-            loadDubbedMaster(
-                sessionID: sessionID,
-                configuration: configuration,
-                sourceItem: sourceItem
-            )
-            startDubberPolling(
+            startDubberStallWatchdog(sessionID: sessionID)
+            startDubberEvents(
                 sessionID: sessionID,
                 configuration: configuration,
                 sourceItem: sourceItem
@@ -214,10 +241,12 @@ public class PlayerManager: ObservableObject {
             debugLog("Dubbed playback failed with PlayerKitError: \(playerError.localizedDescription)")
             reportError(playerError)
             isDubLoading = false
+            cancelDubberStallWatchdog()
         } catch {
             debugLog("Dubbed playback failed: \(error.localizedDescription)")
             reportError(.dubberRequestFailed(error.localizedDescription))
             isDubLoading = false
+            cancelDubberStallWatchdog()
         }
     }
     
@@ -399,82 +428,373 @@ extension PlayerManager {
         }
     }
 
-    fileprivate func startDubberPolling(
+    fileprivate func startDubberEvents(
         sessionID: String,
         configuration: DubberConfiguration,
         sourceItem: PlayerItem
     ) {
-        cancelDubberPolling()
+        cancelDubberEvents()
+        debugLog(
+            "Starting dub SSE loop. session_id=\(sessionID) " +
+            "timeout=\(dubDebugInterval(configuration.eventStreamRequestTimeout)) " +
+            "reconnect_delay=\(dubDebugInterval(configuration.eventStreamReconnectDelay)) " +
+            "max_retries=\(retryBudgetLabel(configuration))"
+        )
 
-        dubberPollTask = Task { [weak self] in
+        dubberEventsTask = Task { [weak self] in
             guard let self else { return }
+            var reconnectAttempt = 0
 
             while !Task.isCancelled {
                 do {
-                    let poll = try await self.dubberClient.pollSession(sessionID: sessionID, configuration: configuration)
-
-                    await MainActor.run {
-                        guard self.dubSessionID == sessionID else { return }
-                        let normalizedStatus = poll.status.lowercased()
-
-                        if !self.hasLoadedDubbedMaster, self.isDubStreamReadyToSwitch(poll) {
-                            self.loadDubbedMaster(
+                    let attemptNumber = reconnectAttempt + 1
+                    let attemptStart = Date()
+                    self.debugLog(
+                        "Dub SSE attempt started. session_id=\(sessionID) attempt=\(attemptNumber) " +
+                        "base=\(configuration.baseURL.debugDescription)"
+                    )
+                    try await self.dubberClient.streamSessionEvents(
+                        sessionID: sessionID,
+                        configuration: configuration
+                    ) { event in
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            guard self.dubSessionID == sessionID else { return }
+                            self.handleDubberEvent(
+                                event,
                                 sessionID: sessionID,
                                 configuration: configuration,
                                 sourceItem: sourceItem
                             )
                         }
-
-                        if self.hasLoadedDubbedMaster {
-                            guard self.isMediaReady else {
-                                return
-                            }
-
-                            self.refreshTrackInfo()
-                        }
-
-                        if normalizedStatus == "error" {
-                            self.debugLog("Dub poll returned error. session_id=\(sessionID) error=\(poll.error ?? "unknown")")
-                            self.reportError(.dubberRequestFailed(poll.error ?? "Dub session failed"))
-                            self.isDubLoading = false
-                            self.cancelDubberPolling()
-                        } else if normalizedStatus == "complete" {
-                            self.debugLog("Dub poll complete. session_id=\(sessionID)")
-                            self.isDubLoading = false
-                            self.cancelDubberPolling()
-                        }
                     }
-                } catch {
-                    let isCancellation = self.isCancellationError(error) || Task.isCancelled
+                    let elapsed = Date().timeIntervalSince(attemptStart)
+                    self.debugLog(
+                        "Dub SSE attempt ended without thrown error. session_id=\(sessionID) " +
+                        "attempt=\(attemptNumber) elapsed=\(self.dubDebugInterval(elapsed))"
+                    )
+
+                    let shouldReconnect = await MainActor.run { () -> Bool in
+                        guard self.dubSessionID == sessionID else { return false }
+                        if self.isDubLoading {
+                            self.debugLog("Dub SSE ended before done. session_id=\(sessionID)")
+                            return true
+                        }
+                        return false
+                    }
+
+                    guard shouldReconnect else {
+                        break
+                    }
+
+                    reconnectAttempt += 1
+                    guard self.canRetryDubberEvents(
+                        attempt: reconnectAttempt,
+                        configuration: configuration
+                    ) else {
+                        let exhaustedAttempt = reconnectAttempt
+                        await MainActor.run {
+                            guard self.dubSessionID == sessionID else { return }
+                            let elapsedSinceStart = Date().timeIntervalSince(self.dubberSessionStartedAt ?? Date())
+                            self.debugLog(
+                                "Dub status stream disconnected after retry budget. " +
+                                "session_id=\(sessionID) attempts=\(exhaustedAttempt) " +
+                                "events_received=\(self.dubberEventCount) " +
+                                "elapsed=\(self.dubDebugInterval(elapsedSinceStart))"
+                            )
+                            self.reportError(.dubberRequestFailed("Dub status stream disconnected."))
+                            self.isDubLoading = false
+                            self.cancelDubberStallWatchdog()
+                        }
+                        break
+                    }
+                    let currentAttempt = reconnectAttempt
+                    let backoffNanoseconds = self.dubberReconnectDelayNanoseconds(
+                        attempt: reconnectAttempt,
+                        baseDelay: configuration.eventStreamReconnectDelay
+                    )
+                    let backoffSeconds = Double(backoffNanoseconds) / 1_000_000_000
+
                     await MainActor.run {
                         guard self.dubSessionID == sessionID else { return }
-                        if isCancellation {
-                            self.debugLog("Dub poll cancelled. session_id=\(sessionID)")
-                            self.cancelDubberPolling()
-                            return
-                        }
-                        self.debugLog("Dub poll failed. session_id=\(sessionID) error=\(error.localizedDescription)")
-                        self.reportError(.dubberRequestFailed(error.localizedDescription))
-                        self.isDubLoading = false
-                        self.cancelDubberPolling()
+                        let message = "Dub stream disconnected. Reconnecting (\(currentAttempt)/\(self.retryBudgetLabel(configuration)))."
+                        self.dubWarningMessage = message
+                        self.debugLog(
+                            "Dub SSE reconnect scheduled. session_id=\(sessionID) " +
+                            "attempt=\(currentAttempt) backoff=\(self.dubDebugInterval(backoffSeconds))"
+                        )
                     }
+                    try await Task.sleep(nanoseconds: backoffNanoseconds)
+                } catch {
+                    let isCancellation = self.isCancellationError(error) || Task.isCancelled
                     if isCancellation {
+                        await MainActor.run {
+                            guard self.dubSessionID == sessionID else { return }
+                            self.debugLog("Dub SSE cancelled. session_id=\(sessionID)")
+                        }
+                        break
+                    }
+
+                    guard self.shouldRetryDubberEvents(after: error) else {
+                        await MainActor.run {
+                            guard self.dubSessionID == sessionID else { return }
+                            self.debugLog(
+                                "Dub SSE failed. session_id=\(sessionID) " +
+                                "error=\(self.networkErrorDebugDetails(error))"
+                            )
+                            self.reportError(.dubberRequestFailed(error.localizedDescription))
+                            self.isDubLoading = false
+                            self.cancelDubberStallWatchdog()
+                        }
+                        break
+                    }
+
+                    reconnectAttempt += 1
+                    guard self.canRetryDubberEvents(
+                        attempt: reconnectAttempt,
+                        configuration: configuration
+                    ) else {
+                        await MainActor.run {
+                            guard self.dubSessionID == sessionID else { return }
+                            self.debugLog(
+                                "Dub SSE failed after retries. session_id=\(sessionID) " +
+                                "error=\(self.networkErrorDebugDetails(error))"
+                            )
+                            self.reportError(.dubberRequestFailed(error.localizedDescription))
+                            self.isDubLoading = false
+                            self.cancelDubberStallWatchdog()
+                        }
+                        break
+                    }
+                    let currentAttempt = reconnectAttempt
+                    let backoffNanoseconds = self.dubberReconnectDelayNanoseconds(
+                        attempt: reconnectAttempt,
+                        baseDelay: configuration.eventStreamReconnectDelay
+                    )
+                    let backoffSeconds = Double(backoffNanoseconds) / 1_000_000_000
+
+                    await MainActor.run {
+                        guard self.dubSessionID == sessionID else { return }
+                        let message = "Dub stream timeout. Reconnecting (\(currentAttempt)/\(self.retryBudgetLabel(configuration)))."
+                        self.dubWarningMessage = message
+                        self.debugLog(
+                            "Dub SSE transient failure, retrying. session_id=\(sessionID) " +
+                            "attempt=\(currentAttempt) backoff=\(self.dubDebugInterval(backoffSeconds)) " +
+                            "error=\(self.networkErrorDebugDetails(error))"
+                        )
+                    }
+                    do {
+                        try await Task.sleep(nanoseconds: backoffNanoseconds)
+                    } catch {
                         break
                     }
                 }
+            }
 
-                do {
-                    try await Task.sleep(nanoseconds: 2_000_000_000)
-                } catch {
-                    break
+            await MainActor.run {
+                guard self.dubSessionID == sessionID || self.dubSessionID == nil else { return }
+                if self.dubberEventsTask?.isCancelled == false || self.dubberEventsTask != nil {
+                    self.dubberEventsTask = nil
                 }
             }
         }
     }
 
-    fileprivate func cancelDubberPolling() {
-        dubberPollTask?.cancel()
-        dubberPollTask = nil
+    @MainActor
+    fileprivate func handleDubberEvent(
+        _ event: DubberClient.SessionEvent,
+        sessionID: String,
+        configuration: DubberConfiguration,
+        sourceItem: PlayerItem
+    ) {
+        dubberLastEventAt = Date()
+        dubberEventCount += 1
+        switch event {
+        case .update(let update):
+            if let warning = dubWarningMessage,
+               warning.localizedCaseInsensitiveContains("reconnect")
+                || warning.localizedCaseInsensitiveContains("timeout")
+                || warning.localizedCaseInsensitiveContains("disconnected") {
+                dubWarningMessage = nil
+            }
+
+            if let status = update.status, !status.isEmpty {
+                dubStatus = status
+            }
+            if let progress = update.progress, !progress.isEmpty {
+                dubProgressMessage = progress
+            }
+            if let segmentsReady = update.segments_ready {
+                dubSegmentsReady = max(segmentsReady, 0)
+            }
+            if let totalSegments = update.total_segments {
+                dubTotalSegments = max(totalSegments, 0)
+            }
+
+            debugLog(
+                "Dub update. session_id=\(sessionID) status=\(update.status ?? "nil") " +
+                "progress=\(update.progress ?? "nil") segments=\(dubSegmentsReady)/\(dubTotalSegments) " +
+                "error=\(update.error ?? "nil")"
+            )
+
+            if let rawError = update.error?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !rawError.isEmpty {
+                debugLog("Dub update error. session_id=\(sessionID) error=\(rawError)")
+                reportError(.dubberRequestFailed(rawError))
+                isDubLoading = false
+                cancelDubberStallWatchdog()
+                cancelDubberEvents()
+                return
+            }
+
+            if !hasLoadedDubbedMaster, isDubStreamReadyToSwitch(update) {
+                loadDubbedMaster(
+                    sessionID: sessionID,
+                    configuration: configuration,
+                    sourceItem: sourceItem
+                )
+            }
+
+            if hasLoadedDubbedMaster, isMediaReady {
+                refreshTrackInfo()
+                autoSelectDubTrackIfNeeded()
+                selectSourceAudioFallbackIfNeeded()
+            }
+
+            let normalizedStatus = (update.status ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            if normalizedStatus == "complete" {
+                debugLog("Dub SSE complete update. session_id=\(sessionID)")
+                isDubLoading = false
+                cancelDubberStallWatchdog()
+            }
+
+        case .warning(let warning):
+            let message = warning.message?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let message, !message.isEmpty {
+                dubWarningMessage = message
+                debugLog("Dub warning. session_id=\(sessionID) message=\(message)")
+            }
+
+        case .done(let done):
+            if let status = done.status, !status.isEmpty {
+                dubStatus = status
+            }
+            debugLog("Dub SSE done. session_id=\(sessionID) status=\(done.status ?? "unknown")")
+            isDubLoading = false
+            cancelDubberStallWatchdog()
+            cancelDubberEvents()
+        }
+    }
+
+    fileprivate func cancelDubberEvents() {
+        dubberEventsTask?.cancel()
+        dubberEventsTask = nil
+    }
+
+    fileprivate func startDubberStallWatchdog(sessionID: String) {
+        cancelDubberStallWatchdog()
+        debugLog("Dub watchdog started. session_id=\(sessionID)")
+
+        dubberStallWatchdogTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 15_000_000_000)
+                } catch {
+                    break
+                }
+
+                await MainActor.run {
+                    guard self.dubSessionID == sessionID else { return }
+                    guard self.isDubLoading else { return }
+
+                    let now = Date()
+                    let sinceStart = now.timeIntervalSince(self.dubberSessionStartedAt ?? now)
+                    let sinceLastEvent = self.dubberLastEventAt.map { now.timeIntervalSince($0) }
+                    let sinceLastEventLabel = sinceLastEvent.map(self.dubDebugInterval) ?? "none"
+                    self.debugLog(
+                        "Dub watchdog heartbeat. session_id=\(sessionID) " +
+                        "status=\(self.dubStatus ?? "nil") " +
+                        "progress=\(self.dubProgressMessage ?? "nil") " +
+                        "segments=\(self.dubSegmentsReady)/\(self.dubTotalSegments) " +
+                        "events_received=\(self.dubberEventCount) " +
+                        "elapsed_since_start=\(self.dubDebugInterval(sinceStart)) " +
+                        "elapsed_since_event=\(sinceLastEventLabel)"
+                    )
+                }
+            }
+        }
+    }
+
+    fileprivate func cancelDubberStallWatchdog() {
+        if dubberStallWatchdogTask != nil {
+            debugLog("Dub watchdog stopped.")
+        }
+        dubberStallWatchdogTask?.cancel()
+        dubberStallWatchdogTask = nil
+    }
+
+    fileprivate func networkErrorDebugDetails(_ error: Error) -> String {
+        let nsError = error as NSError
+        return
+            "domain=\(nsError.domain) " +
+            "code=\(nsError.code) " +
+            "description=\(nsError.localizedDescription)"
+    }
+
+    fileprivate func shouldRetryDubberEvents(after error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == NSURLErrorDomain else {
+            return false
+        }
+
+        switch nsError.code {
+        case URLError.timedOut.rawValue,
+             URLError.networkConnectionLost.rawValue,
+             URLError.notConnectedToInternet.rawValue,
+             URLError.cannotConnectToHost.rawValue,
+             URLError.cannotFindHost.rawValue,
+             URLError.dnsLookupFailed.rawValue,
+             URLError.resourceUnavailable.rawValue,
+             URLError.internationalRoamingOff.rawValue,
+             URLError.callIsActive.rawValue,
+             URLError.dataNotAllowed.rawValue:
+            return true
+        default:
+            return false
+        }
+    }
+
+    fileprivate func canRetryDubberEvents(
+        attempt: Int,
+        configuration: DubberConfiguration
+    ) -> Bool {
+        let maxAttempts = configuration.eventStreamMaxReconnectAttempts
+        if maxAttempts <= 0 {
+            return true
+        }
+        return attempt <= maxAttempts
+    }
+
+    fileprivate func retryBudgetLabel(_ configuration: DubberConfiguration) -> String {
+        let maxAttempts = configuration.eventStreamMaxReconnectAttempts
+        return maxAttempts <= 0 ? "∞" : "\(maxAttempts)"
+    }
+
+    fileprivate func dubberReconnectDelayNanoseconds(
+        attempt: Int,
+        baseDelay: TimeInterval
+    ) -> UInt64 {
+        let normalizedBase = max(baseDelay, 0.5)
+        let multiplier = min(pow(2.0, Double(max(attempt - 1, 0))), 8.0)
+        let seconds = normalizedBase * multiplier
+        return UInt64(seconds * 1_000_000_000)
+    }
+
+    fileprivate func dubDebugInterval(_ seconds: TimeInterval) -> String {
+        String(format: "%.1fs", seconds)
     }
 
     @MainActor
@@ -538,28 +858,23 @@ extension PlayerManager {
         hasAppliedSourceAudioFallback = true
     }
 
-    fileprivate func isDubStreamReadyToSwitch(_ poll: DubberClient.PollResponse) -> Bool {
+    fileprivate func isDubStreamReadyToSwitch(_ update: DubberClient.UpdatePayload) -> Bool {
         guard !hasDubSwitchFailed else { return false }
-        guard poll.segments_ready > 0 else { return false }
-        let baseRequiredSegments = max(3, min(12, poll.total_segments / 10))
-        let retryRequiredSegments = baseRequiredSegments + (dubSwitchAttemptCount * 5)
-
-        // If segment count baseline is unknown, wait for a small safety window.
-        guard poll.total_segments > 0 else { return poll.segments_ready >= retryRequiredSegments }
-
-        let boundedRequiredSegments = min(poll.total_segments, retryRequiredSegments)
-        guard poll.segments_ready >= boundedRequiredSegments else { return false }
+        let segmentsReady = max(update.segments_ready ?? 0, 0)
+        let totalSegments = max(update.total_segments ?? 0, 0)
+        guard segmentsReady >= 3 else { return false }
 
         let resumePosition = max(currentPlayer?.currentTime ?? currentTime, 0)
-        guard resumePosition > 0 else { return poll.segments_ready >= 1 }
+        guard resumePosition > 0 else { return true }
+
+        guard totalSegments > 0 else { return true }
 
         let knownDuration = max(duration, resumePosition)
-        guard knownDuration > 0 else { return poll.segments_ready >= 3 }
-
-        let translatedFraction = Double(poll.segments_ready) / Double(poll.total_segments)
-        let translatedCoverageSeconds = translatedFraction * knownDuration
+        guard knownDuration > 0 else { return true }
 
         // Keep a small margin so playback doesn't immediately hit an untranslated gap.
+        let translatedFraction = Double(segmentsReady) / Double(totalSegments)
+        let translatedCoverageSeconds = translatedFraction * knownDuration
         return translatedCoverageSeconds >= resumePosition + 3
     }
 
@@ -737,7 +1052,8 @@ extension PlayerManager {
     }
     
     public func resetPlayer() {
-        cancelDubberPolling()
+        cancelDubberEvents()
+        cancelDubberStallWatchdog()
 
         if let stateSource = currentPlayer as? PlayerStateSource {
             stateSource.stopRuntimeStateUpdates()
@@ -773,6 +1089,14 @@ extension PlayerManager {
         contentType = .movie
         isDubLoading = false
         dubSessionID = nil
+        dubberSessionStartedAt = nil
+        dubberLastEventAt = nil
+        dubberEventCount = 0
+        dubStatus = nil
+        dubProgressMessage = nil
+        dubSegmentsReady = 0
+        dubTotalSegments = 0
+        dubWarningMessage = nil
         hasAutoSelectedDubTrack = false
         hasLoadedDubbedMaster = false
         hasAppliedSourceAudioFallback = false

@@ -1,164 +1,62 @@
-# PlayerKit Integration (Dubber HLS)
+# PlayerKit Integration (Dubber HLS + SSE)
 
-This guide shows how to use PlayerKit with Dubber's HLS proxy flow documented at:
-[AzimjonNajmiddinov/dubber/docs/playerkit-integration.md](https://github.com/AzimjonNajmiddinov/dubber/blob/main/docs/playerkit-integration.md).
+This guide shows how to use PlayerKit with Dubber's updated backend flow:
 
-## Flow
-
-1. Start a dub session (`POST /api/instant-dub/start`)
-2. Build the master playlist URL (`/api/instant-dub/{sessionId}/master.m3u8`)
-3. Load that URL into `PlayerKit.Player`
-4. Let users switch to dubbed audio from PlayerKit's audio menu
+1. `POST /api/instant-dub/start`
+2. `GET /api/instant-dub/{sessionId}/events` (SSE)
+3. Wait for `update` events with enough `segments_ready`
+4. Switch playback to `/api/instant-dub/{sessionId}/master.m3u8`
+5. Close the SSE stream on `done`
 
 ## Minimal Example
 
 ```swift
 import PlayerKit
 
-func playDubbedHLS(sourceURL: URL) async throws {
+func playDubbedHLS(sourceURL: URL) {
     let player = PlayerKit.Player()
     player.configureDubber(DubberConfiguration())
     player.load(url: sourceURL)
     player.play()
 
     // User taps the Dub button in PlayerKit controls.
-    // PlayerKit sends sourceURL to Dubber and replaces playback URL
-    // with /api/instant-dub/{sessionId}/master.m3u8 automatically.
+    // PlayerKit:
+    // 1) starts a dub session,
+    // 2) listens to SSE updates,
+    // 3) swaps to master.m3u8 when dubbed segments are ready.
 }
 ```
 
-## Built-in Dub Button
+## Built-in Dub Button Flow
 
 When `DubberConfiguration` is set, PlayerKit displays a Dub button in top controls:
 
 - Tap button => `POST /api/instant-dub/start` with current media URL
 - PlayerKit receives `session_id`
-- PlayerKit builds `/api/instant-dub/{session_id}/master.m3u8`
-- Playback switches to the returned dubbed HLS master while preserving position
+- PlayerKit subscribes to `GET /api/instant-dub/{session_id}/events`
+- On `update` with enough `segments_ready`, PlayerKit switches to `master.m3u8`
+- On `warning`, PlayerKit exposes the message through `PlayerManager.dubWarningMessage`
+- On `done`, PlayerKit stops Dub loading state and closes SSE
 
 If Dubber is not configured, the button is hidden.
 
-## SwiftUI Example
+## Observability Hooks
 
-```swift
-import PlayerKit
-import SwiftUI
+PlayerKit exposes Dubber runtime state on `PlayerManager`:
 
-@MainActor
-final class DubPlayerViewModel: ObservableObject {
-    @Published var isLoading = true
-    @Published var status = "Starting..."
+- `isDubLoading`
+- `dubSessionID`
+- `dubStatus`
+- `dubProgressMessage`
+- `dubSegmentsReady`
+- `dubTotalSegments`
+- `dubWarningMessage`
 
-    let player = PlayerKit.Player()
-    private var sessionId: String?
-
-    func start(sourceURL: URL) {
-        Task {
-            do {
-                let sid = try await DubAPI.startSession(videoURL: sourceURL)
-                sessionId = sid
-
-                let masterURL = DubAPI.masterPlaylistURL(sessionId: sid)
-                player.load(url: masterURL)
-                player.play()
-
-                isLoading = false
-                status = "Playing"
-            } catch {
-                status = "Failed: \(error.localizedDescription)"
-            }
-        }
-    }
-
-    func stopSessionIfNeeded() {
-        guard let sessionId else { return }
-        Task { try? await DubAPI.stop(sessionId: sessionId) }
-    }
-}
-
-struct DubPlayerScreen: View {
-    @StateObject private var viewModel = DubPlayerViewModel()
-
-    var body: some View {
-        ZStack {
-            viewModel.player.makeView()
-                .ignoresSafeArea()
-
-            if viewModel.isLoading {
-                ProgressView(viewModel.status)
-            }
-        }
-        .onAppear {
-            let url = URL(string: "https://example.com/master.m3u8")!
-            viewModel.start(sourceURL: url)
-        }
-        .onDisappear {
-            viewModel.stopSessionIfNeeded()
-        }
-    }
-}
-```
-
-## DubAPI Helper
-
-```swift
-import Foundation
-
-enum DubAPI {
-    static let baseURL = "https://dubbing.uz/api/instant-dub"
-
-    struct StartResponse: Decodable {
-        let session_id: String
-    }
-
-    struct PollResponse: Decodable {
-        let status: String
-        let segments_ready: Int
-        let total_segments: Int
-        let error: String?
-    }
-
-    static func startSession(
-        videoURL: URL,
-        language: String = "uz",
-        translateFrom: String = "auto"
-    ) async throws -> String {
-        var request = URLRequest(url: URL(string: "\(baseURL)/start")!)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let payload: [String: String] = [
-            "video_url": videoURL.absoluteString,
-            "language": language,
-            "translate_from": translateFrom
-        ]
-
-        request.httpBody = try JSONEncoder().encode(payload)
-        let (data, _) = try await URLSession.shared.data(for: request)
-        return try JSONDecoder().decode(StartResponse.self, from: data).session_id
-    }
-
-    static func masterPlaylistURL(sessionId: String) -> URL {
-        URL(string: "\(baseURL)/\(sessionId)/master.m3u8")!
-    }
-
-    static func poll(sessionId: String) async throws -> PollResponse {
-        let url = URL(string: "\(baseURL)/\(sessionId)/poll")!
-        let (data, _) = try await URLSession.shared.data(from: url)
-        return try JSONDecoder().decode(PollResponse.self, from: data)
-    }
-
-    static func stop(sessionId: String) async throws {
-        var request = URLRequest(url: URL(string: "\(baseURL)/\(sessionId)/stop")!)
-        request.httpMethod = "POST"
-        _ = try await URLSession.shared.data(for: request)
-    }
-}
-```
+These can be bound directly in SwiftUI for translation progress/warning UI.
 
 ## Notes
 
-- Audio track availability depends on Dubber producing the first audio segments.
-- Use `poll` only for progress UI; playback does not require polling.
-- Call `stop` when users leave playback to release server-side session resources.
+- Playback starts from the original source stream immediately; dubbed master is applied when SSE progress indicates enough generated segments.
+- Audio track availability depends on Dubber producing audio renditions in the generated master playlist.
+- PlayerKit automatically retries transient SSE failures (for example, timeout `-1001`) with exponential backoff.
 - Sessions are temporary; avoid persisting session IDs long-term.
