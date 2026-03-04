@@ -155,6 +155,7 @@ public class PlayerManager: ObservableObject {
     }
     
     public func load(playerItem: PlayerItem) {
+        cancelDubWorkflowIfNeededForContentChange(nextURL: playerItem.url)
         self.playerItem = playerItem
         if playerItems.isEmpty {
             contentType = playerItem.episodeIndex == nil ? .movie : .episode
@@ -343,7 +344,9 @@ extension PlayerManager {
     }
     
     public func stop() {
+        cancelDubWorkflow(reason: "Playback stopped.")
         playbackManager?.stop()
+        isPlaying = false
         userInteracted()
     }
     
@@ -691,6 +694,47 @@ extension PlayerManager {
     fileprivate func cancelDubberEvents() {
         dubberEventsTask?.cancel()
         dubberEventsTask = nil
+    }
+
+    fileprivate var hasActiveDubWorkflow: Bool {
+        dubSessionID != nil
+            || isDubLoading
+            || dubberEventsTask != nil
+            || dubberStallWatchdogTask != nil
+            || activeDubSourceItem != nil
+            || hasLoadedDubbedMaster
+    }
+
+    fileprivate func cancelDubWorkflowIfNeededForContentChange(nextURL: URL) {
+        guard hasActiveDubWorkflow else { return }
+        guard playerItem?.url != nextURL else { return }
+        cancelDubWorkflow(
+            reason: "Content changed. previous=\(playerItem?.url.debugDescription ?? "nil") next=\(nextURL.debugDescription)"
+        )
+    }
+
+    fileprivate func cancelDubWorkflow(reason: String) {
+        guard hasActiveDubWorkflow else { return }
+        debugLog("Cancelling dub workflow. reason=\(reason) session_id=\(dubSessionID ?? "nil")")
+        cancelDubberEvents()
+        cancelDubberStallWatchdog()
+        isDubLoading = false
+        dubSessionID = nil
+        dubberSessionStartedAt = nil
+        dubberLastEventAt = nil
+        dubberEventCount = 0
+        dubStatus = nil
+        dubProgressMessage = nil
+        dubSegmentsReady = 0
+        dubTotalSegments = 0
+        dubWarningMessage = nil
+        hasAutoSelectedDubTrack = false
+        hasLoadedDubbedMaster = false
+        hasAppliedSourceAudioFallback = false
+        dubTargetLanguageCode = nil
+        activeDubSourceItem = nil
+        dubSwitchAttemptCount = 0
+        hasDubSwitchFailed = false
     }
 
     fileprivate func startDubberStallWatchdog(sessionID: String) {
@@ -1052,8 +1096,7 @@ extension PlayerManager {
     }
     
     public func resetPlayer() {
-        cancelDubberEvents()
-        cancelDubberStallWatchdog()
+        cancelDubWorkflow(reason: "Resetting player manager.")
 
         if let stateSource = currentPlayer as? PlayerStateSource {
             stateSource.stopRuntimeStateUpdates()
@@ -1087,23 +1130,6 @@ extension PlayerManager {
         playerItems = []
         currentPlayerItemIndex = 0
         contentType = .movie
-        isDubLoading = false
-        dubSessionID = nil
-        dubberSessionStartedAt = nil
-        dubberLastEventAt = nil
-        dubberEventCount = 0
-        dubStatus = nil
-        dubProgressMessage = nil
-        dubSegmentsReady = 0
-        dubTotalSegments = 0
-        dubWarningMessage = nil
-        hasAutoSelectedDubTrack = false
-        hasLoadedDubbedMaster = false
-        hasAppliedSourceAudioFallback = false
-        dubTargetLanguageCode = nil
-        activeDubSourceItem = nil
-        dubSwitchAttemptCount = 0
-        hasDubSwitchFailed = false
         
         stateCancellables.removeAll()
     }
