@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 public struct PlayerView: View {
     @ObservedObject var playerManager: PlayerManager
@@ -41,7 +44,8 @@ public struct PlayerView: View {
         }
         .onReceive(playerManager.$shouldDismiss) { shouldDismiss in
             if shouldDismiss {
-                presentationMode.wrappedValue.dismiss()
+                playerManager.shouldDismiss = false
+                closePlayerPresentation()
                 NotificationCenter.default.post(name: .PlayerKitDidClose, object: nil)
             }
         }
@@ -66,6 +70,20 @@ public struct PlayerView: View {
         case .episodes(let items, let index):
             playerManager.loadEpisodes(playerItems: items, currentIndex: index)
         }
+    }
+
+    private func closePlayerPresentation() {
+#if os(macOS)
+        if let keyWindow = NSApp.keyWindow {
+            if let sheetParent = keyWindow.sheetParent {
+                sheetParent.endSheet(keyWindow)
+            } else {
+                keyWindow.performClose(nil)
+            }
+            return
+        }
+#endif
+        presentationMode.wrappedValue.dismiss()
     }
 }
 
