@@ -31,6 +31,11 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         playerItemStatusObserver = nil
         removePlaybackEndedObserver()
         removeRuntimeTimeObserver()
+        let activePlayer = player
+        activePlayer?.pause()
+        playerView.player = nil
+        activePlayer?.replaceCurrentItem(with: nil)
+        player = nil
     }
 }
 
@@ -56,11 +61,13 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
     }
     
     public func stop() {
-        player?.pause()
-        player?.replaceCurrentItem(with: nil)
         playerItemStatusObserver = nil
         removePlaybackEndedObserver()
         removeRuntimeTimeObserver()
+        let activePlayer = player
+        activePlayer?.pause()
+        playerView.player = nil
+        activePlayer?.replaceCurrentItem(with: nil)
         currentSourceURL = nil
         player = nil
         emitRuntimeState()

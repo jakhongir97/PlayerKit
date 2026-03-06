@@ -27,18 +27,39 @@ func playDubbedHLS(sourceURL: URL) {
 }
 ```
 
-## Built-in Dub Button Flow
+## Built-in Dub UI Flow
 
-When `DubberConfiguration` is set, PlayerKit displays a Dub button in top controls:
+When `DubberConfiguration` is set, PlayerKit displays a dubbing card in top controls:
 
-- Tap button => `POST /api/instant-dub/start` with current media URL
+- Tap `Start Dubbing` => `POST /api/instant-dub/start` with current media URL
 - PlayerKit receives `session_id`
 - PlayerKit subscribes to `GET /api/instant-dub/{session_id}/events`
 - On `update` with enough `segments_ready`, PlayerKit switches to `master.m3u8`
 - On `warning`, PlayerKit exposes the message through `PlayerManager.dubWarningMessage`
 - On `done`, PlayerKit stops Dub loading state and closes SSE
 
-If Dubber is not configured, the button is hidden.
+The built-in UI also shows:
+
+- a 3-step dubbing explainer (`Hear`, `Build Voice`, `Play Dub`)
+- target/source language selectors before a dub starts
+- animated status while SSE updates are arriving
+- ETA hints once segment production is steady enough to estimate time remaining
+- segment progress once Dubber reports `segments_ready`
+- `Stop Dubbing` while generation is running and `Original Audio` after the dubbed stream is live
+- recent activity logs derived from the live SSE stream
+- a compact floating status pill when the main player controls are hidden
+
+If Dubber is not configured, the dubbing UI is hidden.
+
+## Optional Control APIs
+
+If you want to drive the same controls yourself, PlayerKit also exposes:
+
+- `setDubLanguage(code:)`
+- `setDubSourceLanguage(code:)`
+- `stopDubbingAndReturnToOriginalAudio()`
+
+`DubberConfiguration` can also provide custom `supportedLanguages` and `supportedSourceLanguages` lists for the built-in UI.
 
 ## Observability Hooks
 
@@ -51,6 +72,7 @@ PlayerKit exposes Dubber runtime state on `PlayerManager`:
 - `dubSegmentsReady`
 - `dubTotalSegments`
 - `dubWarningMessage`
+- `isDubbedPlaybackActive`
 
 These can be bound directly in SwiftUI for translation progress/warning UI.
 

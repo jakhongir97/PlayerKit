@@ -55,16 +55,31 @@ You can also use `PlayerView(playerItem:)` directly if you prefer a view-first A
 - Integration guide: [`docs/playerkit-integration.md`](docs/playerkit-integration.md)
 - Upstream reference: [dubber/docs/playerkit-integration.md](https://github.com/AzimjonNajmiddinov/dubber/blob/main/docs/playerkit-integration.md)
 
-To enable in-player dubbing button support:
+To enable in-player dubbing support:
 
 ```swift
 @MainActor
 func setupDubber(player: PlayerKit.Player) {
-    player.configureDubber(DubberConfiguration())
+    player.configureDubber(
+        DubberConfiguration(
+            defaultLanguage: "uz",
+            defaultTranslateFrom: "auto"
+        )
+    )
 }
 ```
 
-Once configured, the player shows a `Dub` action button in the top controls, opens Dubber's SSE event stream, and switches to `/api/instant-dub/{sessionId}/master.m3u8` once enough dubbed segments are ready.
+Once configured, the player shows a dedicated dubbing card in the top controls with:
+
+- a clear `Start Dubbing` action
+- target/source language pickers before dubbing starts
+- animated live status while dubbing is in progress
+- ETA hints once enough translated segments are ready to estimate timing
+- segment-based progress and child-friendly step labels
+- `Stop Dubbing` or `Original Audio` quick actions during/after a dub
+- warning/error messaging plus recent Dubber activity logs
+
+While controls are hidden, PlayerKit also keeps a compact floating dubbing pill visible so users can still see progress at a glance.
 
 ## Versioning and Stability
 

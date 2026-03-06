@@ -1,5 +1,8 @@
 import XCTest
 @testable import PlayerKit
+#if os(macOS)
+import AVKit
+#endif
 
 final class PlayerKitTests: XCTestCase {
     override func setUp() {
@@ -156,6 +159,54 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
+    func testConfigureDubberLoadsLanguageOptions() {
+        let manager = PlayerManager.shared
+        let configuration = DubberConfiguration(
+            defaultLanguage: "en",
+            defaultTranslateFrom: "ru",
+            supportedLanguages: [
+                DubberLanguageOption(code: "en", name: "English"),
+                DubberLanguageOption(code: "uz", name: "Uzbek"),
+            ],
+            supportedSourceLanguages: [
+                DubberLanguageOption(code: "auto", name: "Auto Detect"),
+                DubberLanguageOption(code: "ru", name: "Russian"),
+            ]
+        )
+
+        manager.configureDubber(configuration)
+
+        XCTAssertEqual(manager.availableDubLanguages.map(\.code), ["en", "uz"])
+        XCTAssertEqual(manager.availableDubSourceLanguages.map(\.code), ["auto", "ru"])
+        XCTAssertEqual(manager.selectedDubLanguageCode, "en")
+        XCTAssertEqual(manager.selectedDubSourceLanguageCode, "ru")
+    }
+
+    @MainActor
+    func testSetDubLanguageUpdatesOnlySupportedCodes() {
+        let manager = PlayerManager.shared
+        let configuration = DubberConfiguration(
+            supportedLanguages: [
+                DubberLanguageOption(code: "uz", name: "Uzbek"),
+                DubberLanguageOption(code: "en", name: "English"),
+            ],
+            supportedSourceLanguages: [
+                DubberLanguageOption(code: "auto", name: "Auto Detect"),
+                DubberLanguageOption(code: "ru", name: "Russian"),
+            ]
+        )
+
+        manager.configureDubber(configuration)
+        manager.setDubLanguage(code: "en")
+        manager.setDubSourceLanguage(code: "ru")
+        manager.setDubLanguage(code: "de")
+        manager.setDubSourceLanguage(code: "fr")
+
+        XCTAssertEqual(manager.selectedDubLanguageCode, "en")
+        XCTAssertEqual(manager.selectedDubSourceLanguageCode, "ru")
+    }
+
+    @MainActor
     func testStartDubbedPlaybackWithoutConfigurationReportsError() async {
         let manager = PlayerManager.shared
         let movie = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
@@ -180,5 +231,33 @@ final class PlayerKitTests: XCTestCase {
 
         XCTAssertEqual(manager.lastError, .dubberSourceMissing)
         XCTAssertFalse(manager.isDubLoading)
+    }
+
+    func testAVPlayerWrapperStopDetachesPlayerFromRenderedView() {
+        let wrapper = AVPlayerWrapper()
+        let view = wrapper.getPlayerView()
+
+        wrapper.load(url: URL(string: "https://example.com/movie.m3u8")!)
+
+        XCTAssertNotNil(boundPlayer(from: view))
+
+        wrapper.stop()
+
+        XCTAssertNil(boundPlayer(from: view))
+    }
+
+    private func boundPlayer(from view: PKView, file: StaticString = #filePath, line: UInt = #line) -> AVPlayer? {
+        #if os(macOS)
+        if let playerView = view as? AVKit.AVPlayerView {
+            return playerView.player
+        }
+        #endif
+
+        if let playerView = view as? PlayerKit.AVPlayerView {
+            return playerView.player
+        }
+
+        XCTFail("Unexpected player view type: \(String(reflecting: type(of: view)))", file: file, line: line)
+        return nil
     }
 }

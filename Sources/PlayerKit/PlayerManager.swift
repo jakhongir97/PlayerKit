@@ -53,6 +53,12 @@ public class PlayerManager: ObservableObject {
     @Published public private(set) var dubSegmentsReady: Int = 0
     @Published public private(set) var dubTotalSegments: Int = 0
     @Published public private(set) var dubWarningMessage: String?
+    @Published public private(set) var isDubbedPlaybackActive: Bool = false
+    @Published public private(set) var availableDubLanguages: [DubberLanguageOption] = []
+    @Published public private(set) var availableDubSourceLanguages: [DubberLanguageOption] = []
+    @Published public private(set) var selectedDubLanguageCode: String = "uz"
+    @Published public private(set) var selectedDubSourceLanguageCode: String = "auto"
+    @Published private(set) var dubActivityLog: [DubberActivityLogEntry] = []
     @Published var isDubberEnabled: Bool = false
     @Published public var isMediaReady: Bool = false {
         didSet {
@@ -94,6 +100,10 @@ public class PlayerManager: ObservableObject {
     private var activeDubSourceItem: PlayerItem?
     private var dubSwitchAttemptCount = 0
     private var hasDubSwitchFailed = false
+    private var lastDubActivitySignature: String?
+    private var lastDubStatusSummary: String?
+    private var lastDubProgressSummary: String?
+    private var lastDubSegmentSummary: String?
     
     private var stateCancellables = Set<AnyCancellable>()
     private var longLivedCancellables = Set<AnyCancellable>()
@@ -168,6 +178,18 @@ public class PlayerManager: ObservableObject {
         dubberConfiguration = configuration
         isDubberEnabled = configuration != nil
         if let configuration {
+            availableDubLanguages = configuration.supportedLanguages
+            availableDubSourceLanguages = configuration.supportedSourceLanguages
+            selectedDubLanguageCode = normalizedDubSelection(
+                current: selectedDubLanguageCode,
+                options: configuration.supportedLanguages,
+                fallback: configuration.defaultLanguage
+            )
+            selectedDubSourceLanguageCode = normalizedDubSelection(
+                current: selectedDubSourceLanguageCode,
+                options: configuration.supportedSourceLanguages,
+                fallback: configuration.defaultTranslateFrom
+            )
             debugLog(
                 "Dubber configured. base=\(configuration.baseURL.debugDescription) " +
                 "timeout=\(dubDebugInterval(configuration.eventStreamRequestTimeout)) " +
@@ -175,8 +197,59 @@ public class PlayerManager: ObservableObject {
                 "max_retries=\(retryBudgetLabel(configuration))"
             )
         } else {
+            availableDubLanguages = []
+            availableDubSourceLanguages = []
+            selectedDubLanguageCode = "uz"
+            selectedDubSourceLanguageCode = "auto"
             debugLog("Dubber disabled.")
+            cancelDubWorkflow(reason: "Dubber integration disabled.")
         }
+    }
+
+    @MainActor
+    public func setDubLanguage(code: String) {
+        guard availableDubLanguages.contains(where: { $0.code == code }) else { return }
+        selectedDubLanguageCode = code
+        userInteracted()
+    }
+
+    @MainActor
+    public func setDubSourceLanguage(code: String) {
+        guard availableDubSourceLanguages.contains(where: { $0.code == code }) else { return }
+        selectedDubSourceLanguageCode = code
+        userInteracted()
+    }
+
+    @MainActor
+    public func stopDubbingAndReturnToOriginalAudio() {
+        guard hasActiveDubWorkflow else { return }
+
+        let sourceItem = activeDubSourceItem
+        let shouldRestoreSource = isDubbedPlaybackActive && sourceItem != nil
+        let resumePosition = max(currentPlayer?.currentTime ?? currentTime, 0)
+
+        cancelDubWorkflow(reason: "User requested to stop dubbing.")
+        clearError()
+
+        if shouldRestoreSource, let sourceItem {
+            let restoredItem = PlayerItem(
+                title: sourceItem.title,
+                description: sourceItem.description,
+                url: sourceItem.url,
+                posterUrl: sourceItem.posterUrl,
+                castVideoUrl: sourceItem.castVideoUrl,
+                lastPosition: resumePosition,
+                episodeIndex: sourceItem.episodeIndex
+            )
+
+            playerItem = restoredItem
+            if !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count {
+                playerItems[currentPlayerItemIndex] = restoredItem
+            }
+            load(url: sourceItem.url, lastPosition: resumePosition)
+        }
+
+        HapticsManager.shared.triggerImpactFeedback(style: .soft)
     }
 
     @MainActor
@@ -194,6 +267,9 @@ public class PlayerManager: ObservableObject {
             return
         }
 
+        let resolvedLanguage = language ?? selectedDubLanguageCode
+        let resolvedTranslateFrom = translateFrom ?? selectedDubSourceLanguageCode
+
         ensurePlayerConfigured()
         cancelDubberEvents()
         cancelDubberStallWatchdog()
@@ -203,7 +279,8 @@ public class PlayerManager: ObservableObject {
         hasAppliedSourceAudioFallback = false
         dubSwitchAttemptCount = 0
         hasDubSwitchFailed = false
-        dubTargetLanguageCode = (language ?? configuration.defaultLanguage).lowercased()
+        isDubbedPlaybackActive = false
+        dubTargetLanguageCode = resolvedLanguage.lowercased()
         activeDubSourceItem = sourceItem
         dubberSessionStartedAt = Date()
         dubberLastEventAt = nil
@@ -214,23 +291,35 @@ public class PlayerManager: ObservableObject {
         dubSegmentsReady = 0
         dubTotalSegments = 0
         dubWarningMessage = nil
+        resetDubActivityLog()
         clearError()
         userInteracted()
+        HapticsManager.shared.triggerSelectionFeedback()
+        recordDubActivity(
+            "Starting a new dubbed voice track. The original sound stays on until the dub is safe to play.",
+            level: .info,
+            signature: "dub-start"
+        )
         debugLog(
             "Starting dubbed playback. source=\(sourceItem.url.debugDescription) " +
-            "language=\(language ?? configuration.defaultLanguage) " +
-            "translate_from=\(translateFrom ?? configuration.defaultTranslateFrom)"
+            "language=\(resolvedLanguage) " +
+            "translate_from=\(resolvedTranslateFrom)"
         )
 
         do {
             let sessionID = try await dubberClient.startSession(
                 sourceURL: sourceItem.url,
                 configuration: configuration,
-                language: language,
-                translateFrom: translateFrom
+                language: resolvedLanguage,
+                translateFrom: resolvedTranslateFrom
             )
 
             dubSessionID = sessionID
+            recordDubActivity(
+                "Dubber connected. Waiting for live voice updates.",
+                level: .success,
+                signature: "dub-session-started"
+            )
             debugLog("Dub session started. session_id=\(sessionID)")
             startDubberStallWatchdog(sessionID: sessionID)
             startDubberEvents(
@@ -240,11 +329,19 @@ public class PlayerManager: ObservableObject {
             )
         } catch let playerError as PlayerKitError {
             debugLog("Dubbed playback failed with PlayerKitError: \(playerError.localizedDescription)")
+            recordDubActivity(
+                friendlyDubberErrorMessage(for: playerError),
+                level: .error
+            )
             reportError(playerError)
             isDubLoading = false
             cancelDubberStallWatchdog()
         } catch {
             debugLog("Dubbed playback failed: \(error.localizedDescription)")
+            recordDubActivity(
+                "Dubber could not start right now. \(error.localizedDescription)",
+                level: .error
+            )
             reportError(.dubberRequestFailed(error.localizedDescription))
             isDubLoading = false
             cancelDubberStallWatchdog()
@@ -271,6 +368,67 @@ public class PlayerManager: ObservableObject {
 
     var canStartDubbedPlayback: Bool {
         isDubberEnabled && !isDubLoading && playerItem != nil
+    }
+
+    var dubProgressFraction: Double {
+        if dubTotalSegments > 0 {
+            return min(max(Double(dubSegmentsReady) / Double(dubTotalSegments), 0), 1)
+        }
+
+        if isDubbedPlaybackActive {
+            return 1
+        }
+
+        if isDubLoading {
+            return dubSessionID == nil ? 0.12 : 0.22
+        }
+
+        return 0
+    }
+
+    var hasDubberIssue: Bool {
+        guard let lastError else { return false }
+
+        switch lastError {
+        case .dubberNotConfigured, .dubberSourceMissing, .dubberRequestFailed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var shouldShowDubberCompactStatus: Bool {
+        isDubLoading || isDubbedPlaybackActive || dubWarningMessage != nil || hasDubberIssue
+    }
+
+    var selectedDubLanguage: DubberLanguageOption? {
+        availableDubLanguages.first(where: { $0.code == selectedDubLanguageCode })
+    }
+
+    var selectedDubSourceLanguage: DubberLanguageOption? {
+        availableDubSourceLanguages.first(where: { $0.code == selectedDubSourceLanguageCode })
+    }
+
+    var dubEstimatedRemainingSeconds: TimeInterval? {
+        guard isDubLoading else { return nil }
+        guard dubTotalSegments > 0, dubSegmentsReady > 0 else { return nil }
+        guard let startedAt = dubberSessionStartedAt else { return nil }
+
+        let elapsed = Date().timeIntervalSince(startedAt)
+        guard elapsed >= 3 else { return nil }
+
+        let remainingSegments = max(dubTotalSegments - dubSegmentsReady, 0)
+        guard remainingSegments > 0 else { return 0 }
+
+        let averageSecondsPerSegment = elapsed / Double(dubSegmentsReady)
+        let estimate = averageSecondsPerSegment * Double(remainingSegments)
+        guard estimate.isFinite else { return nil }
+        return min(max(estimate, 1), 60 * 60)
+    }
+
+    var dubEstimatedRemainingLabel: String? {
+        guard let seconds = dubEstimatedRemainingSeconds else { return nil }
+        return formattedDubRemainingTime(seconds)
     }
     
     public func videoDidEnd() {
@@ -522,6 +680,11 @@ extension PlayerManager {
                         guard self.dubSessionID == sessionID else { return }
                         let message = "Dub stream disconnected. Reconnecting (\(currentAttempt)/\(self.retryBudgetLabel(configuration)))."
                         self.dubWarningMessage = message
+                        self.recordDubActivity(
+                            "Connection blinked. Reconnecting to Dubber (\(currentAttempt)/\(self.retryBudgetLabel(configuration))).",
+                            level: .warning,
+                            signature: "reconnect-disconnect-\(currentAttempt)"
+                        )
                         self.debugLog(
                             "Dub SSE reconnect scheduled. session_id=\(sessionID) " +
                             "attempt=\(currentAttempt) backoff=\(self.dubDebugInterval(backoffSeconds))"
@@ -545,6 +708,11 @@ extension PlayerManager {
                                 "Dub SSE failed. session_id=\(sessionID) " +
                                 "error=\(self.networkErrorDebugDetails(error))"
                             )
+                            self.recordDubActivity(
+                                "Live dubbing stopped because the status stream failed.",
+                                level: .error,
+                                signature: "sse-failed"
+                            )
                             self.reportError(.dubberRequestFailed(error.localizedDescription))
                             self.isDubLoading = false
                             self.cancelDubberStallWatchdog()
@@ -563,6 +731,11 @@ extension PlayerManager {
                                 "Dub SSE failed after retries. session_id=\(sessionID) " +
                                 "error=\(self.networkErrorDebugDetails(error))"
                             )
+                            self.recordDubActivity(
+                                "Dubber could not reconnect after several tries.",
+                                level: .error,
+                                signature: "sse-retries-exhausted"
+                            )
                             self.reportError(.dubberRequestFailed(error.localizedDescription))
                             self.isDubLoading = false
                             self.cancelDubberStallWatchdog()
@@ -580,6 +753,11 @@ extension PlayerManager {
                         guard self.dubSessionID == sessionID else { return }
                         let message = "Dub stream timeout. Reconnecting (\(currentAttempt)/\(self.retryBudgetLabel(configuration)))."
                         self.dubWarningMessage = message
+                        self.recordDubActivity(
+                            "Dubber went quiet for a moment. Trying again (\(currentAttempt)/\(self.retryBudgetLabel(configuration))).",
+                            level: .warning,
+                            signature: "reconnect-timeout-\(currentAttempt)"
+                        )
                         self.debugLog(
                             "Dub SSE transient failure, retrying. session_id=\(sessionID) " +
                             "attempt=\(currentAttempt) backoff=\(self.dubDebugInterval(backoffSeconds)) " +
@@ -623,9 +801,11 @@ extension PlayerManager {
 
             if let status = update.status, !status.isEmpty {
                 dubStatus = status
+                recordDubStatusIfNeeded(status)
             }
             if let progress = update.progress, !progress.isEmpty {
                 dubProgressMessage = progress
+                recordDubProgressIfNeeded(progress)
             }
             if let segmentsReady = update.segments_ready {
                 dubSegmentsReady = max(segmentsReady, 0)
@@ -633,6 +813,7 @@ extension PlayerManager {
             if let totalSegments = update.total_segments {
                 dubTotalSegments = max(totalSegments, 0)
             }
+            recordDubSegmentsIfNeeded()
 
             debugLog(
                 "Dub update. session_id=\(sessionID) status=\(update.status ?? "nil") " +
@@ -643,6 +824,11 @@ extension PlayerManager {
             if let rawError = update.error?.trimmingCharacters(in: .whitespacesAndNewlines),
                !rawError.isEmpty {
                 debugLog("Dub update error. session_id=\(sessionID) error=\(rawError)")
+                recordDubActivity(
+                    friendlySentence(from: rawError),
+                    level: .error,
+                    signature: "update-error-\(rawError)"
+                )
                 reportError(.dubberRequestFailed(rawError))
                 isDubLoading = false
                 cancelDubberStallWatchdog()
@@ -670,6 +856,11 @@ extension PlayerManager {
             if normalizedStatus == "complete" {
                 debugLog("Dub SSE complete update. session_id=\(sessionID)")
                 isDubLoading = false
+                recordDubActivity(
+                    "All translated voice pieces are ready.",
+                    level: .success,
+                    signature: "status-complete"
+                )
                 cancelDubberStallWatchdog()
             }
 
@@ -677,6 +868,11 @@ extension PlayerManager {
             let message = warning.message?.trimmingCharacters(in: .whitespacesAndNewlines)
             if let message, !message.isEmpty {
                 dubWarningMessage = message
+                recordDubActivity(
+                    friendlySentence(from: message),
+                    level: .warning,
+                    signature: "warning-\(message)"
+                )
                 debugLog("Dub warning. session_id=\(sessionID) message=\(message)")
             }
 
@@ -685,6 +881,11 @@ extension PlayerManager {
                 dubStatus = status
             }
             debugLog("Dub SSE done. session_id=\(sessionID) status=\(done.status ?? "unknown")")
+            recordDubActivity(
+                "Dubber finished sending updates for this session.",
+                level: .success,
+                signature: "sse-done"
+            )
             isDubLoading = false
             cancelDubberStallWatchdog()
             cancelDubberEvents()
@@ -728,6 +929,7 @@ extension PlayerManager {
         dubSegmentsReady = 0
         dubTotalSegments = 0
         dubWarningMessage = nil
+        isDubbedPlaybackActive = false
         hasAutoSelectedDubTrack = false
         hasLoadedDubbedMaster = false
         hasAppliedSourceAudioFallback = false
@@ -735,6 +937,7 @@ extension PlayerManager {
         activeDubSourceItem = nil
         dubSwitchAttemptCount = 0
         hasDubSwitchFailed = false
+        resetDubActivityLog()
     }
 
     fileprivate func startDubberStallWatchdog(sessionID: String) {
@@ -862,6 +1065,7 @@ extension PlayerManager {
         )
 
         hasLoadedDubbedMaster = true
+        isDubbedPlaybackActive = true
         hasAppliedSourceAudioFallback = false
         dubSwitchAttemptCount += 1
         savedAudio = nil
@@ -872,6 +1076,12 @@ extension PlayerManager {
         }
         load(url: masterURL, lastPosition: resumePosition)
         isDubLoading = false
+        HapticsManager.shared.triggerNotificationFeedback(type: .success)
+        recordDubActivity(
+            "Dubbed voice is ready. Switching playback to the new audio stream.",
+            level: .success,
+            signature: "switch-master"
+        )
         debugLog(
             "Dub segments ready. Switching to dubbed master. session_id=\(sessionID) " +
             "master=\(masterURL.debugDescription) resume=\(resumePosition)"
@@ -956,6 +1166,7 @@ extension PlayerManager {
         let resumePosition = max(currentTime, 0)
         hasDubSwitchFailed = true
         hasLoadedDubbedMaster = false
+        isDubbedPlaybackActive = false
         hasAppliedSourceAudioFallback = false
         hasAutoSelectedDubTrack = false
         isDubLoading = true
@@ -968,12 +1179,167 @@ extension PlayerManager {
             "Dub stream failed to open, reverting to source while translation continues. " +
             "resume=\(resumePosition) attempts=\(dubSwitchAttemptCount)"
         )
+        recordDubActivity(
+            "The dubbed stream stumbled, so PlayerKit moved back to the original sound while dubbing keeps going.",
+            level: .warning,
+            signature: "switch-recover"
+        )
         load(url: sourceItem.url, lastPosition: resumePosition)
         return true
     }
 
     fileprivate func debugLog(_ message: String) {
         print("[PlayerKit][PlayerManager] \(message)")
+    }
+
+    fileprivate func recordDubStatusIfNeeded(_ rawStatus: String) {
+        let normalized = friendlySentence(from: rawStatus)
+        guard !normalized.isEmpty else { return }
+        guard lastDubStatusSummary != normalized else { return }
+        lastDubStatusSummary = normalized
+        recordDubActivity(normalized, level: .info, signature: "status-\(normalized)")
+    }
+
+    fileprivate func recordDubProgressIfNeeded(_ rawProgress: String) {
+        let normalized = friendlySentence(from: rawProgress)
+        guard !normalized.isEmpty else { return }
+        guard lastDubProgressSummary != normalized else { return }
+        lastDubProgressSummary = normalized
+        recordDubActivity(normalized, level: .info, signature: "progress-\(normalized)")
+    }
+
+    fileprivate func recordDubSegmentsIfNeeded() {
+        guard dubTotalSegments > 0 else { return }
+
+        let summary = "\(dubSegmentsReady)/\(dubTotalSegments)"
+        guard lastDubSegmentSummary != summary else { return }
+        lastDubSegmentSummary = summary
+
+        let isImportantMilestone =
+            dubSegmentsReady <= 2
+            || dubSegmentsReady == dubTotalSegments
+            || dubSegmentsReady >= max(dubTotalSegments - 1, 0)
+            || dubSegmentsReady % 3 == 0
+
+        guard isImportantMilestone else { return }
+
+        recordDubActivity(
+            "\(dubSegmentsReady) of \(dubTotalSegments) voice pieces are ready.",
+            level: .info,
+            signature: "segments-\(summary)"
+        )
+    }
+
+    fileprivate func recordDubActivity(
+        _ message: String,
+        level: DubberActivityLogEntry.Level,
+        signature: String? = nil
+    ) {
+        let normalizedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedMessage.isEmpty else { return }
+
+        let dedupeSignature = signature ?? "\(level.rawValue)-\(normalizedMessage)"
+        guard lastDubActivitySignature != dedupeSignature else { return }
+        lastDubActivitySignature = dedupeSignature
+
+        dubActivityLog.insert(
+            DubberActivityLogEntry(message: normalizedMessage, level: level),
+            at: 0
+        )
+
+        if dubActivityLog.count > 12 {
+            dubActivityLog.removeLast(dubActivityLog.count - 12)
+        }
+    }
+
+    fileprivate func resetDubActivityLog() {
+        dubActivityLog = []
+        lastDubActivitySignature = nil
+        lastDubStatusSummary = nil
+        lastDubProgressSummary = nil
+        lastDubSegmentSummary = nil
+    }
+
+    fileprivate func friendlySentence(from raw: String) -> String {
+        let trimmed = raw
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmed.isEmpty else { return "" }
+
+        let lowercased = trimmed.lowercased()
+        let mapped: String
+        switch true {
+        case lowercased.contains("queue"):
+            mapped = "Waiting in line for Dubber to begin."
+        case lowercased.contains("reconnect"):
+            mapped = "Reconnecting to live dubbing."
+        case lowercased.contains("timeout"):
+            mapped = "Dubber paused for a moment, then tried again."
+        case lowercased.contains("start"), lowercased.contains("prepare"), lowercased.contains("boot"):
+            mapped = "Preparing the dubbing session."
+        case lowercased.contains("translate"), lowercased.contains("dub"), lowercased.contains("voice"):
+            mapped = "Building the translated voice track."
+        case lowercased.contains("segment"):
+            mapped = trimmed
+        case lowercased.contains("complete"), lowercased.contains("done"), lowercased.contains("finish"):
+            mapped = "The dubbed voice is fully prepared."
+        default:
+            mapped = trimmed
+        }
+
+        return sentenceCase(mapped)
+    }
+
+    fileprivate func friendlyDubberErrorMessage(for error: PlayerKitError) -> String {
+        switch error {
+        case .dubberNotConfigured:
+            return "Dubber is not configured for this player."
+        case .dubberSourceMissing:
+            return "There is no video loaded yet, so dubbing cannot start."
+        case .dubberRequestFailed(let description):
+            return "Dubber request failed. \(friendlySentence(from: description))"
+        default:
+            return error.localizedDescription
+        }
+    }
+
+    fileprivate func sentenceCase(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return "" }
+        return first.uppercased() + trimmed.dropFirst()
+    }
+
+    fileprivate func normalizedDubSelection(
+        current: String,
+        options: [DubberLanguageOption],
+        fallback: String
+    ) -> String {
+        if options.contains(where: { $0.code == fallback }) {
+            return fallback
+        }
+
+        if options.contains(where: { $0.code == current }) {
+            return current
+        }
+
+        return options.first?.code ?? fallback
+    }
+
+    fileprivate func formattedDubRemainingTime(_ seconds: TimeInterval) -> String {
+        let roundedSeconds = Int(seconds.rounded())
+        if roundedSeconds < 60 {
+            return "About \(roundedSeconds)s left"
+        }
+
+        let minutes = roundedSeconds / 60
+        let secondsRemainder = roundedSeconds % 60
+        if secondsRemainder == 0 {
+            return "About \(minutes)m left"
+        }
+
+        return "About \(minutes)m \(secondsRemainder)s left"
     }
 }
 

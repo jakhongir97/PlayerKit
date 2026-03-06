@@ -23,6 +23,21 @@ public final class Player {
         await playerManager.startDubbedPlayback(language: language, translateFrom: translateFrom)
     }
 
+    @MainActor
+    public func setDubLanguage(code: String) {
+        playerManager.setDubLanguage(code: code)
+    }
+
+    @MainActor
+    public func setDubSourceLanguage(code: String) {
+        playerManager.setDubSourceLanguage(code: code)
+    }
+
+    @MainActor
+    public func stopDubbingAndReturnToOriginalAudio() {
+        playerManager.stopDubbingAndReturnToOriginalAudio()
+    }
+
     public func load(
         url: URL,
         title: String? = nil,
