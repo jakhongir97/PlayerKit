@@ -30,6 +30,7 @@ struct MediaOptionsMenu: View {
             }
             .glassEffect(.clear, in: .capsule)
             .clipShape(Capsule())
+            .buttonStyle(.plain)
             .transaction { $0.animation = nil }
         } else if #available(iOS 15.0, macOS 12.0, *) {
             // iOS 15–25: material-based "glass"
@@ -45,6 +46,7 @@ struct MediaOptionsMenu: View {
                 Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1)
             )
             .contentShape(Capsule())
+            .buttonStyle(.plain)
         } else {
             // Very old fallback
             HStack {
@@ -59,6 +61,7 @@ struct MediaOptionsMenu: View {
                 Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
             )
             .contentShape(Capsule())
+            .buttonStyle(.plain)
         }
     }
 }

@@ -32,6 +32,7 @@ struct AudioMenu: View {
         .accessibilityLabel("Audio tracks")
         .accessibilityHint("Opens audio track options")
         .accessibilityIdentifier("player.audioMenu")
+        .buttonStyle(.plain)
         .onTapGesture {
             viewModel.userInteracted()
         }

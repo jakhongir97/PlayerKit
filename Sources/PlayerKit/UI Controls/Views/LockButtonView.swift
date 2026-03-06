@@ -12,6 +12,7 @@ struct LockButtonView: View {
             Image(systemName: playerManager.isLocked ? "lock.fill" : "lock.open")
                 .circularGlassIcon()
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(playerManager.isLocked ? "Unlock controls" : "Lock controls")
         .accessibilityHint("Prevents accidental control interactions")
         .accessibilityIdentifier("player.lock")

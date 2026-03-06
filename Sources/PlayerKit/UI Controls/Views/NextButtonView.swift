@@ -16,6 +16,7 @@ struct NextButtonView: View {
                 .circularGlassIcon(frameSize: 40)
                 .opacity(isDisabled ? 0.5 : 1.0)
         }
+        .buttonStyle(.plain)
         .disabled(isDisabled)
         .animation(.easeInOut(duration: 0.2), value: isDisabled) // Smooth transition
         .accessibilityLabel("Next episode")

@@ -15,6 +15,7 @@ struct RotateButtonView: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Rotate player")
         .accessibilityHint("Toggles between portrait and landscape")
         .accessibilityIdentifier("player.rotate")

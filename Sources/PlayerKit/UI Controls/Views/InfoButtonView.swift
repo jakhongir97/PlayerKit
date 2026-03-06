@@ -28,6 +28,7 @@ struct InfoButtonView: View {
             Image(systemName: "info")
                 .circularGlassIcon()
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Streaming information")
         .accessibilityHint("Shows bitrate, buffer, frame rate and resolution")
         .accessibilityIdentifier("player.info")

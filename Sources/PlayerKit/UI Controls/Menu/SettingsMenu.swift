@@ -18,6 +18,7 @@ struct SettingsMenu: View {
         .accessibilityLabel("Settings")
         .accessibilityHint("Opens player settings")
         .accessibilityIdentifier("player.settingsMenu")
+        .buttonStyle(.plain)
         .onTapGesture {
             playerManager.userInteracted()
         }

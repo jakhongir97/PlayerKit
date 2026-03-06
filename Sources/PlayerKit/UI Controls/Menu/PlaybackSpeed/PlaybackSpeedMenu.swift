@@ -26,6 +26,7 @@ struct PlaybackSpeedMenu: View {
         .accessibilityLabel("Playback speed")
         .accessibilityHint("Opens playback speed options")
         .accessibilityIdentifier("player.speedMenu")
+        .buttonStyle(.plain)
         .onTapGesture {
             viewModel.userInteracted()
         }

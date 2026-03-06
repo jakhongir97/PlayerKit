@@ -602,7 +602,7 @@ extension PlayerManager {
             "max_retries=\(retryBudgetLabel(configuration))"
         )
 
-        dubberEventsTask = Task { [weak self] in
+        dubberEventsTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             var reconnectAttempt = 0
 

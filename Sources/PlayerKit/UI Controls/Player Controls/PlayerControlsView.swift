@@ -46,22 +46,7 @@ struct PlayerControlsView: View {
                 }
             }
             .padding(isIPhone ? 16 : 32)
-
-            if !playerManager.isLocked && playerManager.shouldShowDubberCompactStatus {
-                VStack {
-                    HStack {
-                        Spacer()
-
-                        DubberCompactStatusView(playerManager: playerManager)
-                            .opacity(playerManager.areControlsVisible ? 0 : 1)
-                            .offset(y: playerManager.areControlsVisible ? -8 : 0)
-                    }
-                    Spacer()
-                }
-                .padding(isIPhone ? 16 : 32)
-                .allowsHitTesting(!playerManager.areControlsVisible)
-                .animation(.spring(response: 0.4, dampingFraction: 0.84), value: playerManager.areControlsVisible)
-            }
+            .allowsHitTesting(playerManager.areControlsVisible)
         }
     }
 }

@@ -12,6 +12,7 @@ struct PlayPauseButtonView: View {
                 Image(playerManager.isPlaying ? "pause" : "play", bundle: .module)
                     .circularGlassIcon(frameSize: 60)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel(playerManager.isPlaying ? "Pause" : "Play")
             .accessibilityHint("Toggles playback")
             .accessibilityIdentifier("player.playPause")

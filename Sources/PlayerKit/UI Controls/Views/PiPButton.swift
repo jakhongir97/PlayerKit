@@ -21,6 +21,7 @@ struct PiPButton: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
+        .buttonStyle(.plain)
         .accessibilityLabel(playerManager.isPiPActive ? "Stop Picture in Picture" : "Start Picture in Picture")
         .accessibilityHint("Toggles Picture in Picture mode")
         .accessibilityIdentifier("player.pip")

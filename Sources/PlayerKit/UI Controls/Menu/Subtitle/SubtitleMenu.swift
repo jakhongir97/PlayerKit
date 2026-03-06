@@ -45,6 +45,7 @@ struct SubtitleMenu: View {
         .accessibilityLabel("Subtitles")
         .accessibilityHint("Opens subtitle options")
         .accessibilityIdentifier("player.subtitleMenu")
+        .buttonStyle(.plain)
         .onTapGesture {
             viewModel.userInteracted()
         }
