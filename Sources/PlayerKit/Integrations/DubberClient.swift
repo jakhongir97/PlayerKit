@@ -8,7 +8,35 @@ struct DubberClient {
     }
 
     private struct StartResponse: Decodable {
-        let session_id: String
+        let sessionID: String
+
+        private enum CodingKeys: String, CodingKey {
+            case sessionID = "session_id"
+            case sessionId
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            if let snakeCase = try container.decodeIfPresent(String.self, forKey: .sessionID),
+               !snakeCase.isEmpty {
+                sessionID = snakeCase
+                return
+            }
+
+            if let camelCase = try container.decodeIfPresent(String.self, forKey: .sessionId),
+               !camelCase.isEmpty {
+                sessionID = camelCase
+                return
+            }
+
+            throw DecodingError.keyNotFound(
+                CodingKeys.sessionID,
+                DecodingError.Context(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Missing dub session identifier."
+                )
+            )
+        }
     }
 
     struct UpdatePayload: Decodable, Sendable {
@@ -17,14 +45,67 @@ struct DubberClient {
         let segments_ready: Int?
         let total_segments: Int?
         let error: String?
+
+        var hasKnownFields: Bool {
+            status != nil
+                || progress != nil
+                || segments_ready != nil
+                || total_segments != nil
+                || error != nil
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case status
+            case progress
+            case segments_ready
+            case total_segments
+            case segmentsReady
+            case totalSegments
+            case error
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            status = try container.decodeIfPresent(String.self, forKey: .status)
+            progress = try container.decodeIfPresent(String.self, forKey: .progress)
+
+            let snakeSegmentsReady = try container.decodeIfPresent(Int.self, forKey: .segments_ready)
+            let camelSegmentsReady = try container.decodeIfPresent(Int.self, forKey: .segmentsReady)
+            segments_ready = snakeSegmentsReady ?? camelSegmentsReady
+
+            let snakeTotalSegments = try container.decodeIfPresent(Int.self, forKey: .total_segments)
+            let camelTotalSegments = try container.decodeIfPresent(Int.self, forKey: .totalSegments)
+            total_segments = snakeTotalSegments ?? camelTotalSegments
+
+            error = try container.decodeIfPresent(String.self, forKey: .error)
+        }
     }
 
     struct WarningPayload: Decodable, Sendable {
         let message: String?
+
+        var hasKnownFields: Bool {
+            message != nil
+        }
     }
 
     struct DonePayload: Decodable, Sendable {
         let status: String?
+
+        var hasKnownFields: Bool {
+            status != nil
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case status
+            case state
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            status = try container.decodeIfPresent(String.self, forKey: .status)
+                ?? (try container.decodeIfPresent(String.self, forKey: .state))
+        }
     }
 
     enum SessionEvent: Sendable {
@@ -79,7 +160,7 @@ struct DubberClient {
             throw PlayerKitError.dubberRequestFailed("HTTP \(httpResponse.statusCode)")
         }
 
-        let sessionID = try JSONDecoder().decode(StartResponse.self, from: data).session_id
+        let sessionID = try JSONDecoder().decode(StartResponse.self, from: data).sessionID
         debugLog("Dub session started. session_id=\(sessionID)")
         return sessionID
     }
@@ -238,6 +319,7 @@ struct DubberClient {
                     emitted = emitEventIfReady()
                 }
                 eventName = parseFieldValue(line, prefix: "event:")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 return emitted
             }
 
@@ -269,23 +351,32 @@ struct DubberClient {
             let normalizedEvent = eventName.lowercased()
 
             switch normalizedEvent {
-            case "update":
+            case "update", "progress", "status":
                 guard let payload = try? decoder.decode(UpdatePayload.self, from: payloadData) else {
                     return []
                 }
+                guard payload.hasKnownFields else {
+                    return []
+                }
                 return [.update(payload)]
-            case "warning":
+            case "warning", "warn":
                 guard let payload = try? decoder.decode(WarningPayload.self, from: payloadData) else {
                     return []
                 }
+                guard payload.hasKnownFields else {
+                    return []
+                }
                 return [.warning(payload)]
-            case "done":
+            case "done", "complete", "completed":
                 guard let payload = try? decoder.decode(DonePayload.self, from: payloadData) else {
+                    return []
+                }
+                guard payload.hasKnownFields else {
                     return []
                 }
                 return [.done(payload)]
             default:
-                return []
+                return inferEvent(from: payloadData, decoder: decoder)
             }
         }
 
@@ -300,6 +391,25 @@ struct DubberClient {
                 value.removeFirst()
             }
             return value
+        }
+
+        private func inferEvent(from payloadData: Data, decoder: JSONDecoder) -> [SessionEvent] {
+            if let update = try? decoder.decode(UpdatePayload.self, from: payloadData),
+               update.hasKnownFields {
+                return [.update(update)]
+            }
+
+            if let warning = try? decoder.decode(WarningPayload.self, from: payloadData),
+               warning.hasKnownFields {
+                return [.warning(warning)]
+            }
+
+            if let done = try? decoder.decode(DonePayload.self, from: payloadData),
+               done.hasKnownFields {
+                return [.done(done)]
+            }
+
+            return []
         }
     }
 

@@ -836,7 +836,14 @@ extension PlayerManager {
                 return
             }
 
-            if !hasLoadedDubbedMaster, isDubStreamReadyToSwitch(update) {
+            let normalizedStatus = (update.status ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            let isCompletionStatus = normalizedStatus == "complete"
+                || normalizedStatus == "completed"
+                || normalizedStatus == "ready"
+
+            if !hasLoadedDubbedMaster, (isDubStreamReadyToSwitch(update) || isCompletionStatus) {
                 loadDubbedMaster(
                     sessionID: sessionID,
                     configuration: configuration,
@@ -850,10 +857,7 @@ extension PlayerManager {
                 selectSourceAudioFallbackIfNeeded()
             }
 
-            let normalizedStatus = (update.status ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased()
-            if normalizedStatus == "complete" {
+            if isCompletionStatus {
                 debugLog("Dub SSE complete update. session_id=\(sessionID)")
                 isDubLoading = false
                 recordDubActivity(
@@ -880,6 +884,22 @@ extension PlayerManager {
             if let status = done.status, !status.isEmpty {
                 dubStatus = status
             }
+
+            let normalizedDoneStatus = (done.status ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+            let isDoneCompletionStatus = normalizedDoneStatus == "complete"
+                || normalizedDoneStatus == "completed"
+                || normalizedDoneStatus == "ready"
+
+            if !hasLoadedDubbedMaster, isDoneCompletionStatus {
+                loadDubbedMaster(
+                    sessionID: sessionID,
+                    configuration: configuration,
+                    sourceItem: sourceItem
+                )
+            }
+
             debugLog("Dub SSE done. session_id=\(sessionID) status=\(done.status ?? "unknown")")
             recordDubActivity(
                 "Dubber finished sending updates for this session.",
@@ -1094,7 +1114,15 @@ extension PlayerManager {
 
         debugLog("Auto-selecting dub track: \(dubTrack.name) (\(dubTrack.id))")
         selectAudioTrack(track: dubTrack)
-        hasAutoSelectedDubTrack = true
+        refreshTrackInfo()
+
+        if let selectedAudio, isLikelyDubTrack(selectedAudio) {
+            hasAutoSelectedDubTrack = true
+            hasAppliedSourceAudioFallback = false
+            return
+        }
+
+        debugLog("Dub track selection did not stick yet; will retry when tracks update again.")
     }
 
     fileprivate func selectSourceAudioFallbackIfNeeded() {
@@ -1273,6 +1301,8 @@ extension PlayerManager {
         switch true {
         case lowercased.contains("queue"):
             mapped = "Waiting in line for Dubber to begin."
+        case lowercased.contains("no subtitles"):
+            mapped = "No subtitle track was found in this stream. Dubbing needs HLS subtitles."
         case lowercased.contains("reconnect"):
             mapped = "Reconnecting to live dubbing."
         case lowercased.contains("timeout"):

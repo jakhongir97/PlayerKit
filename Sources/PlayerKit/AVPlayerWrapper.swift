@@ -116,52 +116,36 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
     public var availableAudioTracks: [TrackInfo] {
         guard let asset = player?.currentItem?.asset,
               let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible) else { return [] }
-        return audioGroup.options.map { option in
-            let id = option.extendedLanguageTag ?? option.locale?.identifier ?? UUID().uuidString
-            let name = option.displayName
-            let languageCode = option.extendedLanguageTag ?? option.locale?.languageCode
-            return TrackInfo(id: id, name: name, languageCode: languageCode)
-        }
+        return audioGroup.options.map(trackInfo(for:))
     }
     
     public var availableSubtitles: [TrackInfo] {
         guard let asset = player?.currentItem?.asset,
               let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return [] }
-        return subtitleGroup.options.map { option in
-            let id = option.extendedLanguageTag ?? option.locale?.identifier ?? UUID().uuidString
-            let name = option.displayName
-            let languageCode = option.extendedLanguageTag ?? option.locale?.languageCode
-            return TrackInfo(id: id, name: name, languageCode: languageCode)
-        }
+        return subtitleGroup.options.map(trackInfo(for:))
     }
     
     public var currentAudioTrack: TrackInfo? {
         guard let currentItem = player?.currentItem,
               let audioGroup = currentItem.asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
               let selectedOption = currentItem.currentMediaSelection.selectedMediaOption(in: audioGroup) else { return nil }
-        let id = selectedOption.extendedLanguageTag ?? selectedOption.locale?.identifier ?? UUID().uuidString
-        let name = selectedOption.displayName
-        let languageCode = selectedOption.extendedLanguageTag ?? selectedOption.locale?.languageCode
-        return TrackInfo(id: id, name: name, languageCode: languageCode)
+        return trackInfo(for: selectedOption)
     }
     
     public var currentSubtitleTrack: TrackInfo? {
         guard let currentItem = player?.currentItem,
               let subtitleGroup = currentItem.asset.mediaSelectionGroup(forMediaCharacteristic: .legible),
               let selectedOption = currentItem.currentMediaSelection.selectedMediaOption(in: subtitleGroup) else { return nil }
-        let id = selectedOption.extendedLanguageTag ?? selectedOption.locale?.identifier ?? UUID().uuidString
-        let name = selectedOption.displayName
-        let languageCode = selectedOption.extendedLanguageTag ?? selectedOption.locale?.languageCode
-        return TrackInfo(id: id, name: name, languageCode: languageCode)
+        return trackInfo(for: selectedOption)
     }
     
     public func selectAudioTrack(withID id: String) {
         guard let asset = player?.currentItem?.asset,
               let audioGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .audible),
-              let option = audioGroup.options.first(where: {
-                  $0.extendedLanguageTag == id ||
-                  $0.locale?.identifier == id
-              }) else { return }
+              let option = mediaSelectionOption(in: audioGroup, matching: id) else {
+            debugLog("Audio track selection failed. id=\(id)")
+            return
+        }
         player?.currentItem?.select(option, in: audioGroup)
     }
     
@@ -169,10 +153,7 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
         guard let asset = player?.currentItem?.asset,
               let subtitleGroup = asset.mediaSelectionGroup(forMediaCharacteristic: .legible) else { return }
         if let id = id,
-           let option = subtitleGroup.options.first(where: {
-               $0.extendedLanguageTag == id ||
-               $0.locale?.identifier == id
-           }) {
+           let option = mediaSelectionOption(in: subtitleGroup, matching: id) {
             player?.currentItem?.select(option, in: subtitleGroup)
         } else {
             player?.currentItem?.select(nil, in: subtitleGroup)
@@ -410,6 +391,60 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
 }
 
 extension AVPlayerWrapper {
+    private func trackInfo(for option: AVMediaSelectionOption) -> TrackInfo {
+        TrackInfo(
+            id: trackIdentifier(for: option),
+            name: option.displayName,
+            languageCode: option.extendedLanguageTag ?? option.locale?.languageCode
+        )
+    }
+
+    private func trackIdentifier(for option: AVMediaSelectionOption) -> String {
+        let propertyList = option.propertyList()
+        if let data = try? PropertyListSerialization.data(
+            fromPropertyList: propertyList,
+            format: .binary,
+            options: 0
+        ) {
+            return "plist:\(data.base64EncodedString())"
+        }
+
+        return legacyTrackIdentifier(for: option)
+    }
+
+    private func mediaSelectionOption(
+        in group: AVMediaSelectionGroup,
+        matching id: String
+    ) -> AVMediaSelectionOption? {
+        if let propertyList = propertyListTrackIdentifier(id) {
+            return group.mediaSelectionOption(withPropertyList: propertyList)
+        }
+
+        return group.options.first(where: { option in
+            legacyTrackIdentifier(for: option) == id
+                || option.extendedLanguageTag == id
+                || option.locale?.identifier == id
+                || option.displayName == id
+        })
+    }
+
+    private func propertyListTrackIdentifier(_ id: String) -> Any? {
+        guard id.hasPrefix("plist:") else { return nil }
+        let encodedValue = String(id.dropFirst("plist:".count))
+        guard let data = Data(base64Encoded: encodedValue) else { return nil }
+        return try? PropertyListSerialization.propertyList(
+            from: data,
+            options: [],
+            format: nil
+        )
+    }
+
+    private func legacyTrackIdentifier(for option: AVMediaSelectionOption) -> String {
+        option.extendedLanguageTag
+            ?? option.locale?.identifier
+            ?? option.displayName
+    }
+
     private func emitRuntimeState() {
         guard shouldEmitRuntimeState else { return }
         let state = PlayerRuntimeState(

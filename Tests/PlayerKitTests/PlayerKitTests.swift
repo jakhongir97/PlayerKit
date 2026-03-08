@@ -233,6 +233,65 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertFalse(manager.isDubLoading)
     }
 
+    func testDubberUpdatePayloadDecodesSnakeCaseFields() throws {
+        let data = Data(
+            """
+            {
+              "status": "processing",
+              "progress": "Generating audio",
+              "segments_ready": 3,
+              "total_segments": 12,
+              "error": null
+            }
+            """.utf8
+        )
+
+        let payload = try JSONDecoder().decode(DubberClient.UpdatePayload.self, from: data)
+
+        XCTAssertEqual(payload.status, "processing")
+        XCTAssertEqual(payload.progress, "Generating audio")
+        XCTAssertEqual(payload.segments_ready, 3)
+        XCTAssertEqual(payload.total_segments, 12)
+        XCTAssertNil(payload.error)
+        XCTAssertTrue(payload.hasKnownFields)
+    }
+
+    func testDubberUpdatePayloadDecodesCamelCaseFields() throws {
+        let data = Data(
+            """
+            {
+              "status": "processing",
+              "progress": "Generating audio",
+              "segmentsReady": 5,
+              "totalSegments": 18
+            }
+            """.utf8
+        )
+
+        let payload = try JSONDecoder().decode(DubberClient.UpdatePayload.self, from: data)
+
+        XCTAssertEqual(payload.status, "processing")
+        XCTAssertEqual(payload.progress, "Generating audio")
+        XCTAssertEqual(payload.segments_ready, 5)
+        XCTAssertEqual(payload.total_segments, 18)
+        XCTAssertTrue(payload.hasKnownFields)
+    }
+
+    func testDubberDonePayloadDecodesStateFallback() throws {
+        let data = Data(
+            """
+            {
+              "state": "complete"
+            }
+            """.utf8
+        )
+
+        let payload = try JSONDecoder().decode(DubberClient.DonePayload.self, from: data)
+
+        XCTAssertEqual(payload.status, "complete")
+        XCTAssertTrue(payload.hasKnownFields)
+    }
+
     func testAVPlayerWrapperStopDetachesPlayerFromRenderedView() {
         let wrapper = AVPlayerWrapper()
         let view = wrapper.getPlayerView()
