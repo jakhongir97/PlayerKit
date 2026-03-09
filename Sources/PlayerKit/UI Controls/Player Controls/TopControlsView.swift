@@ -43,12 +43,12 @@ struct TopControlsView: View {
                 }
             }
         }
-        .onChange(of: playerManager.areControlsVisible) { _, areControlsVisible in
+        .onChange(of: playerManager.areControlsVisible) { areControlsVisible in
             if !areControlsVisible {
                 isDubberSheetPresented = false
             }
         }
-        .onChange(of: playerManager.isDubberEnabled) { _, isDubberEnabled in
+        .onChange(of: playerManager.isDubberEnabled) { isDubberEnabled in
             if !isDubberEnabled {
                 isDubberSheetPresented = false
             }
