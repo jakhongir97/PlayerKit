@@ -123,6 +123,36 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(manager.contentType, .movie)
     }
 
+    func testPlayerItemBridgesCastAndExternalPlaybackURLs() {
+        let castURL = URL(string: "https://example.com/cast.mp4")!
+        let item = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!, castVideoUrl: castURL)
+
+        XCTAssertEqual(item.castVideoUrl, castURL)
+        XCTAssertEqual(item.externalPlaybackURL, castURL)
+        XCTAssertEqual(item.preferredExternalPlaybackURL, castURL)
+    }
+
+    func testPlayerFacadeLoadPreservesExternalPlaybackMetadata() {
+        let manager = PlayerManager.shared
+        let player = Player(playerManager: manager)
+        let playbackURL = URL(string: "https://example.com/movie.m3u8")!
+        let externalURL = URL(string: "https://example.com/movie.mp4")!
+
+        player.load(
+            url: playbackURL,
+            title: "Movie",
+            externalPlaybackURL: externalURL,
+            externalPlaybackContentType: "video/mp4",
+            externalPlaybackDuration: 5400
+        )
+
+        XCTAssertEqual(manager.playerItem?.url, playbackURL)
+        XCTAssertEqual(manager.playerItem?.externalPlaybackURL, externalURL)
+        XCTAssertEqual(manager.playerItem?.castVideoUrl, externalURL)
+        XCTAssertEqual(manager.playerItem?.externalPlaybackContentType, "video/mp4")
+        XCTAssertEqual(manager.playerItem?.externalPlaybackDuration, 5400)
+    }
+
     func testPlayerFacadeLoadEpisodesSetsEpisodeContext() {
         let manager = PlayerManager.shared
         let player = Player(playerManager: manager)

@@ -44,6 +44,9 @@ public final class Player {
         description: String? = nil,
         posterURL: URL? = nil,
         castVideoURL: URL? = nil,
+        externalPlaybackURL: URL? = nil,
+        externalPlaybackContentType: String? = nil,
+        externalPlaybackDuration: Double? = nil,
         lastPosition: Double? = nil
     ) {
         playerManager.ensurePlayerConfigured()
@@ -54,6 +57,9 @@ public final class Player {
             url: url,
             posterUrl: posterURL,
             castVideoUrl: castVideoURL,
+            externalPlaybackURL: externalPlaybackURL,
+            externalPlaybackContentType: externalPlaybackContentType,
+            externalPlaybackDuration: externalPlaybackDuration,
             lastPosition: lastPosition
         )
         playerManager.load(playerItem: item)

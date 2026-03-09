@@ -48,6 +48,65 @@ struct CastButton: UIViewRepresentable {
         }
     }
 }
+#elseif os(macOS)
+struct CastButton: View {
+    @ObservedObject private var castManager = CastManager.shared
+
+    var body: some View {
+        Menu {
+            if castManager.isCasting, let activeDevice {
+                Button("Stop \(activeDevice.name)") {
+                    castManager.stopCast()
+                }
+                Divider()
+            }
+
+            Button(castManager.isSearchingForDevices ? "Searching..." : "Refresh Devices") {
+                castManager.refreshAvailableDevices(force: true)
+            }
+            .disabled(castManager.isSearchingForDevices)
+
+            Divider()
+
+            if castManager.availableDevices.isEmpty {
+                Button(castManager.isSearchingForDevices ? "Looking for DLNA TVs..." : "No DLNA TVs Found") {}
+                    .disabled(true)
+            } else {
+                ForEach(castManager.availableDevices) { device in
+                    Button {
+                        castManager.playMedia(on: device)
+                    } label: {
+                        deviceLabel(for: device)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: castManager.isCasting ? "airplayvideo.circle.fill" : "airplayvideo")
+                .circularGlassIcon()
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Cast options")
+        .accessibilityHint("Shows nearby DLNA TVs and external playback controls")
+        .accessibilityIdentifier("player.cast")
+        .task {
+            castManager.refreshAvailableDevices(force: false)
+        }
+    }
+
+    private var activeDevice: ExternalPlaybackDevice? {
+        castManager.availableDevices.first(where: { $0.id == castManager.activeDeviceID })
+    }
+
+    @ViewBuilder
+    private func deviceLabel(for device: ExternalPlaybackDevice) -> some View {
+        if device.id == castManager.activeDeviceID {
+            Label(device.name, systemImage: "checkmark")
+        } else {
+            Text(device.name)
+        }
+    }
+}
 #else
 struct CastButton: View {
     var body: some View {

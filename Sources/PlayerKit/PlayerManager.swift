@@ -1560,6 +1560,8 @@ extension PlayerManager {
         castManager.onDismissRequested = { [weak self] in
             self?.shouldDismiss = true
         }
+
+        castManager.refreshAvailableDevices(force: false)
     }
     
     private func configureAudioSessionCallbacks() {
