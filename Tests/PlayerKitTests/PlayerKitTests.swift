@@ -132,6 +132,25 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(item.preferredExternalPlaybackURL, castURL)
     }
 
+    func testPlayerItemInfersHLSExternalPlaybackContentType() {
+        let item = PlayerItem(
+            title: "Movie",
+            url: URL(string: "https://example.com/stream.m3u8")!
+        )
+
+        XCTAssertEqual(item.preferredExternalPlaybackContentType, "application/x-mpegURL")
+    }
+
+    func testPlayerItemPrefersExplicitExternalPlaybackContentType() {
+        let item = PlayerItem(
+            title: "Movie",
+            url: URL(string: "https://example.com/stream.m3u8")!,
+            externalPlaybackContentType: "video/custom"
+        )
+
+        XCTAssertEqual(item.preferredExternalPlaybackContentType, "video/custom")
+    }
+
     func testPlayerFacadeLoadPreservesExternalPlaybackMetadata() {
         let manager = PlayerManager.shared
         let player = Player(playerManager: manager)
@@ -237,6 +256,29 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
+    func testConfigureDubberKeepsCurrentLanguageSelectionsWhenStillSupported() {
+        let manager = PlayerManager.shared
+        let configuration = DubberConfiguration(
+            supportedLanguages: [
+                DubberLanguageOption(code: "uz", name: "Uzbek"),
+                DubberLanguageOption(code: "en", name: "English"),
+            ],
+            supportedSourceLanguages: [
+                DubberLanguageOption(code: "auto", name: "Auto Detect"),
+                DubberLanguageOption(code: "ru", name: "Russian"),
+            ]
+        )
+
+        manager.configureDubber(configuration)
+        manager.setDubLanguage(code: "en")
+        manager.setDubSourceLanguage(code: "ru")
+        manager.configureDubber(configuration)
+
+        XCTAssertEqual(manager.selectedDubLanguageCode, "en")
+        XCTAssertEqual(manager.selectedDubSourceLanguageCode, "ru")
+    }
+
+    @MainActor
     func testStartDubbedPlaybackWithoutConfigurationReportsError() async {
         let manager = PlayerManager.shared
         let movie = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
@@ -322,6 +364,122 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertTrue(payload.hasKnownFields)
     }
 
+    func testDubberPollResponseDecodesSnakeCaseFields() throws {
+        let data = Data(
+            """
+            {
+              "status": "Translating...",
+              "segments_ready": 4,
+              "total_segments": 12,
+              "error": null,
+              "chunks": [
+                {
+                  "index": 1,
+                  "start_time": 4.5,
+                  "end_time": 7.2
+                }
+              ]
+            }
+            """.utf8
+        )
+
+        let payload = try JSONDecoder().decode(DubberClient.PollResponse.self, from: data)
+
+        XCTAssertEqual(payload.status, "Translating...")
+        XCTAssertEqual(payload.segmentsReady, 4)
+        XCTAssertEqual(payload.totalSegments, 12)
+        XCTAssertNil(payload.error)
+        XCTAssertEqual(payload.chunks.count, 1)
+        XCTAssertEqual(payload.chunks.first?.index, 1)
+        XCTAssertEqual(payload.chunks.first?.startTime, 4.5)
+        XCTAssertEqual(payload.chunks.first?.endTime, 7.2)
+    }
+
+    func testDubberPollResponseDecodesCamelCaseCounts() throws {
+        let data = Data(
+            """
+            {
+              "status": "ready",
+              "segmentsReady": 9,
+              "totalSegments": 9,
+              "chunks": []
+            }
+            """.utf8
+        )
+
+        let payload = try JSONDecoder().decode(DubberClient.PollResponse.self, from: data)
+
+        XCTAssertEqual(payload.status, "ready")
+        XCTAssertEqual(payload.segmentsReady, 9)
+        XCTAssertEqual(payload.totalSegments, 9)
+        XCTAssertTrue(payload.chunks.isEmpty)
+    }
+
+    func testDubSwitchPolicyRequiresReadyChunks() {
+        XCTAssertFalse(
+            DubSwitchPolicy.hasPlayableDubData(
+                segmentsReady: 4,
+                totalSegments: 144,
+                chunkCount: 0,
+                resumePosition: 8.4,
+                knownDuration: 720
+            )
+        )
+    }
+
+    func testDubSwitchPolicyAllowsSwitchWhenPlayableChunksExist() {
+        XCTAssertTrue(
+            DubSwitchPolicy.hasPlayableDubData(
+                segmentsReady: 4,
+                totalSegments: 144,
+                chunkCount: 2,
+                resumePosition: 8.4,
+                knownDuration: 720
+            )
+        )
+    }
+
+    func testDubSwitchPolicyBlocksActivationBeforeCoverageWindowStarts() {
+        XCTAssertFalse(
+            DubSwitchPolicy.hasPlayableDubData(
+                segmentsReady: 12,
+                totalSegments: 55,
+                chunkCount: 6,
+                resumePosition: 7.2,
+                knownDuration: 720,
+                coverageStart: 33.223,
+                coverageEnd: 58.249
+            )
+        )
+    }
+
+    func testDubSwitchPolicyAllowsPreparationNearCoverageWindow() {
+        XCTAssertTrue(
+            DubSwitchPolicy.shouldPrepareDubMaster(
+                segmentsReady: 12,
+                totalSegments: 55,
+                chunkCount: 6,
+                resumePosition: 28.0,
+                knownDuration: 720,
+                coverageStart: 33.223,
+                coverageEnd: 58.249
+            )
+        )
+    }
+
+    func testDubSwitchPolicyRetriesBeforeCompleteWhenPlayableChunksExist() {
+        XCTAssertTrue(
+            DubSwitchPolicy.shouldRetryAfterFailure(
+                segmentsReady: 38,
+                totalSegments: 144,
+                chunkCount: 3,
+                resumePosition: 9.1,
+                knownDuration: 720,
+                status: "Translating..."
+            )
+        )
+    }
+
     func testAVPlayerWrapperStopDetachesPlayerFromRenderedView() {
         let wrapper = AVPlayerWrapper()
         let view = wrapper.getPlayerView()
@@ -333,6 +491,41 @@ final class PlayerKitTests: XCTestCase {
         wrapper.stop()
 
         XCTAssertNil(boundPlayer(from: view))
+    }
+
+    func testAVPlayerWrapperPlaybackFailureReportsLifecycleError() {
+        let wrapper = AVPlayerWrapper()
+        let reporter = MockPlayerLifecycleReporter()
+        let view = wrapper.getPlayerView()
+        let expectation = expectation(description: "playback failure reported")
+
+        reporter.onFail = { error in
+            XCTAssertEqual(error, .mediaLoadFailed("resource unavailable"))
+            expectation.fulfill()
+        }
+
+        wrapper.lifecycleReporter = reporter
+        wrapper.load(url: URL(string: "https://example.com/movie.m3u8")!)
+
+        guard let player = boundPlayer(from: view),
+              let item = player.currentItem else {
+            XCTFail("Expected AVPlayer current item to exist")
+            return
+        }
+
+        NotificationCenter.default.post(
+            name: .AVPlayerItemFailedToPlayToEndTime,
+            object: item,
+            userInfo: [
+                AVPlayerItemFailedToPlayToEndTimeErrorKey: NSError(
+                    domain: NSURLErrorDomain,
+                    code: URLError.resourceUnavailable.rawValue,
+                    userInfo: [NSLocalizedDescriptionKey: "resource unavailable"]
+                )
+            ]
+        )
+
+        wait(for: [expectation], timeout: 1.0)
     }
 
     private func boundPlayer(from view: PKView, file: StaticString = #filePath, line: UInt = #line) -> AVPlayer? {
@@ -348,5 +541,18 @@ final class PlayerKitTests: XCTestCase {
 
         XCTFail("Unexpected player view type: \(String(reflecting: type(of: view)))", file: file, line: line)
         return nil
+    }
+}
+
+private final class MockPlayerLifecycleReporter: PlayerLifecycleReporting {
+    var onFail: ((PlayerKitError) -> Void)?
+
+    func playerDidBecomeReady() {}
+    func playerDidUpdateTracks() {}
+    func playerDidEndPlayback() {}
+    func playerDidChangePiPState(isActive: Bool) {}
+
+    func playerDidFail(with error: PlayerKitError) {
+        onFail?(error)
     }
 }

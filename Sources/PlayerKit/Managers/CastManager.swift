@@ -85,7 +85,7 @@ class CastManager: NSObject, ObservableObject {
             onError?(.unknown("No media selected for casting."))
             return
         }
-        guard playerItem.castVideoUrl != nil else {
+        guard playerItem.preferredExternalPlaybackURL != nil else {
             onError?(.castURLMissing)
             return
         }
@@ -110,9 +110,9 @@ class CastManager: NSObject, ObservableObject {
         let metadata = createMediaMetadata(for: playerItem)
         
         let mediaInfoBuilder = GCKMediaInformationBuilder()
-        mediaInfoBuilder.contentURL = playerItem.castVideoUrl
+        mediaInfoBuilder.contentURL = playerItem.preferredExternalPlaybackURL
         mediaInfoBuilder.streamType = .buffered
-        mediaInfoBuilder.contentType = "video/mp4"
+        mediaInfoBuilder.contentType = playerItem.preferredExternalPlaybackContentType
         mediaInfoBuilder.metadata = metadata
         
         let mediaLoadRequestDataBuilder = GCKMediaLoadRequestDataBuilder()
@@ -236,128 +236,21 @@ class CastManager: NSObject, ObservableObject {
     }
 
     func playMediaOnCast() {
-        #if os(macOS)
-        guard let activeDevice else {
-            onError?(.externalPlaybackDeviceUnavailable)
-            return
-        }
-
-        playMedia(on: activeDevice)
-        #else
         onError?(.castSessionUnavailable)
-        #endif
     }
 
-    func refreshAvailableDevices(force: Bool = false) {
-        #if os(macOS)
-        if !force,
-           let lastDiscoveryAt,
-           Date().timeIntervalSince(lastDiscoveryAt) < 12,
-           !availableDevices.isEmpty {
-            return
-        }
-
-        guard !isSearchingForDevices else { return }
-        isSearchingForDevices = true
-
-        discoveryTask?.cancel()
-        discoveryTask = Task { [weak self] in
-            guard let self else { return }
-            let devices = await discoveryService.discoverDevices()
-            guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                self.availableDevices = devices
-                self.isSearchingForDevices = false
-                self.isCastingAvailable = !devices.isEmpty
-                self.lastDiscoveryAt = Date()
-                if let activeDevice = self.activeDevice,
-                   !devices.contains(activeDevice) {
-                    self.activeDevice = nil
-                    self.activeDeviceID = nil
-                    self.isConnectedToCastDevice = false
-                    self.isCasting = false
-                }
-            }
-        }
-        #endif
-    }
+    func refreshAvailableDevices(force: Bool = false) {}
 
     func playMedia(on device: ExternalPlaybackDevice) {
-        #if os(macOS)
-        guard let playerItem = currentPlayerItemProvider?() else {
-            onError?(.unknown("No media selected for external playback."))
-            return
-        }
-
-        Task { [weak self] in
-            guard let manager = self else { return }
-            do {
-                try await manager.playbackController.play(item: playerItem, on: device)
-                await MainActor.run {
-                    manager.activeDevice = device
-                    manager.activeDeviceID = device.id
-                    manager.isCasting = true
-                    manager.isConnectedToCastDevice = true
-                    manager.onDismissRequested?()
-                }
-            } catch let error as PlayerKitError {
-                await MainActor.run {
-                    manager.onError?(error)
-                }
-            } catch {
-                await MainActor.run {
-                    manager.onError?(.externalPlaybackFailed(error.localizedDescription))
-                }
-            }
-        }
-        #else
         onError?(.castSessionUnavailable)
-        #endif
     }
 
-    func pauseCast() {
-        #if os(macOS)
-        guard let activeDevice else { return }
-        Task { [weak self] in
-            guard let manager = self else { return }
-            do {
-                try await manager.playbackController.pause(on: activeDevice)
-            } catch let error as PlayerKitError {
-                await MainActor.run {
-                    manager.onError?(error)
-                }
-            } catch {
-                await MainActor.run {
-                    manager.onError?(.externalPlaybackFailed(error.localizedDescription))
-                }
-            }
-        }
-        #endif
-    }
+    func pauseCast() {}
 
     func stopCast() {
-        #if os(macOS)
-        let activeDevice = self.activeDevice
-        Task { [weak self] in
-            guard let manager = self else { return }
-            if let activeDevice {
-                do {
-                    try await manager.playbackController.stop(on: activeDevice)
-                } catch {}
-            }
-
-            await MainActor.run {
-                manager.isCasting = false
-                manager.isConnectedToCastDevice = false
-                manager.activeDevice = nil
-                manager.activeDeviceID = nil
-            }
-        }
-        #else
         isCasting = false
         isConnectedToCastDevice = false
-        #endif
+        activeDeviceID = nil
     }
 }
 #endif

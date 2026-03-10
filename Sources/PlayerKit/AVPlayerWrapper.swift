@@ -14,6 +14,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playbackEndedObserver: Any?
     private var playbackFailedObserver: Any?
+    private var playbackStalledObserver: Any?
     private var timeObserverToken: Any?
     private weak var timeObserverPlayer: AVPlayer?
     private var shouldEmitRuntimeState = false
@@ -231,6 +232,18 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             let underlyingError = (notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?
                 .localizedDescription ?? "Unknown"
             self.debugLog("Failed to play to end. url=\(self.currentSourceURL?.debugDescription ?? "nil") underlying=\(underlyingError)")
+            self.lifecycleReporter?.playerDidFail(with: .mediaLoadFailed(underlyingError))
+        }
+
+        playbackStalledObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemPlaybackStalled,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.debugLog("Playback stalled. url=\(self.currentSourceURL?.debugDescription ?? "nil")")
+            self.player?.play()
+            self.emitRuntimeState()
         }
         
         // Seek to last position if provided, else start from the beginning
@@ -485,6 +498,11 @@ extension AVPlayerWrapper {
         if let failedObserver = playbackFailedObserver {
             NotificationCenter.default.removeObserver(failedObserver)
             playbackFailedObserver = nil
+        }
+
+        if let stalledObserver = playbackStalledObserver {
+            NotificationCenter.default.removeObserver(stalledObserver)
+            playbackStalledObserver = nil
         }
     }
 

@@ -3,52 +3,50 @@ import SwiftUI
 struct TopControlsView: View {
     @ObservedObject var playerManager: PlayerManager
     @State private var isDubberSheetPresented = false
-    private var isPhone: Bool { PlayerKitPlatform.isPhone }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                CloseButtonView(playerManager: playerManager)
-                VStack(alignment: .leading) {
-                    if let title = playerManager.playerItem?.title {
-                        Text(title)
-                            .font(.system(size: 25, weight: .semibold))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                    }
-
-                    if let description = playerManager.playerItem?.description {
-                        Text(description)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.gray)
-                            .lineLimit(1)
-                    }
+        HStack {
+            CloseButtonView(playerManager: playerManager)
+            VStack(alignment: .leading) {
+                if let title = playerManager.playerItem?.title {
+                    Text(title)
+                        .font(.system(size: 25, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
                 }
-                .padding(.horizontal)
-                Spacer()
 
-                if playerManager.isDubberEnabled {
-                    dubbingSheetButton
+                if let description = playerManager.playerItem?.description {
+                    Text(description)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.gray)
+                        .lineLimit(1)
                 }
-                SharingMenuView()
-                SettingsMenu(playerManager: playerManager)
             }
+            .padding(.horizontal)
+            Spacer()
 
+            SharingMenuView()
+            if playerManager.isDubberEnabled {
+                dubbingSheetButton
+            }
+            SettingsMenu(playerManager: playerManager)
+        }
+        .overlay(alignment: .topTrailing) {
             if isDubberSheetPresented && playerManager.isDubberEnabled {
-                HStack {
-                    Spacer(minLength: 0)
+                VStack {
                     DubberStatusView(playerManager: playerManager)
-                        .frame(maxWidth: isPhone ? .infinity : 440, alignment: .leading)
+                        .frame(maxWidth: PlayerKitPlatform.isPhone ? 248 : 264, alignment: .leading)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
+                .padding(.top, 72)
             }
         }
-        .onChange(of: playerManager.areControlsVisible) { areControlsVisible in
+        .onChange(of: playerManager.areControlsVisible) { _, areControlsVisible in
             if !areControlsVisible {
                 isDubberSheetPresented = false
             }
         }
-        .onChange(of: playerManager.isDubberEnabled) { isDubberEnabled in
+        .onChange(of: playerManager.isDubberEnabled) { _, isDubberEnabled in
             if !isDubberEnabled {
                 isDubberSheetPresented = false
             }

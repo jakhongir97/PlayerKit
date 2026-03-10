@@ -39,6 +39,30 @@ extension PlayerItem {
     var preferredExternalPlaybackURL: URL? {
         externalPlaybackURL ?? castVideoUrl ?? (!url.isFileURL ? url : nil)
     }
+
+    var preferredExternalPlaybackContentType: String {
+        if let externalPlaybackContentType,
+           !externalPlaybackContentType.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return externalPlaybackContentType
+        }
+
+        guard let resolvedURL = preferredExternalPlaybackURL else {
+            return "video/mp4"
+        }
+
+        switch resolvedURL.pathExtension.lowercased() {
+        case "m3u8":
+            return "application/x-mpegURL"
+        case "mpd":
+            return "application/dash+xml"
+        case "mov":
+            return "video/quicktime"
+        case "m4v", "mp4":
+            return "video/mp4"
+        default:
+            return "video/mp4"
+        }
+    }
 }
 
 public enum PlayerContentType {

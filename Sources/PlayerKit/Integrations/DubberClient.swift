@@ -108,6 +108,68 @@ struct DubberClient {
         }
     }
 
+    struct PollChunk: Decodable, Sendable {
+        let index: Int?
+        let startTime: Double?
+        let endTime: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case index
+            case startTime = "start_time"
+            case endTime = "end_time"
+        }
+    }
+
+    struct PollResponse: Decodable, Sendable {
+        let status: String?
+        let segmentsReady: Int
+        let totalSegments: Int
+        let error: String?
+        let chunks: [PollChunk]
+
+        private enum CodingKeys: String, CodingKey {
+            case status
+            case segmentsReady = "segments_ready"
+            case totalSegments = "total_segments"
+            case segmentsReadyCamel = "segmentsReady"
+            case totalSegmentsCamel = "totalSegments"
+            case error
+            case chunks
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            status = try container.decodeIfPresent(String.self, forKey: .status)
+            let snakeSegmentsReady = try container.decodeIfPresent(Int.self, forKey: .segmentsReady)
+            let camelSegmentsReady = try container.decodeIfPresent(Int.self, forKey: .segmentsReadyCamel)
+            let snakeTotalSegments = try container.decodeIfPresent(Int.self, forKey: .totalSegments)
+            let camelTotalSegments = try container.decodeIfPresent(Int.self, forKey: .totalSegmentsCamel)
+            segmentsReady = max(snakeSegmentsReady ?? camelSegmentsReady ?? 0, 0)
+            totalSegments = max(snakeTotalSegments ?? camelTotalSegments ?? 0, 0)
+            error = try container.decodeIfPresent(String.self, forKey: .error)
+            chunks = try container.decodeIfPresent([PollChunk].self, forKey: .chunks) ?? []
+        }
+    }
+
+    struct DubAudioReadiness: Sendable, Equatable {
+        let verifiedWindowStart: Double
+        let verifiedWindowEnd: Double
+        let probedSegmentURLs: [URL]
+    }
+
+    private struct PlaylistSegment: Sendable {
+        let url: URL
+        let startTime: Double
+        let endTime: Double
+    }
+
+    private enum ProbeError: Error {
+        case dubbedAudioPlaylistMissing
+        case dubbedAudioSegmentsMissing
+        case dubbedAudioWindowUnavailable
+        case dubbedAudioSegmentUnavailable(URL)
+    }
+
     enum SessionEvent: Sendable {
         case update(UpdatePayload)
         case warning(WarningPayload)
@@ -169,6 +231,71 @@ struct DubberClient {
         configuration.baseURL
             .appendingPathComponent(sessionID)
             .appendingPathComponent("master.m3u8")
+    }
+
+    func pollSession(
+        sessionID: String,
+        configuration: DubberConfiguration
+    ) async throws -> PollResponse {
+        let url = configuration.baseURL
+            .appendingPathComponent(sessionID)
+            .appendingPathComponent("poll")
+
+        let requestStart = Date()
+        let (data, response) = try await session.data(from: url)
+        let requestElapsed = Date().timeIntervalSince(requestStart)
+
+        if let httpResponse = response as? HTTPURLResponse,
+           !(200 ... 299).contains(httpResponse.statusCode) {
+            let body = String(data: data, encoding: .utf8) ?? "<non-utf8 body>"
+            debugLog(
+                "Poll failed. session_id=\(sessionID) status=\(httpResponse.statusCode) " +
+                "elapsed=\(debugInterval(requestElapsed)) body=\(body)"
+            )
+            throw PlayerKitError.dubberRequestFailed("HTTP \(httpResponse.statusCode)")
+        }
+
+        let poll = try JSONDecoder().decode(PollResponse.self, from: data)
+        debugLog(
+            "Poll response. session_id=\(sessionID) status=\(poll.status ?? "nil") " +
+            "segments=\(poll.segmentsReady)/\(poll.totalSegments) " +
+            "chunks=\(poll.chunks.count) elapsed=\(debugInterval(requestElapsed)) " +
+            "error=\(poll.error ?? "nil")"
+        )
+        return poll
+    }
+
+    func probeDubAudioReadiness(
+        sessionID: String,
+        configuration: DubberConfiguration,
+        targetLanguageCode: String,
+        playbackTime: Double,
+        headroom: Double = 8
+    ) async throws -> DubAudioReadiness {
+        let masterURL = masterPlaylistURL(sessionID: sessionID, configuration: configuration)
+        let masterPlaylist = try await fetchText(from: masterURL)
+        let audioPlaylistURL = try resolveDubAudioPlaylistURL(
+            in: masterPlaylist,
+            baseURL: masterURL,
+            targetLanguageCode: targetLanguageCode
+        )
+        let audioPlaylist = try await fetchText(from: audioPlaylistURL)
+        let segments = try parseAudioSegments(in: audioPlaylist, baseURL: audioPlaylistURL)
+        let probeSegments = try segmentsToProbe(
+            in: segments,
+            playbackTime: max(playbackTime, 0),
+            headroom: max(headroom, 2)
+        )
+
+        for segment in probeSegments {
+            try await probeDubSegment(at: segment.url)
+        }
+
+        return DubAudioReadiness(
+            verifiedWindowStart: probeSegments.first?.startTime ?? 0,
+            verifiedWindowEnd: probeSegments.last?.endTime ?? 0,
+            probedSegmentURLs: probeSegments.map(\.url)
+        )
     }
 
     func streamSessionEvents(
@@ -415,6 +542,149 @@ struct DubberClient {
 
     private func debugLog(_ message: String) {
         print("[PlayerKit][DubberClient] \(message)")
+    }
+
+    private func fetchText(from url: URL) async throws -> String {
+        let (data, response) = try await session.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200 ... 299).contains(httpResponse.statusCode) else {
+            throw ProbeError.dubbedAudioPlaylistMissing
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func resolveDubAudioPlaylistURL(
+        in masterPlaylist: String,
+        baseURL: URL,
+        targetLanguageCode: String
+    ) throws -> URL {
+        let lines = masterPlaylist
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        let normalizedLanguage = targetLanguageCode.lowercased()
+        for line in lines where line.hasPrefix("#EXT-X-MEDIA:") && line.contains("TYPE=AUDIO") {
+            let language = attributeValue(named: "LANGUAGE", in: line)?.lowercased()
+            let uri = attributeValue(named: "URI", in: line)
+            if let uri, language?.hasPrefix(normalizedLanguage) == true {
+                guard let resolvedURL = URL(string: uri, relativeTo: baseURL)?.absoluteURL else {
+                    break
+                }
+                return resolvedURL
+            }
+        }
+
+        if let fallbackLine = lines.first(where: { !$0.hasPrefix("#") && $0.localizedCaseInsensitiveContains("dub-audio") }),
+           let resolvedURL = URL(string: fallbackLine, relativeTo: baseURL)?.absoluteURL {
+            return resolvedURL
+        }
+
+        if let fallbackURI = lines
+            .filter({ $0.hasPrefix("#EXT-X-MEDIA:") && $0.contains("TYPE=AUDIO") })
+            .compactMap({ attributeValue(named: "URI", in: $0) })
+            .first(where: { $0.localizedCaseInsensitiveContains("dub-audio") }),
+           let resolvedURL = URL(string: fallbackURI, relativeTo: baseURL)?.absoluteURL {
+            return resolvedURL
+        }
+
+        throw ProbeError.dubbedAudioPlaylistMissing
+    }
+
+    private func parseAudioSegments(
+        in playlist: String,
+        baseURL: URL
+    ) throws -> [PlaylistSegment] {
+        let lines = playlist
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        var pendingDuration: Double?
+        var currentStartTime = 0.0
+        var segments: [PlaylistSegment] = []
+
+        for line in lines {
+            if line.hasPrefix("#EXTINF:") {
+                let rawValue = line
+                    .dropFirst("#EXTINF:".count)
+                    .split(separator: ",", maxSplits: 1, omittingEmptySubsequences: false)
+                    .first
+                pendingDuration = rawValue.flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                continue
+            }
+
+            guard !line.isEmpty, !line.hasPrefix("#"), let duration = pendingDuration else {
+                continue
+            }
+
+            guard let segmentURL = URL(string: line, relativeTo: baseURL)?.absoluteURL else {
+                pendingDuration = nil
+                continue
+            }
+
+            let endTime = currentStartTime + max(duration, 0)
+            segments.append(
+                PlaylistSegment(
+                    url: segmentURL,
+                    startTime: currentStartTime,
+                    endTime: endTime
+                )
+            )
+            currentStartTime = endTime
+            pendingDuration = nil
+        }
+
+        guard !segments.isEmpty else {
+            throw ProbeError.dubbedAudioSegmentsMissing
+        }
+        return segments
+    }
+
+    private func segmentsToProbe(
+        in segments: [PlaylistSegment],
+        playbackTime: Double,
+        headroom: Double
+    ) throws -> [PlaylistSegment] {
+        let verificationEnd = playbackTime + headroom
+        let overlappingSegments = segments.filter { segment in
+            segment.endTime > playbackTime && segment.startTime < verificationEnd
+        }
+
+        if !overlappingSegments.isEmpty {
+            return Array(overlappingSegments.prefix(3))
+        }
+
+        if let firstUpcoming = segments.first(where: { $0.endTime > playbackTime }) {
+            return [firstUpcoming]
+        }
+
+        throw ProbeError.dubbedAudioWindowUnavailable
+    }
+
+    private func probeDubSegment(at url: URL) async throws {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 8
+        request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ProbeError.dubbedAudioSegmentUnavailable(url)
+        }
+
+        switch httpResponse.statusCode {
+        case 200, 206:
+            return
+        default:
+            throw ProbeError.dubbedAudioSegmentUnavailable(url)
+        }
+    }
+
+    private func attributeValue(named name: String, in line: String) -> String? {
+        let pattern = "\(name)=\""
+        guard let range = line.range(of: pattern) else { return nil }
+        let valueStart = range.upperBound
+        guard let valueEnd = line[valueStart...].firstIndex(of: "\"") else { return nil }
+        return String(line[valueStart..<valueEnd])
     }
 
     private func debugInterval(_ seconds: TimeInterval) -> String {
