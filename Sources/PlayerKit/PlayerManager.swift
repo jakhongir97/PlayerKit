@@ -227,6 +227,13 @@ public class PlayerManager: ObservableObject {
     private var dubCoverageEndTime: Double?
     private var dubCompletionObservedAt: Date?
     private var dubAudioProbeTask: Task<Void, Never>?
+    private var dubFallbackPreparationTask: Task<Void, Never>?
+    private let dubFallbackPlayer = DubAudioFallbackPlayer()
+    private var isLocalDubFallbackActive = false
+    private var isLocalDubFallbackPrepared = false
+    private var localDubFallbackCoverageStartTime: Double?
+    private var localDubFallbackCoverageEndTime: Double?
+    private var lastLocalDubFallbackWaitingSignature: String?
     private var lastDubActivitySignature: String?
     private var lastDubStatusSummary: String?
     private var lastDubProgressSummary: String?
@@ -352,7 +359,7 @@ public class PlayerManager: ObservableObject {
         guard hasActiveDubWorkflow else { return }
 
         let sourceItem = activeDubSourceItem
-        let shouldRestoreSource = isDubbedPlaybackActive && sourceItem != nil
+        let shouldRestoreSource = hasLoadedDubbedMaster && sourceItem != nil
         let resumePosition = max(currentPlayer?.currentTime ?? currentTime, 0)
 
         cancelDubWorkflow(reason: "User requested to stop dubbing.")
@@ -404,6 +411,15 @@ public class PlayerManager: ObservableObject {
         cancelDubberPolling()
         cancelDubberEvents()
         cancelDubberStallWatchdog()
+        dubFallbackPreparationTask?.cancel()
+        dubFallbackPreparationTask = nil
+        dubFallbackPlayer.stop()
+        isLocalDubFallbackActive = false
+        isLocalDubFallbackPrepared = false
+        localDubFallbackCoverageStartTime = nil
+        localDubFallbackCoverageEndTime = nil
+        lastLocalDubFallbackWaitingSignature = nil
+        setPrimaryPlayerMuted(false)
         saveCurrentTracks()
         hasAutoSelectedDubTrack = false
         hasLoadedDubbedMaster = false
@@ -624,12 +640,18 @@ extension PlayerManager {
 
     public func play() {
         playbackManager?.play()
+        if isLocalDubFallbackActive {
+            dubFallbackPlayer.play(rate: playbackSpeed)
+        }
         isPlaying = true
         userInteracted()
     }
     
     public func pause() {
         playbackManager?.pause()
+        if isLocalDubFallbackActive {
+            dubFallbackPlayer.pause()
+        }
         isPlaying = false
         userInteracted()
     }
@@ -646,6 +668,9 @@ extension PlayerManager {
         playbackManager?.seek(to: time) { [weak self] success in
             if success {
                 self?.currentTime = time
+                if self?.isLocalDubFallbackActive == true {
+                    self?.dubFallbackPlayer.seek(to: time)
+                }
             }
         }
     }
@@ -661,6 +686,15 @@ extension PlayerManager {
     public func setPlaybackSpeed(_ speed: Float) {
         playbackSpeed = speed
         playbackManager?.setPlaybackSpeed(speed)
+        if isLocalDubFallbackActive {
+            dubFallbackPlayer.sync(
+                to: currentPlayer?.currentTime ?? currentTime,
+                isPlaying: isPlaying,
+                isBuffering: isBuffering,
+                playbackSpeed: speed,
+                forceSeek: false
+            )
+        }
     }
 }
 
@@ -831,6 +865,13 @@ extension PlayerManager {
             dubCompletionObservedAt = nil
         }
 
+        if isCompletionStatus {
+            scheduleLocalDubFallbackPreparationIfNeeded(
+                sessionID: sessionID,
+                poll: poll
+            )
+        }
+
         scheduleDubAudioProbeIfNeeded(
             sessionID: sessionID,
             configuration: configuration,
@@ -897,6 +938,141 @@ extension PlayerManager {
 
         dubCoverageStartTime = validStarts.min()
         dubCoverageEndTime = validEnds.max()
+    }
+
+    fileprivate func scheduleLocalDubFallbackPreparationIfNeeded(
+        sessionID: String,
+        poll: DubberClient.PollResponse
+    ) {
+        guard dubSessionID == sessionID else { return }
+        guard !isLocalDubFallbackActive else { return }
+        guard dubFallbackPreparationTask == nil else { return }
+        guard !hasAutoSelectedDubTrack else { return }
+        guard poll.chunks.contains(where: \.hasEmbeddedAudio) else { return }
+
+        debugLog(
+            "Preparing local dub audio fallback. session_id=\(sessionID) " +
+            "chunks=\(poll.chunks.count)"
+        )
+
+        dubFallbackPreparationTask = Task { [weak self] in
+            guard let self else { return }
+
+            defer {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if self.dubSessionID == sessionID || self.dubSessionID == nil {
+                        self.dubFallbackPreparationTask = nil
+                    }
+                }
+            }
+
+            do {
+                let preparedAsset = try await DubAudioFallbackBuilder.prepare(from: poll.chunks)
+                await MainActor.run {
+                    guard self.dubSessionID == sessionID else { return }
+                    self.installLocalDubFallback(
+                        preparedAsset,
+                        sessionID: sessionID
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    guard self.dubSessionID == sessionID else { return }
+                    self.debugLog(
+                        "Local dub audio fallback failed. session_id=\(sessionID) " +
+                        "error=\(self.networkErrorDebugDetails(error))"
+                    )
+                }
+            }
+        }
+    }
+
+    fileprivate func installLocalDubFallback(
+        _ preparedAsset: DubAudioFallbackPreparedAsset,
+        sessionID: String
+    ) {
+        dubFallbackPlayer.install(preparedAsset)
+        isLocalDubFallbackPrepared = true
+        localDubFallbackCoverageStartTime = preparedAsset.coverageStartTime
+        localDubFallbackCoverageEndTime = preparedAsset.coverageEndTime
+        lastLocalDubFallbackWaitingSignature = nil
+
+        debugLog(
+            "Installed local dub audio fallback. session_id=\(sessionID) " +
+            "coverage=\(preparedAsset.coverageStartTime)-\(preparedAsset.coverageEndTime) " +
+            "chunks=\(preparedAsset.chunkCount)"
+        )
+
+        activateLocalDubFallbackIfReady(sessionID: sessionID)
+    }
+
+    fileprivate func activateLocalDubFallbackIfReady(
+        sessionID: String,
+        force: Bool = false
+    ) {
+        guard dubSessionID == sessionID else { return }
+        guard isLocalDubFallbackPrepared else { return }
+        guard !isLocalDubFallbackActive else { return }
+
+        let playbackTime = max(currentPlayer?.currentTime ?? currentTime, 0)
+        let coverageStart = localDubFallbackCoverageStartTime
+        let coverageEnd = localDubFallbackCoverageEndTime
+
+        if !force {
+            if let coverageStart, coverageStart.isFinite,
+               playbackTime + 0.35 < coverageStart {
+                let signature = "before-\(String(format: "%.3f-%.3f", playbackTime, coverageStart))"
+                if lastLocalDubFallbackWaitingSignature != signature {
+                    lastLocalDubFallbackWaitingSignature = signature
+                    debugLog(
+                        "Local dub audio fallback ready but waiting for coverage window. " +
+                        "session_id=\(sessionID) playback=\(playbackTime) coverage_start=\(coverageStart) " +
+                        "coverage_end=\(coverageEnd?.description ?? "nil")"
+                    )
+                }
+                return
+            }
+
+            if let coverageEnd, coverageEnd.isFinite,
+               playbackTime - 0.35 > coverageEnd {
+                let signature = "after-\(String(format: "%.3f-%.3f", playbackTime, coverageEnd))"
+                if lastLocalDubFallbackWaitingSignature != signature {
+                    lastLocalDubFallbackWaitingSignature = signature
+                    debugLog(
+                        "Local dub audio fallback is outside the current playback position. " +
+                        "session_id=\(sessionID) playback=\(playbackTime) coverage_start=\(coverageStart?.description ?? "nil") " +
+                        "coverage_end=\(coverageEnd)"
+                    )
+                }
+                return
+            }
+        }
+
+        setPrimaryPlayerMuted(true)
+        dubFallbackPlayer.activate(
+            at: playbackTime,
+            isPlaying: isPlaying,
+            isBuffering: isBuffering,
+            playbackSpeed: playbackSpeed
+        )
+
+        isLocalDubFallbackActive = true
+        hasAutoSelectedDubTrack = true
+        isDubbedPlaybackActive = true
+        isDubLoading = false
+        dubWarningMessage = nil
+        lastLocalDubFallbackWaitingSignature = nil
+        recordDubActivity(
+            "Dubbed audio is now active.",
+            level: .success,
+            signature: "dub-fallback-active"
+        )
+        debugLog(
+            "Activated local dub audio fallback. session_id=\(sessionID) " +
+            "playback=\(playbackTime) coverage=\(localDubFallbackCoverageStartTime?.description ?? "nil")-" +
+            "\(localDubFallbackCoverageEndTime?.description ?? "nil")"
+        )
     }
 
     fileprivate func isCompletionState(_ status: String?) -> Bool {
@@ -1008,6 +1184,11 @@ extension PlayerManager {
 
     fileprivate func shouldProbeDubAudio(at playbackTime: Double) -> Bool {
         guard dubReadyChunkCount > 0 || isCompletionState(dubStatus) else { return false }
+
+        if let dubCoverageEndTime, dubCoverageEndTime.isFinite,
+           playbackTime - 0.35 > dubCoverageEndTime {
+            return false
+        }
 
         if let dubCoverageStartTime, dubCoverageStartTime.isFinite {
             return playbackTime + 6 >= dubCoverageStartTime
@@ -1361,6 +1542,8 @@ extension PlayerManager {
             || dubberPollTask != nil
             || dubberEventsTask != nil
             || dubberStallWatchdogTask != nil
+            || dubFallbackPreparationTask != nil
+            || isLocalDubFallbackActive
             || activeDubSourceItem != nil
             || hasLoadedDubbedMaster
     }
@@ -1381,6 +1564,15 @@ extension PlayerManager {
         cancelDubberStallWatchdog()
         dubAudioProbeTask?.cancel()
         dubAudioProbeTask = nil
+        dubFallbackPreparationTask?.cancel()
+        dubFallbackPreparationTask = nil
+        dubFallbackPlayer.stop()
+        isLocalDubFallbackActive = false
+        isLocalDubFallbackPrepared = false
+        localDubFallbackCoverageStartTime = nil
+        localDubFallbackCoverageEndTime = nil
+        lastLocalDubFallbackWaitingSignature = nil
+        setPrimaryPlayerMuted(false)
         isDubLoading = false
         dubSessionID = nil
         dubberSessionStartedAt = nil
@@ -1556,6 +1748,7 @@ extension PlayerManager {
     }
 
     fileprivate func autoSelectDubTrackIfNeeded() {
+        guard !isLocalDubFallbackActive else { return }
         guard !hasAutoSelectedDubTrack else { return }
         guard let dubTrack = availableAudioTracks.first(where: { isLikelyDubTrack($0) }) else { return }
 
@@ -1583,6 +1776,7 @@ extension PlayerManager {
     }
 
     fileprivate func selectSourceAudioFallbackIfNeeded() {
+        guard !isLocalDubFallbackActive else { return }
         guard !hasAutoSelectedDubTrack else { return }
         guard !hasAppliedSourceAudioFallback else { return }
 
@@ -1678,12 +1872,13 @@ extension PlayerManager {
         guard !hasDubSwitchFailed else { return false }
 
         let resumePosition = max(currentTime, 0)
+        let keepLocalDubFallback = isLocalDubFallbackActive
         hasDubSwitchFailed = true
         hasLoadedDubbedMaster = false
-        isDubbedPlaybackActive = false
         hasAppliedSourceAudioFallback = false
-        hasAutoSelectedDubTrack = false
-        isDubLoading = true
+        isDubbedPlaybackActive = keepLocalDubFallback
+        hasAutoSelectedDubTrack = keepLocalDubFallback
+        isDubLoading = !keepLocalDubFallback
 
         playerItem = sourceItem
         if !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count {
@@ -1694,7 +1889,9 @@ extension PlayerManager {
             "resume=\(resumePosition) attempts=\(dubSwitchAttemptCount)"
         )
         recordDubActivity(
-            "The dubbed stream stumbled, so PlayerKit moved back to the original sound while dubbing keeps going.",
+            keepLocalDubFallback
+                ? "The dubbed video stream stumbled, so PlayerKit moved back to the original video while keeping the dubbed audio alive."
+                : "The dubbed stream stumbled, so PlayerKit moved back to the original sound while dubbing keeps going.",
             level: .warning,
             signature: "switch-recover"
         )
@@ -2065,7 +2262,11 @@ extension PlayerManager {
             self?.setGravityToDefault()
         }
     }
-    
+
+    private func setPrimaryPlayerMuted(_ muted: Bool) {
+        (currentPlayer as? AVPlayerWrapper)?.setMuted(muted)
+    }
+
     private func applyRuntimeState(_ state: PlayerRuntimeState) {
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in
@@ -2079,6 +2280,20 @@ extension PlayerManager {
         currentTime = state.currentTime
         duration = state.duration
         bufferedDuration = state.bufferedDuration
+
+        if let sessionID = dubSessionID {
+            activateLocalDubFallbackIfReady(sessionID: sessionID)
+        }
+
+        if isLocalDubFallbackActive {
+            setPrimaryPlayerMuted(true)
+            dubFallbackPlayer.sync(
+                to: state.currentTime,
+                isPlaying: state.isPlaying,
+                isBuffering: state.isBuffering,
+                playbackSpeed: playbackSpeed
+            )
+        }
 
         if let sessionID = dubSessionID,
            let configuration = dubberConfiguration,
@@ -2101,6 +2316,19 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
         isMediaReady = true
+        if let sessionID = dubSessionID {
+            activateLocalDubFallbackIfReady(sessionID: sessionID)
+        }
+        if isLocalDubFallbackActive {
+            setPrimaryPlayerMuted(true)
+            dubFallbackPlayer.sync(
+                to: currentPlayer?.currentTime ?? currentTime,
+                isPlaying: isPlaying,
+                isBuffering: isBuffering,
+                playbackSpeed: playbackSpeed,
+                forceSeek: true
+            )
+        }
     }
     
     func playerDidUpdateTracks() {
@@ -2111,6 +2339,19 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
         refreshTrackInfo()
+        if let sessionID = dubSessionID {
+            activateLocalDubFallbackIfReady(sessionID: sessionID)
+        }
+        if isLocalDubFallbackActive {
+            setPrimaryPlayerMuted(true)
+            dubFallbackPlayer.sync(
+                to: currentPlayer?.currentTime ?? currentTime,
+                isPlaying: isPlaying,
+                isBuffering: isBuffering,
+                playbackSpeed: playbackSpeed
+            )
+            return
+        }
         if hasLoadedDubbedMaster {
             autoSelectDubTrackIfNeeded()
             selectSourceAudioFallbackIfNeeded()

@@ -112,11 +112,24 @@ struct DubberClient {
         let index: Int?
         let startTime: Double?
         let endTime: Double?
+        let audioDuration: Double?
+        let audioBase64: String?
+        let speaker: String?
+        let text: String?
+
+        var hasEmbeddedAudio: Bool {
+            guard let audioBase64 else { return false }
+            return !audioBase64.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
 
         private enum CodingKeys: String, CodingKey {
             case index
             case startTime = "start_time"
             case endTime = "end_time"
+            case audioDuration = "audio_duration"
+            case audioBase64 = "audio_base64"
+            case speaker
+            case text
         }
     }
 

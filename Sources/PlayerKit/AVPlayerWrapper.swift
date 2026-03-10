@@ -73,6 +73,10 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
         player = nil
         emitRuntimeState()
     }
+
+    public func setMuted(_ muted: Bool) {
+        player?.isMuted = muted
+    }
 }
 
 // MARK: - TimeControlProtocol

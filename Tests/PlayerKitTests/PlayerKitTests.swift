@@ -415,6 +415,38 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertTrue(payload.chunks.isEmpty)
     }
 
+    func testDubberPollResponseDecodesEmbeddedAudioChunkFields() throws {
+        let data = Data(
+            """
+            {
+              "status": "complete",
+              "segments_ready": 3,
+              "total_segments": 3,
+              "chunks": [
+                {
+                  "index": 0,
+                  "start_time": 33.223,
+                  "end_time": 42.111,
+                  "audio_duration": 8.888,
+                  "audio_base64": "QUJDRA==",
+                  "speaker": "speaker-1",
+                  "text": "Translated speech"
+                }
+              ]
+            }
+            """.utf8
+        )
+
+        let payload = try JSONDecoder().decode(DubberClient.PollResponse.self, from: data)
+
+        XCTAssertEqual(payload.chunks.count, 1)
+        XCTAssertEqual(payload.chunks.first?.audioDuration, 8.888)
+        XCTAssertEqual(payload.chunks.first?.audioBase64, "QUJDRA==")
+        XCTAssertEqual(payload.chunks.first?.speaker, "speaker-1")
+        XCTAssertEqual(payload.chunks.first?.text, "Translated speech")
+        XCTAssertTrue(payload.chunks.first?.hasEmbeddedAudio == true)
+    }
+
     func testDubSwitchPolicyRequiresReadyChunks() {
         XCTAssertFalse(
             DubSwitchPolicy.hasPlayableDubData(
