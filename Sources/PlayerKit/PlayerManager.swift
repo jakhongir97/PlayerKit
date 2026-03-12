@@ -411,6 +411,8 @@ public class PlayerManager: ObservableObject {
         cancelDubberPolling()
         cancelDubberEvents()
         cancelDubberStallWatchdog()
+        dubAudioProbeTask?.cancel()
+        dubAudioProbeTask = nil
         dubFallbackPreparationTask?.cancel()
         dubFallbackPreparationTask = nil
         dubFallbackPlayer.stop()
@@ -467,7 +469,7 @@ public class PlayerManager: ObservableObject {
 
             dubSessionID = sessionID
             recordDubActivity(
-                "Dubber connected. Waiting for live voice updates.",
+                "Dubber connected. Waiting for the dubbed HLS stream to become playable.",
                 level: .success,
                 signature: "dub-session-started"
             )
@@ -865,19 +867,23 @@ extension PlayerManager {
             dubCompletionObservedAt = nil
         }
 
-        if isCompletionStatus {
-            scheduleLocalDubFallbackPreparationIfNeeded(
+        if poll.playable,
+           !hasLoadedDubbedMaster,
+           dubSwitchAttemptCount < 3 {
+            dubWarningMessage = nil
+            dubProgressMessage = "Loading dubbed stream..."
+            hasDubSwitchFailed = false
+            recordDubActivity(
+                "Dubbed HLS stream is playable. Connecting the translated audio.",
+                level: .success,
+                signature: "poll-playable"
+            )
+            loadDubbedMaster(
                 sessionID: sessionID,
-                poll: poll
+                configuration: configuration,
+                sourceItem: sourceItem
             )
         }
-
-        scheduleDubAudioProbeIfNeeded(
-            sessionID: sessionID,
-            configuration: configuration,
-            sourceItem: sourceItem,
-            force: isCompletionStatus
-        )
 
         if hasLoadedDubbedMaster, isMediaReady {
             refreshTrackInfo()
@@ -897,9 +903,8 @@ extension PlayerManager {
                 return
             }
 
-            let completionAge = Date().timeIntervalSince(dubCompletionObservedAt ?? Date())
-            if completionAge >= 18 {
-                let message = "Dubbing.uz finished translating, but the Uzbek audio stream is still unavailable."
+            if !poll.playable && !hasLoadedDubbedMaster {
+                let message = "Dubbing.uz finished translating, but the dubbed HLS stream never became playable."
                 dubWarningMessage = message
                 recordDubActivity(
                     message,
@@ -907,19 +912,20 @@ extension PlayerManager {
                     signature: "poll-complete-unplayable"
                 )
                 debugLog(
-                    "Dub translation completed without a playable audio stream. " +
-                    "session_id=\(sessionID) waited=\(dubDebugInterval(completionAge))"
+                    "Dub translation completed without a playable stream. " +
+                    "session_id=\(sessionID)"
                 )
                 isDubLoading = false
-                cancelDubberPolling()
             } else {
-                dubProgressMessage = "Finalizing playable audio..."
+                dubProgressMessage = "Waiting for dubbed audio track..."
                 recordDubActivity(
-                    "Dubber is finalizing the playable audio stream.",
+                    "Dubber finished generating. PlayerKit is waiting for the dubbed audio track to attach.",
                     level: .info,
                     signature: "poll-complete-waiting"
                 )
             }
+
+            cancelDubberPolling()
         }
     }
 
@@ -2295,14 +2301,9 @@ extension PlayerManager {
             )
         }
 
-        if let sessionID = dubSessionID,
-           let configuration = dubberConfiguration,
-           let sourceItem = activeDubSourceItem {
-            scheduleDubAudioProbeIfNeeded(
-                sessionID: sessionID,
-                configuration: configuration,
-                sourceItem: sourceItem
-            )
+        if dubSessionID != nil, hasLoadedDubbedMaster {
+            autoSelectDubTrackIfNeeded()
+            selectSourceAudioFallbackIfNeeded()
         }
     }
 }

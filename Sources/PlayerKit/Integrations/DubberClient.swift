@@ -135,6 +135,7 @@ struct DubberClient {
 
     struct PollResponse: Decodable, Sendable {
         let status: String?
+        let playable: Bool
         let segmentsReady: Int
         let totalSegments: Int
         let error: String?
@@ -142,6 +143,9 @@ struct DubberClient {
 
         private enum CodingKeys: String, CodingKey {
             case status
+            case playable
+            case isPlayable
+            case is_playable
             case segmentsReady = "segments_ready"
             case totalSegments = "total_segments"
             case segmentsReadyCamel = "segmentsReady"
@@ -153,6 +157,7 @@ struct DubberClient {
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             status = try container.decodeIfPresent(String.self, forKey: .status)
+            playable = try Self.decodePlayable(from: container)
             let snakeSegmentsReady = try container.decodeIfPresent(Int.self, forKey: .segmentsReady)
             let camelSegmentsReady = try container.decodeIfPresent(Int.self, forKey: .segmentsReadyCamel)
             let snakeTotalSegments = try container.decodeIfPresent(Int.self, forKey: .totalSegments)
@@ -161,6 +166,35 @@ struct DubberClient {
             totalSegments = max(snakeTotalSegments ?? camelTotalSegments ?? 0, 0)
             error = try container.decodeIfPresent(String.self, forKey: .error)
             chunks = try container.decodeIfPresent([PollChunk].self, forKey: .chunks) ?? []
+        }
+
+        private static func decodePlayable(
+            from container: KeyedDecodingContainer<CodingKeys>
+        ) throws -> Bool {
+            let playableKeys: [CodingKeys] = [.playable, .isPlayable, .is_playable]
+
+            for key in playableKeys {
+                if let value = try container.decodeIfPresent(Bool.self, forKey: key) {
+                    return value
+                }
+
+                if let value = try container.decodeIfPresent(Int.self, forKey: key) {
+                    return value != 0
+                }
+
+                if let value = try container.decodeIfPresent(String.self, forKey: key) {
+                    switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+                    case "1", "true", "yes", "ready", "playable":
+                        return true
+                    case "0", "false", "no":
+                        return false
+                    default:
+                        continue
+                    }
+                }
+            }
+
+            return false
         }
     }
 
@@ -246,13 +280,34 @@ struct DubberClient {
             .appendingPathComponent("master.m3u8")
     }
 
+    func pollURL(
+        sessionID: String,
+        configuration: DubberConfiguration,
+        after: Int = -1
+    ) -> URL {
+        let baseURL = configuration.baseURL
+            .appendingPathComponent(sessionID)
+            .appendingPathComponent("poll")
+
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            return baseURL
+        }
+
+        components.queryItems = [
+            URLQueryItem(name: "after", value: String(after))
+        ]
+
+        return components.url ?? baseURL
+    }
+
     func pollSession(
         sessionID: String,
         configuration: DubberConfiguration
     ) async throws -> PollResponse {
-        let url = configuration.baseURL
-            .appendingPathComponent(sessionID)
-            .appendingPathComponent("poll")
+        let url = pollURL(
+            sessionID: sessionID,
+            configuration: configuration
+        )
 
         let requestStart = Date()
         let (data, response) = try await session.data(from: url)
@@ -271,6 +326,7 @@ struct DubberClient {
         let poll = try JSONDecoder().decode(PollResponse.self, from: data)
         debugLog(
             "Poll response. session_id=\(sessionID) status=\(poll.status ?? "nil") " +
+            "playable=\(poll.playable) " +
             "segments=\(poll.segmentsReady)/\(poll.totalSegments) " +
             "chunks=\(poll.chunks.count) elapsed=\(debugInterval(requestElapsed)) " +
             "error=\(poll.error ?? "nil")"

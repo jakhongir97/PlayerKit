@@ -415,6 +415,40 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertTrue(payload.chunks.isEmpty)
     }
 
+    func testDubberPollResponseDecodesPlayableFlag() throws {
+        let data = Data(
+            """
+            {
+              "status": "translating",
+              "playable": true,
+              "segments_ready": 6,
+              "total_segments": 18
+            }
+            """.utf8
+        )
+
+        let payload = try JSONDecoder().decode(DubberClient.PollResponse.self, from: data)
+
+        XCTAssertEqual(payload.status, "translating")
+        XCTAssertTrue(payload.playable)
+        XCTAssertEqual(payload.segmentsReady, 6)
+        XCTAssertEqual(payload.totalSegments, 18)
+    }
+
+    func testDubberClientPollURLIncludesLatestStateCursor() {
+        let client = DubberClient()
+        let configuration = DubberConfiguration()
+
+        let url = client.pollURL(sessionID: "abc", configuration: configuration)
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+
+        XCTAssertEqual(url.absoluteString, "https://dubbing.uz/api/instant-dub/abc/poll?after=-1")
+        XCTAssertEqual(
+            components?.queryItems?.first(where: { $0.name == "after" })?.value,
+            "-1"
+        )
+    }
+
     func testDubberPollResponseDecodesEmbeddedAudioChunkFields() throws {
         let data = Data(
             """
