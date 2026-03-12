@@ -106,6 +106,15 @@ extension AVPlayerWrapper: TimeControlProtocol {
             self?.emitRuntimeState()
         }
     }
+
+    func seekExactly(to time: Double, completion: ((Bool) -> Void)? = nil) {
+        let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+        player?.currentItem?.cancelPendingSeeks()
+        player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            completion?(finished)
+            self?.emitRuntimeState()
+        }
+    }
     
     public func scrubForward(by seconds: TimeInterval) {
         seek(to: currentTime + seconds)

@@ -226,6 +226,8 @@ public class PlayerManager: ObservableObject {
     private var dubCoverageStartTime: Double?
     private var dubCoverageEndTime: Double?
     private var dubCompletionObservedAt: Date?
+    private var dubCompletionResyncTask: Task<Void, Never>?
+    private var hasScheduledDubCompletionResync = false
     private var dubAudioProbeTask: Task<Void, Never>?
     private var dubFallbackPreparationTask: Task<Void, Never>?
     private let dubFallbackPlayer = DubAudioFallbackPlayer()
@@ -411,6 +413,7 @@ public class PlayerManager: ObservableObject {
         cancelDubberPolling()
         cancelDubberEvents()
         cancelDubberStallWatchdog()
+        cancelDubCompletionResync()
         dubAudioProbeTask?.cancel()
         dubAudioProbeTask = nil
         dubFallbackPreparationTask?.cancel()
@@ -667,7 +670,21 @@ extension PlayerManager {
     
     public func seek(to time: Double) {
         guard duration != 0 else { return }
-        playbackManager?.seek(to: time) { [weak self] success in
+        let seekAction: (@escaping (Bool) -> Void) -> Void = { [weak self] completion in
+            guard let self else {
+                completion(false)
+                return
+            }
+
+            if self.shouldUsePreciseDubSeek,
+               let avPlayer = self.currentPlayer as? AVPlayerWrapper {
+                avPlayer.seekExactly(to: time, completion: completion)
+            } else {
+                self.playbackManager?.seek(to: time, completion: completion)
+            }
+        }
+
+        seekAction { [weak self] success in
             if success {
                 self?.currentTime = time
                 if self?.isLocalDubFallbackActive == true {
@@ -893,6 +910,7 @@ extension PlayerManager {
 
         if isCompletionStatus {
             if isDubbedPlaybackActive {
+                scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "poll-complete")
                 recordDubActivity(
                     "Dubbed voice is live.",
                     level: .success,
@@ -1186,6 +1204,8 @@ extension PlayerManager {
             autoSelectDubTrackIfNeeded()
             selectSourceAudioFallbackIfNeeded()
         }
+
+        scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "probe")
     }
 
     fileprivate func shouldProbeDubAudio(at playbackTime: Double) -> Bool {
@@ -1479,6 +1499,7 @@ extension PlayerManager {
             if isCompletionStatus {
                 debugLog("Dub SSE complete update. session_id=\(sessionID)")
                 if isDubbedPlaybackActive {
+                    scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "status-complete")
                     isDubLoading = false
                     recordDubActivity(
                         "All translated voice pieces are ready.",
@@ -1523,6 +1544,7 @@ extension PlayerManager {
                     sourceItem: sourceItem,
                     force: true
                 )
+                scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "done")
             }
 
             debugLog("Dub SSE done. session_id=\(sessionID) status=\(done.status ?? "unknown")")
@@ -1568,6 +1590,7 @@ extension PlayerManager {
         cancelDubberPolling()
         cancelDubberEvents()
         cancelDubberStallWatchdog()
+        cancelDubCompletionResync()
         dubAudioProbeTask?.cancel()
         dubAudioProbeTask = nil
         dubFallbackPreparationTask?.cancel()
@@ -1602,6 +1625,99 @@ extension PlayerManager {
         dubSwitchAttemptCount = 0
         hasDubSwitchFailed = false
         resetDubActivityLog()
+    }
+
+    fileprivate func cancelDubCompletionResync() {
+        dubCompletionResyncTask?.cancel()
+        dubCompletionResyncTask = nil
+        hasScheduledDubCompletionResync = false
+    }
+
+    fileprivate func scheduleDubCompletionResyncIfNeeded(
+        sessionID: String,
+        trigger: String
+    ) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: trigger)
+            }
+            return
+        }
+
+        guard dubSessionID == sessionID else { return }
+        guard shouldUsePreciseDubSeek else { return }
+        guard hasLoadedDubbedMaster else { return }
+        guard !isLocalDubFallbackActive else { return }
+        guard isMediaReady else { return }
+
+        refreshTrackInfo()
+        autoSelectDubTrackIfNeeded()
+        guard isDubbedPlaybackActive else { return }
+        guard !hasScheduledDubCompletionResync else { return }
+
+        hasScheduledDubCompletionResync = true
+        dubCompletionResyncTask?.cancel()
+        dubCompletionResyncTask = Task { [weak self] in
+            guard let self else { return }
+
+            let delays: [UInt64] = [180_000_000, 900_000_000]
+            for (index, delay) in delays.enumerated() {
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return
+                }
+
+                await MainActor.run {
+                    guard self.dubSessionID == sessionID else { return }
+                    guard self.shouldUsePreciseDubSeek else { return }
+                    guard self.hasLoadedDubbedMaster else { return }
+                    guard !self.isLocalDubFallbackActive else { return }
+                    guard self.isMediaReady else { return }
+
+                    self.refreshTrackInfo()
+                    self.autoSelectDubTrackIfNeeded()
+                    guard self.isDubbedPlaybackActive else { return }
+
+                    let targetTime = max(self.currentPlayer?.currentTime ?? self.currentTime, 0)
+                    self.debugLog(
+                        "Stabilizing completed dub playback. session_id=\(sessionID) " +
+                        "pass=\(index + 1) trigger=\(trigger) target=\(targetTime)"
+                    )
+                    self.performPreciseDubSeek(to: targetTime)
+                }
+            }
+
+            await MainActor.run {
+                guard self.dubSessionID == sessionID || self.dubSessionID == nil else { return }
+                self.dubCompletionResyncTask = nil
+            }
+        }
+    }
+
+    private var shouldUsePreciseDubSeek: Bool {
+        dubSessionID != nil && isCompletionState(dubStatus)
+    }
+
+    private func performPreciseDubSeek(to time: Double) {
+        let clampedTime = max(time, 0)
+        if let avPlayer = currentPlayer as? AVPlayerWrapper {
+            avPlayer.seekExactly(to: clampedTime) { [weak self] success in
+                guard let self, success else { return }
+                self.currentTime = clampedTime
+                if self.isLocalDubFallbackActive {
+                    self.dubFallbackPlayer.seek(to: clampedTime)
+                }
+            }
+        } else {
+            playbackManager?.seek(to: clampedTime) { [weak self] success in
+                guard let self, success else { return }
+                self.currentTime = clampedTime
+                if self.isLocalDubFallbackActive {
+                    self.dubFallbackPlayer.seek(to: clampedTime)
+                }
+            }
+        }
     }
 
     fileprivate func startDubberStallWatchdog(sessionID: String) {
@@ -1775,6 +1891,9 @@ extension PlayerManager {
                 level: .success,
                 signature: "dub-audio-active"
             )
+            if let sessionID = dubSessionID {
+                scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "track-selected")
+            }
             return
         }
 
@@ -2319,6 +2438,7 @@ extension PlayerManager: PlayerLifecycleReporting {
         isMediaReady = true
         if let sessionID = dubSessionID {
             activateLocalDubFallbackIfReady(sessionID: sessionID)
+            scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "media-ready")
         }
         if isLocalDubFallbackActive {
             setPrimaryPlayerMuted(true)
@@ -2342,6 +2462,7 @@ extension PlayerManager: PlayerLifecycleReporting {
         refreshTrackInfo()
         if let sessionID = dubSessionID {
             activateLocalDubFallbackIfReady(sessionID: sessionID)
+            scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "tracks-updated")
         }
         if isLocalDubFallbackActive {
             setPrimaryPlayerMuted(true)
