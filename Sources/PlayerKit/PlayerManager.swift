@@ -14,7 +14,13 @@ enum DubSwitchPolicy {
         coverageStart: Double? = nil,
         coverageEnd: Double? = nil
     ) -> Bool {
-        guard chunkCount > 0 else { return false }
+        guard hasTimelineSignal(
+            segmentsReady: segmentsReady,
+            totalSegments: totalSegments,
+            chunkCount: chunkCount,
+            coverageStart: coverageStart,
+            coverageEnd: coverageEnd
+        ) else { return false }
         guard segmentsReady >= 3 else { return false }
         if let windowAllowsPlayback = timelineWindowAllowsPlayback(
             resumePosition: resumePosition,
@@ -42,7 +48,13 @@ enum DubSwitchPolicy {
         coverageStart: Double? = nil,
         coverageEnd: Double? = nil
     ) -> Bool {
-        guard chunkCount > 0 else { return false }
+        guard hasTimelineSignal(
+            segmentsReady: segmentsReady,
+            totalSegments: totalSegments,
+            chunkCount: chunkCount,
+            coverageStart: coverageStart,
+            coverageEnd: coverageEnd
+        ) else { return false }
         if let coverageStart, coverageStart.isFinite {
             return resumePosition + preparationLeadSeconds >= coverageStart
         }
@@ -85,6 +97,27 @@ enum DubSwitchPolicy {
         return normalizedStatus == "complete"
             || normalizedStatus == "completed"
             || normalizedStatus == "ready"
+    }
+
+    private static func hasTimelineSignal(
+        segmentsReady: Int,
+        totalSegments: Int,
+        chunkCount: Int,
+        coverageStart: Double?,
+        coverageEnd: Double?
+    ) -> Bool {
+        if chunkCount > 0 {
+            return true
+        }
+
+        if let coverageStart, let coverageEnd,
+           coverageStart.isFinite,
+           coverageEnd.isFinite,
+           coverageEnd > coverageStart {
+            return true
+        }
+
+        return segmentsReady > 0 && totalSegments > 0
     }
 
     private static func timelineWindowAllowsPlayback(
@@ -919,17 +952,12 @@ extension PlayerManager {
             dubCompletionObservedAt = nil
         }
 
-        let canSafelySwitchToDubbedMaster = isDubStreamReadyToSwitch(
-            segmentsReady: poll.segmentsReady,
-            totalSegments: poll.totalSegments,
-            chunkCount: max(poll.chunks.count, dubReadyChunkCount)
-        )
         let canRetryFailedDubSwitch = shouldRetryDubbedMasterLoad(poll)
 
         if poll.playable,
            !hasLoadedDubbedMaster,
            dubSwitchAttemptCount < 3,
-           (canSafelySwitchToDubbedMaster || canRetryFailedDubSwitch) {
+           (!hasDubSwitchFailed || canRetryFailedDubSwitch) {
             dubWarningMessage = nil
             dubProgressMessage = "Loading dubbed stream..."
             hasDubSwitchFailed = false
@@ -942,16 +970,6 @@ extension PlayerManager {
                 sessionID: sessionID,
                 configuration: configuration,
                 sourceItem: sourceItem
-            )
-        }
-
-        if poll.playable,
-           !hasLoadedDubbedMaster,
-           !canSafelySwitchToDubbedMaster {
-            debugLog(
-                "Dubbed master is playable, but PlayerKit is waiting for safer lead time. " +
-                "session_id=\(sessionID) playback=\(currentPlayer?.currentTime ?? currentTime) " +
-                "coverage=\(dubCoverageStartTime?.description ?? "nil")-\(dubCoverageEndTime?.description ?? "nil")"
             )
         }
 

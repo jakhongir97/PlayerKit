@@ -481,24 +481,36 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertTrue(payload.chunks.first?.hasEmbeddedAudio == true)
     }
 
-    func testDubSwitchPolicyRequiresReadyChunks() {
-        XCTAssertFalse(
-            DubSwitchPolicy.hasPlayableDubData(
-                segmentsReady: 4,
-                totalSegments: 144,
-                chunkCount: 0,
-                resumePosition: 8.4,
-                knownDuration: 720
-            )
-        )
-    }
-
     func testDubSwitchPolicyAllowsSwitchWhenPlayableChunksExist() {
         XCTAssertTrue(
             DubSwitchPolicy.hasPlayableDubData(
                 segmentsReady: 4,
                 totalSegments: 144,
                 chunkCount: 2,
+                resumePosition: 8.4,
+                knownDuration: 720
+            )
+        )
+    }
+
+    func testDubSwitchPolicyAllowsSwitchWhenSegmentsAdvanceWithoutChunkMetadata() {
+        XCTAssertTrue(
+            DubSwitchPolicy.hasPlayableDubData(
+                segmentsReady: 24,
+                totalSegments: 62,
+                chunkCount: 0,
+                resumePosition: 3.2,
+                knownDuration: 1860
+            )
+        )
+    }
+
+    func testDubSwitchPolicyBlocksSwitchWithoutCoverageSignals() {
+        XCTAssertFalse(
+            DubSwitchPolicy.hasPlayableDubData(
+                segmentsReady: 0,
+                totalSegments: 0,
+                chunkCount: 0,
                 resumePosition: 8.4,
                 knownDuration: 720
             )
