@@ -106,12 +106,12 @@ enum DubAudioFallbackBuilder {
                 try audioData.write(to: chunkURL, options: [.atomic])
 
                 let asset = AVURLAsset(url: chunkURL)
-                let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+                let audioTracks = try await loadAudioTracks(from: asset)
                 guard let sourceTrack = audioTracks.first else {
                     continue
                 }
 
-                let duration = try await asset.load(.duration)
+                let duration = try await loadDuration(from: asset)
                 let durationSeconds = duration.seconds
                 guard durationSeconds.isFinite, durationSeconds > 0 else {
                     continue
@@ -144,6 +144,22 @@ enum DubAudioFallbackBuilder {
             coverageStartTime: firstCoverageStart ?? 0,
             coverageEndTime: lastCoverageEnd ?? 0
         )
+    }
+
+    private static func loadAudioTracks(from asset: AVAsset) async throws -> [AVAssetTrack] {
+        if #available(iOS 15, tvOS 15, macOS 12, *) {
+            return try await asset.loadTracks(withMediaType: .audio)
+        } else {
+            return asset.tracks(withMediaType: .audio)
+        }
+    }
+
+    private static func loadDuration(from asset: AVAsset) async throws -> CMTime {
+        if #available(iOS 15, tvOS 15, macOS 12, *) {
+            return try await asset.load(.duration)
+        } else {
+            return asset.duration
+        }
     }
 }
 

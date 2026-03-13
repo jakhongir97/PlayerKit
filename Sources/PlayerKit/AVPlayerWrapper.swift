@@ -255,7 +255,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         ) { [weak self] _ in
             guard let self else { return }
             self.debugLog("Playback stalled. url=\(self.currentSourceURL?.debugDescription ?? "nil")")
-            self.player?.play()
+            self.lifecycleReporter?.playerDidStall()
             self.emitRuntimeState()
         }
         
@@ -417,6 +417,71 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
 }
 
 extension AVPlayerWrapper {
+    var seekableTimeWindow: ClosedRange<Double>? {
+        guard let ranges = player?.currentItem?.seekableTimeRanges,
+              !ranges.isEmpty else {
+            return nil
+        }
+
+        let windows = ranges.compactMap { range -> ClosedRange<Double>? in
+            let timeRange = range.timeRangeValue
+            let start = CMTimeGetSeconds(timeRange.start)
+            let duration = CMTimeGetSeconds(timeRange.duration)
+            guard start.isFinite, duration.isFinite else { return nil }
+            let end = start + duration
+            guard end > start else { return nil }
+            return start ... end
+        }
+
+        guard let start = windows.map(\.lowerBound).min(),
+              let end = windows.map(\.upperBound).max(),
+              end > start else {
+            return nil
+        }
+
+        return start ... end
+    }
+
+    var loadedTimeWindow: ClosedRange<Double>? {
+        guard let ranges = player?.currentItem?.loadedTimeRanges,
+              !ranges.isEmpty else {
+            return nil
+        }
+
+        let windows = ranges.compactMap { range -> ClosedRange<Double>? in
+            let timeRange = range.timeRangeValue
+            let start = CMTimeGetSeconds(timeRange.start)
+            let duration = CMTimeGetSeconds(timeRange.duration)
+            guard start.isFinite, duration.isFinite else { return nil }
+            let end = start + duration
+            guard end > start else { return nil }
+            return start ... end
+        }
+
+        guard let start = windows.map(\.lowerBound).min(),
+              let end = windows.map(\.upperBound).max(),
+              end > start else {
+            return nil
+        }
+
+        return start ... end
+    }
+
+    func canSeekWithinCurrentWindow(
+        to time: Double,
+        tolerance: Double = 0.75
+    ) -> Bool {
+        let targetTime = max(time, 0)
+        guard let window = seekableTimeWindow else { return false }
+        return targetTime + tolerance >= window.lowerBound && targetTime <= window.upperBound + tolerance
+    }
+
+    func bufferedHeadroom(at time: Double? = nil) -> Double {
+        guard let window = loadedTimeWindow else { return 0 }
+        let referenceTime = max(time ?? currentTime, 0)
+        return max(window.upperBound - referenceTime, 0)
+    }
+
     private func trackInfo(for option: AVMediaSelectionOption) -> TrackInfo {
         TrackInfo(
             id: trackIdentifier(for: option),

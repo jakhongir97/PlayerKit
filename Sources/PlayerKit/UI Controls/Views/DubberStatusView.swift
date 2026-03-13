@@ -291,7 +291,7 @@ struct DubberStatusView: View {
             return .green
         }
         if playerManager.isDubLoading {
-            return .cyan
+            return Color(red: 0.0, green: 0.78, blue: 1.0)
         }
         return .white
     }

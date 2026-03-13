@@ -13,6 +13,7 @@ protocol PlayerLifecycleReporting: AnyObject {
     func playerDidUpdateTracks()
     func playerDidEndPlayback()
     func playerDidChangePiPState(isActive: Bool)
+    func playerDidStall()
     func playerDidFail(with error: PlayerKitError)
 }
 

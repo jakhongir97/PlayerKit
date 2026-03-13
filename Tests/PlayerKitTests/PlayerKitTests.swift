@@ -617,6 +617,7 @@ private final class MockPlayerLifecycleReporter: PlayerLifecycleReporting {
     func playerDidUpdateTracks() {}
     func playerDidEndPlayback() {}
     func playerDidChangePiPState(isActive: Bool) {}
+    func playerDidStall() {}
 
     func playerDidFail(with error: PlayerKitError) {
         onFail?(error)

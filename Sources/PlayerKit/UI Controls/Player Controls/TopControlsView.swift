@@ -31,14 +31,16 @@ struct TopControlsView: View {
             }
             SettingsMenu(playerManager: playerManager)
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .overlay(alignment: .topTrailing) {
             if isDubberSheetPresented && playerManager.isDubberEnabled {
-                VStack {
+                VStack(spacing: 0) {
                     DubberStatusView(playerManager: playerManager)
                         .frame(maxWidth: PlayerKitPlatform.isPhone ? 248 : 264, alignment: .leading)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 .padding(.top, 72)
+                .zIndex(2)
             }
         }
         .onChange(of: playerManager.areControlsVisible) { _, areControlsVisible in

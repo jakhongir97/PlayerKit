@@ -2,11 +2,17 @@ import SwiftUI
 
 struct PlaybackSliderView: View {
     @ObservedObject var playerManager: PlayerManager
+    @State private var sliderValue: Double = 0
+    @State private var isEditingSlider = false
     
     private var accessibilityValueText: String {
-        let current = playerManager.currentTime.asTimeString(style: .positional)
+        let current = effectiveSliderValue.asTimeString(style: .positional)
         let total = playerManager.duration.asTimeString(style: .positional)
         return "\(current) of \(total)"
+    }
+
+    private var effectiveSliderValue: Double {
+        isEditingSlider ? sliderValue : playerManager.currentTime
     }
 
     var body: some View {
@@ -14,9 +20,9 @@ struct PlaybackSliderView: View {
             ZStack(alignment: .leading) {
                 ModernProgressSlider(
                     value: Binding(
-                        get: { playerManager.currentTime },
+                        get: { effectiveSliderValue },
                         set: { newValue in
-                            playerManager.seek(to: newValue)
+                            sliderValue = newValue
                         }
                     ),
                     bufferedValue: Binding( // New binding for buffered progress
@@ -31,6 +37,12 @@ struct PlaybackSliderView: View {
                     height: 45
                 ) { editing in
                     playerManager.isSeeking = editing
+                    isEditingSlider = editing
+                    if editing {
+                        sliderValue = playerManager.currentTime
+                    } else {
+                        playerManager.seek(to: sliderValue)
+                    }
                 }
                 .frame(height: 45)
                 .padding(.vertical)
@@ -42,6 +54,14 @@ struct PlaybackSliderView: View {
                 .accessibilityIdentifier("player.timeline")
             }
             .frame(height: 50)
+        }
+        .onAppear {
+            sliderValue = playerManager.currentTime
+        }
+        .onChange(of: playerManager.currentTime) { _, newValue in
+            if !isEditingSlider {
+                sliderValue = newValue
+            }
         }
     }
 }
