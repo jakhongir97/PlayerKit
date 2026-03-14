@@ -44,30 +44,50 @@ public struct PlayerView: View {
         }
         .onReceive(playerManager.$shouldDismiss) { shouldDismiss in
             if shouldDismiss {
+                debugLog("Dismiss requested by player manager.")
                 playerManager.shouldDismiss = false
                 closePlayerPresentation()
                 NotificationCenter.default.post(name: .PlayerKitDidClose, object: nil)
             }
         }
         .onAppear {
+            debugLog(
+                "Player view onAppear didBootstrap=\(didBootstrapPlayer) loadMode=\(loadMode.debugName)"
+            )
             bootstrapPlayerIfNeeded()
+        }
+        .onDisappear {
+            debugLog(
+                "Player view onDisappear loadMode=\(loadMode.debugName) " +
+                "isPlaying=\(playerManager.isPlaying) current=\(playerManager.currentTime)"
+            )
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
     }
     
     private func bootstrapPlayerIfNeeded() {
-        guard !didBootstrapPlayer else { return }
+        guard !didBootstrapPlayer else {
+            debugLog("Skipping bootstrap because it already ran for this view instance.")
+            return
+        }
         didBootstrapPlayer = true
+        debugLog("Bootstrapping player view loadMode=\(loadMode.debugName)")
         
         playerManager.ensurePlayerConfigured()
         
         switch loadMode {
         case .none:
+            debugLog("No initial player item was provided.")
             return
         case .single(let playerItem):
-            guard let playerItem else { return }
+            guard let playerItem else {
+                debugLog("Single-item load mode has no item.")
+                return
+            }
+            debugLog("Loading single item title=\(playerItem.title) url=\(playerItem.url.debugDescription)")
             playerManager.load(playerItem: playerItem)
         case .episodes(let items, let index):
+            debugLog("Loading episode list count=\(items.count) currentIndex=\(index)")
             playerManager.loadEpisodes(playerItems: items, currentIndex: index)
         }
     }
@@ -85,6 +105,10 @@ public struct PlayerView: View {
 #endif
         presentationMode.wrappedValue.dismiss()
     }
+
+    private func debugLog(_ message: String) {
+        print("[PlayerKit][PlayerView] \(message)")
+    }
 }
 
 private extension PlayerView {
@@ -92,5 +116,16 @@ private extension PlayerView {
         case none
         case single(PlayerItem?)
         case episodes([PlayerItem], Int)
+
+        var debugName: String {
+            switch self {
+            case .none:
+                return "none"
+            case .single:
+                return "single"
+            case .episodes:
+                return "episodes"
+            }
+        }
     }
 }

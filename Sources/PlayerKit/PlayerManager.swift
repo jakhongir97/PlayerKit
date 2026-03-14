@@ -291,10 +291,13 @@ public class PlayerManager: ObservableObject {
     private var lastDubStatusSummary: String?
     private var lastDubProgressSummary: String?
     private var lastDubSegmentSummary: String?
+    private var lastRuntimeStateDebugSummary: String?
     
     private var stateCancellables = Set<AnyCancellable>()
     private var longLivedCancellables = Set<AnyCancellable>()
     private var isPlaybackWakeLockHeld = false
+    private var shouldResumePlaybackAfterStall = false
+    private var playbackResumeTask: Task<Void, Never>?
     
     private init() {
         setupGestureHandling()
@@ -327,6 +330,7 @@ public class PlayerManager: ObservableObject {
     private func setupPlayer(provider: PlayerProvider) {
         currentProvider = provider
         let player = provider.createPlayer()
+        debugLog("Created player instance type=\(String(reflecting: type(of: player)))")
         currentPlayer = player
         bindPlayerCallbacks(player)
         
@@ -567,9 +571,15 @@ public class PlayerManager: ObservableObject {
     // Loads a media URL into the current player
     private func load(url: URL, lastPosition: Double? = nil) {
         debugLog("Loading media. url=\(url.debugDescription) resume=\(lastPosition?.description ?? "nil")")
+        cancelPendingPlaybackResume()
         clearError()
         isMediaReady = false
         isVideoEnded = false
+        currentTime = max(lastPosition ?? 0, 0)
+        bufferedDuration = 0
+        isPlaying = true
+        isBuffering = true
+        shouldResumePlaybackAfterStall = true
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         userInteracted()
     }
@@ -640,6 +650,7 @@ public class PlayerManager: ObservableObject {
     
     public func videoDidEnd() {
         guard duration != 0, currentTime + 1 > duration else { return }
+        cancelPendingPlaybackResume()
         isPlaying = false
         isBuffering = false
         if contentType == .movie {
@@ -699,45 +710,73 @@ extension PlayerManager {
     }
 
     public func play() {
-        playbackManager?.play()
-        if isLocalDubFallbackActive {
-            dubFallbackPlayer.play(rate: playbackSpeed)
-        }
-        isPlaying = true
-        isBuffering = false
+        debugLog(
+            "Play requested current=\(debugInterval(currentTime)) " +
+            "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false) " +
+            "buffering=\(currentPlayer?.isBuffering ?? false)"
+        )
+        shouldResumePlaybackAfterStall = true
+        cancelPendingPlaybackResume()
+        performPlaybackResumeAttempt()
         userInteracted()
     }
     
     public func pause() {
+        debugLog(
+            "Pause requested current=\(debugInterval(currentTime)) " +
+            "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false)"
+        )
+        cancelPendingPlaybackResume()
         playbackManager?.pause()
         if isLocalDubFallbackActive {
             dubFallbackPlayer.pause()
         }
         isPlaying = false
         isBuffering = false
+        shouldResumePlaybackAfterStall = false
         userInteracted()
     }
     
     public func stop() {
+        debugLog(
+            "Stop requested current=\(debugInterval(currentTime)) " +
+            "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false)"
+        )
+        cancelPendingPlaybackResume()
         cancelDubWorkflow(reason: "Playback stopped.")
         playbackManager?.stop()
         isPlaying = false
         isBuffering = false
+        shouldResumePlaybackAfterStall = false
         userInteracted()
     }
     
-    public func seek(to time: Double) {
-        guard duration != 0 else { return }
+    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
+        guard duration != 0 else {
+            debugLog("Seek ignored because duration is zero. target=\(debugInterval(time))")
+            completion?(false)
+            return
+        }
         let targetTime = min(max(time, 0), duration)
+        debugLog(
+            "Seek requested target=\(debugInterval(targetTime)) " +
+            "current=\(debugInterval(currentTime)) shouldResume=\(shouldResumePlaybackAfterStall) " +
+            "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false)"
+        )
 
         if shouldResumeSourcePlaybackDuringDubSeek(to: targetTime) {
+            debugLog(
+                "Seek moved outside dubbed window, resuming source playback. target=\(debugInterval(targetTime))"
+            )
             continueDubWorkflowOnSourcePlayback(
                 at: targetTime,
                 reason: "Seek moved outside the currently translated dub window."
             )
+            completion?(true)
             return
         }
 
+        let shouldResumeAfterSeek = shouldResumePlaybackAfterStall
         let seekAction: (@escaping (Bool) -> Void) -> Void = { [weak self] completion in
             guard let self else {
                 completion(false)
@@ -753,12 +792,28 @@ extension PlayerManager {
         }
 
         seekAction { [weak self] success in
-            if success {
-                self?.currentTime = targetTime
-                if self?.isLocalDubFallbackActive == true {
-                    self?.dubFallbackPlayer.seek(to: targetTime)
-                }
+            guard let self else {
+                completion?(false)
+                return
             }
+
+            if success {
+                self.currentTime = targetTime
+                if self.isLocalDubFallbackActive {
+                    self.dubFallbackPlayer.seek(to: targetTime)
+                }
+                if shouldResumeAfterSeek {
+                    self.debugLog(
+                        "Seek succeeded and playback should resume. target=\(debugInterval(targetTime))"
+                    )
+                    self.schedulePlaybackResumeIfNeeded(trigger: "seek")
+                }
+            } else {
+                self.debugLog(
+                    "Seek failed. target=\(debugInterval(targetTime)) current=\(debugInterval(self.currentTime))"
+                )
+            }
+            completion?(success)
         }
     }
     
@@ -1705,6 +1760,14 @@ extension PlayerManager {
         hasScheduledDubCompletionResync = false
     }
 
+    fileprivate func cancelPendingPlaybackResume() {
+        if playbackResumeTask != nil {
+            debugLog("Cancelling pending playback resume task.")
+        }
+        playbackResumeTask?.cancel()
+        playbackResumeTask = nil
+    }
+
     fileprivate func cancelDubPlaybackRecovery() {
         dubPlaybackRecoveryTask?.cancel()
         dubPlaybackRecoveryTask = nil
@@ -1878,7 +1941,13 @@ extension PlayerManager {
         trigger: String,
         targetTime: Double
     ) {
-        cancelDubPlaybackRecovery()
+        guard dubPlaybackRecoveryTask == nil else {
+            debugLog(
+                "Dub stall recovery already pending. session_id=\(sessionID) " +
+                "trigger=\(trigger) target=\(targetTime)"
+            )
+            return
+        }
 
         dubPlaybackRecoveryTask = Task { [weak self] in
             guard let self else { return }
@@ -1907,9 +1976,7 @@ extension PlayerManager {
                         "trigger=\(trigger) target=\(recoveryTime)"
                     )
                     self.performPreciseDubSeek(to: recoveryTime)
-                    self.playbackManager?.play()
-                    self.isPlaying = true
-                    self.isBuffering = true
+                    self.performPlaybackResumeAttempt()
                 }
             }
 
@@ -2230,6 +2297,22 @@ extension PlayerManager {
         print("[PlayerKit][PlayerManager] \(message)")
     }
 
+    private func debugInterval(_ value: Double) -> String {
+        guard value.isFinite else { return "nan" }
+        return String(format: "%.3f", value)
+    }
+
+    private func logRuntimeStateIfChanged(_ state: PlayerRuntimeState) {
+        let summary =
+            "playing=\(state.isPlaying) buffering=\(state.isBuffering) " +
+            "current=\(debugInterval(state.currentTime)) duration=\(debugInterval(state.duration)) " +
+            "buffered=\(debugInterval(state.bufferedDuration)) mediaReady=\(isMediaReady) " +
+            "shouldResume=\(shouldResumePlaybackAfterStall)"
+        guard lastRuntimeStateDebugSummary != summary else { return }
+        lastRuntimeStateDebugSummary = summary
+        debugLog("Runtime state updated \(summary)")
+    }
+
     fileprivate func recordDubStatusIfNeeded(_ rawStatus: String) {
         let normalized = friendlySentence(from: rawStatus)
         guard !normalized.isEmpty else { return }
@@ -2502,6 +2585,7 @@ extension PlayerManager {
     }
     
     public func resetPlayer() {
+        cancelPendingPlaybackResume()
         cancelDubWorkflow(reason: "Resetting player manager.")
         cancelDubPlaybackRecovery()
 
@@ -2524,6 +2608,7 @@ extension PlayerManager {
         isPiPActive = false
         currentTime = 0
         duration = 0
+        shouldResumePlaybackAfterStall = false
         
         userInteracting = false
         isLocked = false
@@ -2531,6 +2616,7 @@ extension PlayerManager {
         isVideoEnded = false
         shouldDismiss = false
         clearError()
+        lastRuntimeStateDebugSummary = nil
         
         selectedAudio = nil
         selectedSubtitle = nil
@@ -2635,6 +2721,11 @@ extension PlayerManager {
         currentTime = state.currentTime
         duration = state.duration
         bufferedDuration = state.bufferedDuration
+        logRuntimeStateIfChanged(state)
+
+        if state.isPlaying {
+            cancelPendingPlaybackResume()
+        }
 
         if !state.isBuffering {
             cancelDubPlaybackRecovery()
@@ -2670,7 +2761,12 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
         isMediaReady = true
+        debugLog(
+            "Player became ready current=\(debugInterval(currentTime)) " +
+            "duration=\(debugInterval(duration)) shouldResume=\(shouldResumePlaybackAfterStall)"
+        )
         cancelDubPlaybackRecovery()
+        schedulePlaybackResumeIfNeeded(trigger: "media-ready")
         if let sessionID = dubSessionID {
             activateLocalDubFallbackIfReady(sessionID: sessionID)
             scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "media-ready")
@@ -2684,6 +2780,66 @@ extension PlayerManager: PlayerLifecycleReporting {
                 playbackSpeed: playbackSpeed,
                 forceSeek: true
             )
+        }
+    }
+
+    private func performPlaybackResumeAttempt() {
+        debugLog(
+            "Performing playback resume attempt current=\(debugInterval(currentTime)) " +
+            "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false) " +
+            "buffering=\(currentPlayer?.isBuffering ?? false)"
+        )
+        playbackManager?.play()
+        if isLocalDubFallbackActive {
+            dubFallbackPlayer.play(rate: playbackSpeed)
+        }
+        isPlaying = true
+        isBuffering = currentPlayer?.isBuffering ?? true
+    }
+
+    private func schedulePlaybackResumeIfNeeded(trigger: String) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.schedulePlaybackResumeIfNeeded(trigger: trigger)
+            }
+            return
+        }
+
+        guard shouldResumePlaybackAfterStall else {
+            debugLog("Playback resume skipped because shouldResumePlaybackAfterStall is false. trigger=\(trigger)")
+            cancelPendingPlaybackResume()
+            return
+        }
+
+        debugLog(
+            "Scheduling playback resume. trigger=\(trigger) current=\(debugInterval(currentTime)) " +
+            "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false) " +
+            "buffering=\(currentPlayer?.isBuffering ?? false)"
+        )
+        cancelPendingPlaybackResume()
+        playbackResumeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.playbackResumeTask = nil }
+
+            let retryDelays: [UInt64] = [0, 180_000_000, 600_000_000]
+            for delay in retryDelays {
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: delay)
+                }
+
+                guard !Task.isCancelled else { return }
+                guard self.shouldResumePlaybackAfterStall, self.isMediaReady else { return }
+
+                if self.currentPlayer?.isPlaying == true {
+                    self.debugLog("Playback resume no-op because player is already playing. trigger=\(trigger)")
+                    self.isPlaying = true
+                    self.isBuffering = self.currentPlayer?.isBuffering ?? false
+                    return
+                }
+
+                self.debugLog("Retrying playback resume. trigger=\(trigger)")
+                self.performPlaybackResumeAttempt()
+            }
         }
     }
     
@@ -2722,6 +2878,7 @@ extension PlayerManager: PlayerLifecycleReporting {
             }
             return
         }
+        shouldResumePlaybackAfterStall = false
         videoDidEnd()
     }
 
@@ -2735,6 +2892,15 @@ extension PlayerManager: PlayerLifecycleReporting {
 
         isBuffering = true
         let stalledTime = max(currentPlayer?.currentTime ?? currentTime, 0)
+        debugLog(
+            "Player stalled current=\(debugInterval(stalledTime)) " +
+            "buffered=\(debugInterval(bufferedDuration)) shouldResume=\(shouldResumePlaybackAfterStall)"
+        )
+
+        guard shouldResumePlaybackAfterStall else {
+            debugLog("Ignoring stall recovery because playback is paused. time=\(stalledTime)")
+            return
+        }
 
         if let sessionID = dubSessionID,
            hasLoadedDubbedMaster,
@@ -2747,7 +2913,7 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
 
-        playbackManager?.play()
+        schedulePlaybackResumeIfNeeded(trigger: "stall")
     }
     
     func playerDidChangePiPState(isActive: Bool) {
@@ -2767,6 +2933,8 @@ extension PlayerManager: PlayerLifecycleReporting {
             }
             return
         }
+
+        cancelPendingPlaybackResume()
 
         if recoverFromDubbedMediaFailureIfNeeded(error) {
             return

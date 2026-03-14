@@ -19,6 +19,14 @@ enum PlayerKitPlatform {
         #endif
     }
 
+    static var isDesktop: Bool {
+        #if os(macOS)
+        true
+        #else
+        false
+        #endif
+    }
+
     static var isPortraitInterface: Bool {
         #if os(iOS)
         UIDevice.current.isPortrait

@@ -83,6 +83,56 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertTrue(manager.isMediaReady)
         XCTAssertEqual(manager.lastError, .castURLMissing)
     }
+
+    func testLoadMarksPlaybackAsStartingImmediately() {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.autoplayOnLoad = false
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+
+        let item = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
+        manager.load(playerItem: item)
+
+        XCTAssertTrue(manager.isPlaying)
+        XCTAssertTrue(manager.isBuffering)
+        XCTAssertEqual(manager.currentTime, 0, accuracy: 0.001)
+    }
+
+    func testPlayerDidBecomeReadyAutoPlaysFreshLoad() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.autoplayOnLoad = false
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+
+        let item = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
+        manager.load(playerItem: item)
+        manager.playerDidBecomeReady()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertTrue(manager.isMediaReady)
+        XCTAssertTrue(manager.isPlaying)
+        XCTAssertGreaterThanOrEqual(player.playCallCount, 1)
+    }
+
+    func testPlayerDidBecomeReadyRetriesAutoplayWhenFirstPlayIsIgnored() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.autoplayOnLoad = false
+        player.playAttemptsBeforePlaying = 2
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+
+        let item = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
+        manager.load(playerItem: item)
+        manager.playerDidBecomeReady()
+
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertTrue(manager.isPlaying)
+        XCTAssertGreaterThanOrEqual(player.playCallCount, 2)
+    }
     
     func testCastManagerReceivesPlayerItemProviderBinding() {
         let manager = PlayerManager.shared
@@ -109,6 +159,37 @@ final class PlayerKitTests: XCTestCase {
         
         AudioSessionManager.shared.onPauseRequested?()
         XCTAssertFalse(manager.isPlaying)
+    }
+
+    func testPlayerDidStallDoesNotResumeWhenPlaybackWasPaused() {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+
+        manager.play()
+        manager.pause()
+        manager.playerDidStall()
+
+        XCTAssertEqual(player.playCallCount, 1)
+        XCTAssertEqual(player.pauseCallCount, 1)
+        XCTAssertTrue(manager.isBuffering)
+    }
+
+    func testPlayerDidStallResumesWhenPlaybackShouldContinue() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.isMediaReady = true
+
+        manager.play()
+        player.isPlaying = false
+        manager.playerDidStall()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertGreaterThanOrEqual(player.playCallCount, 2)
+        XCTAssertTrue(manager.isPlaying)
     }
 
     func testPlayerFacadeLoadURLCreatesDefaultPlayerItem() {
@@ -194,6 +275,73 @@ final class PlayerKitTests: XCTestCase {
 
         player.pause()
         XCTAssertFalse(manager.isPlaying)
+    }
+
+    func testPlayerManagerSeekUpdatesTimeAndInvokesCompletion() {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.duration = 600
+
+        let expectation = expectation(description: "seek completion")
+        manager.seek(to: 142) { success in
+            XCTAssertTrue(success)
+            expectation.fulfill()
+        }
+
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(player.currentTime, 142, accuracy: 0.001)
+        XCTAssertEqual(manager.currentTime, 142, accuracy: 0.001)
+    }
+
+    func testPlayerManagerSeekResumesPlaybackWhenSeekInterruptsPlayback() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.pauseOnSeek = true
+        player.ignoredPlayAttemptsAfterSeek = 1
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.duration = 600
+        manager.isMediaReady = true
+
+        manager.play()
+        manager.seek(to: 142)
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertTrue(manager.isPlaying)
+        XCTAssertGreaterThanOrEqual(player.playCallCount, 3)
+        XCTAssertEqual(player.currentTime, 142, accuracy: 0.001)
+    }
+
+    func testPlayerManagerSeekDoesNotResumeWhenPlaybackWasPaused() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.pauseOnSeek = true
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.duration = 600
+        manager.isMediaReady = true
+
+        manager.pause()
+        manager.seek(to: 84)
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertFalse(manager.isPlaying)
+        XCTAssertEqual(player.playCallCount, 0)
+        XCTAssertEqual(player.currentTime, 84, accuracy: 0.001)
+    }
+
+    func testPlayerManagerSeekReportsFailureWithoutDuration() {
+        let manager = PlayerManager.shared
+
+        var result: Bool?
+        manager.duration = 0
+        manager.seek(to: 20) { success in
+            result = success
+        }
+
+        XCTAssertEqual(result, false)
     }
 
     @MainActor
@@ -606,6 +754,20 @@ final class PlayerKitTests: XCTestCase {
         wait(for: [expectation], timeout: 1.0)
     }
 
+    func testAVPlayerWrapperDisablesAutomaticStallWaiting() {
+        let wrapper = AVPlayerWrapper()
+        let view = wrapper.getPlayerView()
+
+        wrapper.load(url: URL(string: "https://example.com/movie.m3u8")!)
+
+        guard let player = boundPlayer(from: view) else {
+            XCTFail("Expected bound AVPlayer")
+            return
+        }
+
+        XCTAssertFalse(player.automaticallyWaitsToMinimizeStalling)
+    }
+
     private func boundPlayer(from view: PKView, file: StaticString = #filePath, line: UInt = #line) -> AVPlayer? {
         #if os(macOS)
         if let playerView = view as? AVKit.AVPlayerView {
@@ -633,5 +795,89 @@ private final class MockPlayerLifecycleReporter: PlayerLifecycleReporting {
 
     func playerDidFail(with error: PlayerKitError) {
         onFail?(error)
+    }
+}
+
+private final class MockPlayer: PlayerProtocol {
+    var isPlaying = false
+    var playbackSpeed: Float = 1
+    var currentTime: Double = 0
+    var duration: Double = 600
+    var bufferedDuration: Double = 0
+    var isBuffering = false
+    var availableAudioTracks: [TrackInfo] = []
+    var availableSubtitles: [TrackInfo] = []
+    var currentAudioTrack: TrackInfo?
+    var currentSubtitleTrack: TrackInfo?
+    var playCallCount = 0
+    var pauseCallCount = 0
+    var autoplayOnLoad = true
+    var playAttemptsBeforePlaying = 1
+    var pauseOnSeek = false
+    var ignoredPlayAttemptsAfterSeek = 0
+    private var ignoredPlayAttemptsRemaining = 0
+
+    func play() {
+        playCallCount += 1
+        if ignoredPlayAttemptsRemaining > 0 {
+            ignoredPlayAttemptsRemaining -= 1
+            isPlaying = false
+            return
+        }
+        isPlaying = playCallCount >= playAttemptsBeforePlaying
+    }
+
+    func pause() {
+        pauseCallCount += 1
+        isPlaying = false
+    }
+
+    func stop() {
+        isPlaying = false
+    }
+
+    func seek(to time: Double, completion: ((Bool) -> Void)?) {
+        currentTime = time
+        if pauseOnSeek {
+            isPlaying = false
+            ignoredPlayAttemptsRemaining = max(ignoredPlayAttemptsRemaining, ignoredPlayAttemptsAfterSeek)
+        }
+        completion?(true)
+    }
+
+    func scrubForward(by seconds: TimeInterval) {
+        currentTime += seconds
+    }
+
+    func scrubBackward(by seconds: TimeInterval) {
+        currentTime -= seconds
+    }
+
+    func selectAudioTrack(withID id: String) {
+        currentAudioTrack = availableAudioTracks.first(where: { $0.id == id })
+    }
+
+    func selectSubtitle(withID id: String?) {
+        currentSubtitleTrack = availableSubtitles.first(where: { $0.id == id })
+    }
+
+    func load(url: URL, lastPosition: Double?) {
+        currentTime = lastPosition ?? 0
+        isPlaying = autoplayOnLoad
+    }
+
+    func getPlayerView() -> PKView {
+        PlayerKit.AVPlayerView()
+    }
+
+    func setupPiP() {}
+    func startPiP() {}
+    func stopPiP() {}
+    func handlePinchGesture(scale: CGFloat) {}
+    func setGravityToDefault() {}
+    func setGravityToFill() {}
+
+    func fetchStreamingInfo() -> StreamingInfo {
+        .placeholder
     }
 }

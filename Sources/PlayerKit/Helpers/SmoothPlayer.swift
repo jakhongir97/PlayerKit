@@ -35,6 +35,7 @@ class SmoothPlayer: AVPlayer {
                        completionHandler: @escaping (Bool) -> Void) {
         // If a seek is in progress, update the pending target.
         if isSeeking {
+            debugLog("Queueing follow-up seek to \(debugTime(time)) while another seek is active.")
             pendingSeekTime = time
             pendingCompletionHandler = completionHandler
             return
@@ -42,6 +43,8 @@ class SmoothPlayer: AVPlayer {
         
         // No seek in progress—start one.
         isSeeking = true
+        pendingCompletionHandler = completionHandler
+        debugLog("Starting seek to \(debugTime(time)).")
         super.seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { [weak self] finished in
             guard let self = self else { return }
             self.handleSeekCompletion(finished, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter)
@@ -55,6 +58,7 @@ class SmoothPlayer: AVPlayer {
                                       toleranceAfter: CMTime) {
         if let newTime = pendingSeekTime {
             // A new seek was requested during the previous seek.
+            debugLog("Seek completed with a queued follow-up target at \(debugTime(newTime)). finished=\(finished)")
             pendingSeekTime = nil
             super.seek(to: newTime, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { [weak self] newFinished in
                 guard let self = self else { return }
@@ -63,10 +67,20 @@ class SmoothPlayer: AVPlayer {
         } else {
             // No more pending seeks; mark seeking as finished.
             isSeeking = false
+            debugLog("Seek finished=\(finished) current=\(debugTime(currentTime()))")
             // Call the last completion handler if one was provided.
             pendingCompletionHandler?(finished)
             pendingCompletionHandler = nil
         }
     }
-}
 
+    private func debugTime(_ time: CMTime) -> String {
+        let seconds = time.seconds
+        guard seconds.isFinite else { return "nan" }
+        return String(format: "%.3f", seconds)
+    }
+
+    private func debugLog(_ message: String) {
+        print("[PlayerKit][SmoothPlayer] \(message)")
+    }
+}

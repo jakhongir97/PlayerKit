@@ -17,6 +17,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var playbackStalledObserver: Any?
     private var timeObserverToken: Any?
     private weak var timeObserverPlayer: AVPlayer?
+    private var timeControlStatusObserver: NSKeyValueObservation?
     private var shouldEmitRuntimeState = false
     
     weak var lifecycleReporter: PlayerLifecycleReporting?
@@ -32,6 +33,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         playerItemStatusObserver = nil
         removePlaybackEndedObserver()
         removeRuntimeTimeObserver()
+        timeControlStatusObserver = nil
         let activePlayer = player
         activePlayer?.pause()
         playerView.player = nil
@@ -52,11 +54,28 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
     }
     
     public func play() {
-        player?.play()
+        guard let player else { return }
+        let targetRate = playbackSpeed > 0 ? playbackSpeed : 1.0
+        debugLog(
+            "Play requested url=\(currentSourceURL?.debugDescription ?? "nil") " +
+            "itemStatus=\(player.currentItem?.status.rawValue ?? -1) " +
+            "timeControl=\(timeControlStatusLabel(player.timeControlStatus)) rate=\(player.rate)"
+        )
+        if player.currentItem?.status == .readyToPlay {
+            player.playImmediately(atRate: targetRate)
+        } else {
+            player.play()
+        }
         emitRuntimeState()
     }
     
     public func pause() {
+        if let player {
+            debugLog(
+                "Pause requested url=\(currentSourceURL?.debugDescription ?? "nil") " +
+                "timeControl=\(timeControlStatusLabel(player.timeControlStatus)) rate=\(player.rate)"
+            )
+        }
         player?.pause()
         emitRuntimeState()
     }
@@ -65,6 +84,7 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
         playerItemStatusObserver = nil
         removePlaybackEndedObserver()
         removeRuntimeTimeObserver()
+        timeControlStatusObserver = nil
         let activePlayer = player
         activePlayer?.pause()
         playerView.player = nil
@@ -101,7 +121,16 @@ extension AVPlayerWrapper: TimeControlProtocol {
     
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
+        debugLog(
+            "Seek requested target=\(debugInterval(time)) current=\(debugInterval(currentTime)) " +
+            "isPlaying=\(isPlaying) buffering=\(isBuffering)"
+        )
         player?.seek(to: cmTime, toleranceBefore: .positiveInfinity, toleranceAfter: .positiveInfinity) { [weak self] finished in
+            self?.debugLog(
+                "Seek completed finished=\(finished) target=\(self?.debugInterval(time) ?? "nan") " +
+                "current=\(self?.debugInterval(self?.currentTime ?? .nan) ?? "nan") " +
+                "isPlaying=\(self?.isPlaying ?? false) buffering=\(self?.isBuffering ?? false)"
+            )
             completion?(finished)
             self?.emitRuntimeState()
         }
@@ -110,7 +139,16 @@ extension AVPlayerWrapper: TimeControlProtocol {
     func seekExactly(to time: Double, completion: ((Bool) -> Void)? = nil) {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         player?.currentItem?.cancelPendingSeeks()
+        debugLog(
+            "Precise seek requested target=\(debugInterval(time)) current=\(debugInterval(currentTime)) " +
+            "isPlaying=\(isPlaying) buffering=\(isBuffering)"
+        )
         player?.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            self?.debugLog(
+                "Precise seek completed finished=\(finished) target=\(self?.debugInterval(time) ?? "nan") " +
+                "current=\(self?.debugInterval(self?.currentTime ?? .nan) ?? "nan") " +
+                "isPlaying=\(self?.isPlaying ?? false) buffering=\(self?.isBuffering ?? false)"
+            )
             completion?(finished)
             self?.emitRuntimeState()
         }
@@ -182,14 +220,19 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         debugLog("Loading AVPlayer item. url=\(url.debugDescription) resume=\(lastPosition?.description ?? "nil")")
         let playerItem = AVPlayerItem(url: url)
         if let player = player {
+            player.automaticallyWaitsToMinimizeStalling = false
             player.replaceCurrentItem(with: playerItem)
+            debugLog("Reusing existing AVPlayer instance for new item.")
         } else {
             player = SmoothPlayer(playerItem: playerItem)
             playerView.player = player
             setupPiP()
             player?.allowsExternalPlayback = true
+            player?.automaticallyWaitsToMinimizeStalling = false
+            debugLog("Created SmoothPlayer backing instance.")
         }
         configureRuntimeStateObserverIfNeeded()
+        configureTimeControlStatusObserverIfNeeded()
 
         playerItemStatusObserver = nil
         removePlaybackEndedObserver()
@@ -262,11 +305,12 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         // Seek to last position if provided, else start from the beginning
         if let position = lastPosition {
             let targetTime = CMTime(seconds: position, preferredTimescale: 600)
+            debugLog("Applying initial seek to resume position \(debugInterval(position)).")
             player?.seek(to: targetTime)
         }
         
-        player?.play()
-        emitRuntimeState()
+        debugLog("Calling play() immediately after load.")
+        play()
     }
 }
 
@@ -345,12 +389,14 @@ extension AVPlayerWrapper: PlayerStateSource {
     func startRuntimeStateUpdates() {
         shouldEmitRuntimeState = true
         configureRuntimeStateObserverIfNeeded()
+        configureTimeControlStatusObserverIfNeeded()
         emitRuntimeState()
     }
     
     func stopRuntimeStateUpdates() {
         shouldEmitRuntimeState = false
         removeRuntimeTimeObserver()
+        timeControlStatusObserver = nil
     }
 }
 
@@ -559,6 +605,24 @@ extension AVPlayerWrapper {
         }
         timeObserverPlayer = player
     }
+
+    private func configureTimeControlStatusObserverIfNeeded() {
+        guard shouldEmitRuntimeState,
+              let player,
+              timeControlStatusObserver == nil else { return }
+
+        timeControlStatusObserver = player.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.debugLog(
+                    "timeControlStatus changed status=\(self.timeControlStatusLabel(player.timeControlStatus)) " +
+                    "reason=\(self.waitingReasonLabel(player.reasonForWaitingToPlay)) rate=\(player.rate) " +
+                    "current=\(self.debugInterval(self.currentTime))"
+                )
+                self.emitRuntimeState()
+            }
+        }
+    }
     
     private func removeRuntimeTimeObserver() {
         guard let timeObserverToken else { return }
@@ -637,5 +701,28 @@ extension AVPlayerWrapper {
 
     private func debugLog(_ message: String) {
         print("[PlayerKit][AVPlayerWrapper] \(message)")
+    }
+
+    private func timeControlStatusLabel(_ status: AVPlayer.TimeControlStatus) -> String {
+        switch status {
+        case .paused:
+            return "paused"
+        case .waitingToPlayAtSpecifiedRate:
+            return "waiting"
+        case .playing:
+            return "playing"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private func waitingReasonLabel(_ reason: AVPlayer.WaitingReason?) -> String {
+        guard let reason else { return "none" }
+        return reason.rawValue
+    }
+
+    private func debugInterval(_ value: Double) -> String {
+        guard value.isFinite else { return "nan" }
+        return String(format: "%.3f", value)
     }
 }
