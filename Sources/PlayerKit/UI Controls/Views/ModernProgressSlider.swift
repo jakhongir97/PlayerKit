@@ -117,7 +117,7 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         .onAppear {
             syncProgress(with: value)
         }
-        .onChange(of: value) { _, newValue in
+        .compatOnChange(of: value) { newValue in
             if !isActive {
                 syncProgress(with: newValue)
             }

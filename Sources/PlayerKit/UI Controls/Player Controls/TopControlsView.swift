@@ -32,23 +32,13 @@ struct TopControlsView: View {
             SettingsMenu(playerManager: playerManager)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .overlay(alignment: .topTrailing) {
-            if isDubberSheetPresented && playerManager.isDubberEnabled {
-                VStack(spacing: 0) {
-                    DubberStatusView(playerManager: playerManager)
-                        .frame(maxWidth: PlayerKitPlatform.isPhone ? 248 : 264, alignment: .leading)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                .padding(.top, 72)
-                .zIndex(2)
-            }
-        }
-        .onChange(of: playerManager.areControlsVisible) { _, areControlsVisible in
+        .overlay(dubberSheetOverlay, alignment: .topTrailing)
+        .compatOnChange(of: playerManager.areControlsVisible) { areControlsVisible in
             if !areControlsVisible {
                 isDubberSheetPresented = false
             }
         }
-        .onChange(of: playerManager.isDubberEnabled) { _, isDubberEnabled in
+        .compatOnChange(of: playerManager.isDubberEnabled) { isDubberEnabled in
             if !isDubberEnabled {
                 isDubberSheetPresented = false
             }
@@ -69,6 +59,19 @@ struct TopControlsView: View {
         .accessibilityLabel("Dub controls")
         .accessibilityHint("Shows dubbing controls in a floating card")
         .accessibilityIdentifier("player.dubSheet")
+    }
+
+    @ViewBuilder
+    private var dubberSheetOverlay: some View {
+        if isDubberSheetPresented && playerManager.isDubberEnabled {
+            VStack(spacing: 0) {
+                DubberStatusView(playerManager: playerManager)
+                    .frame(maxWidth: PlayerKitPlatform.isPhone ? 248 : 264, alignment: .leading)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            .padding(.top, 72)
+            .zIndex(2)
+        }
     }
 
     private var dubbingIconName: String {

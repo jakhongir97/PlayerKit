@@ -9,7 +9,7 @@ struct PlayerMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(PlayerType.allCases) { playerType in
+            ForEach(PlayerType.supportedCases) { playerType in
                 Button(action: {
                     viewModel.switchPlayer(to: playerType)
                 }) {
@@ -27,7 +27,11 @@ struct PlayerMenu: View {
                 .foregroundColor(.white)
         }
         .accessibilityLabel("Player backend")
-        .accessibilityHint("Selects AVPlayer or VLC backend")
+        .accessibilityHint(
+            PlayerType.supportedCases.count > 1
+                ? "Selects AVPlayer or VLC backend"
+                : "Shows the active player backend"
+        )
         .accessibilityIdentifier("player.backendMenu")
         .onTapGesture {
             viewModel.userInteracted()

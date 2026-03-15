@@ -9,20 +9,17 @@ struct PlayerControlsView: View {
 
     var body: some View {
         ZStack {
-            // Background color with opacity, ignoring safe area insets
             Color.black.opacity(0.5)
                 .edgesIgnoringSafeArea(.all)
-                .allowsHitTesting(false)  // Ensures the background doesn't block gestures
+                .allowsHitTesting(false)
                 .opacity(playerManager.areControlsVisible ? 1 : 0)
 
             VStack {
-                // Top part: Title, description, cast button, settings menu
                 TopControlsView(playerManager: playerManager)
                     .opacity((playerManager.isLocked || !playerManager.areControlsVisible) ? 0 : 1)
 
                 Spacer()
 
-                // Middle part: Play/pause button (later: next/prev buttons)
                 HStack {
                     InfoButtonView(playerManager: playerManager)
                         .opacity((playerManager.isLocked || !playerManager.areControlsVisible) ? 0 : 1)
@@ -37,7 +34,6 @@ struct PlayerControlsView: View {
 
                 Spacer()
 
-                // Bottom part: Playback time, audio/subtitles menu, playback slider
                 VStack {
                     BottomControlsView(playerManager: playerManager)
                         .opacity((playerManager.isLocked || !playerManager.areControlsVisible) ? 0 : 1)

@@ -18,7 +18,7 @@ struct GlassCapsuleBackground: ViewModifier {
         } else {
             content
                 .background(
-                    BlurView() // iOS 13/14 fallback
+                    BlurView()
                         .clipShape(Capsule())
                 )
                 .overlay(Capsule().stroke(Color.white.opacity(0.12)))

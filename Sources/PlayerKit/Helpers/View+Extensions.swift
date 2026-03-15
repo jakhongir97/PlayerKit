@@ -2,7 +2,11 @@ import SwiftUI
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
+#if canImport(UIKit)
 extension View {
     func setDeviceOrientation(_ orientation: UIInterfaceOrientation) {
         guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
@@ -103,6 +107,24 @@ public extension View {
                 .padding(12)
                 .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius, style: .continuous))
         } else if #available(iOS 15.0, macOS 12.0, *) {
+            #if os(macOS)
+            self
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.regularMaterial)
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.22))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(.white.opacity(0.10), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 10)
+            #else
             self
                 .padding(12)
                 .background(.ultraThinMaterial)
@@ -111,6 +133,7 @@ public extension View {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(.white.opacity(0.12), lineWidth: 1)
                 )
+            #endif
         } else {
             self
                 .padding(12)
@@ -127,6 +150,22 @@ public extension View {
             self.monospacedDigit()
         } else {
             self.font(.system(.caption, design: .monospaced))
+        }
+    }
+}
+
+public extension View {
+    @ViewBuilder
+    func compatOnChange<Value: Equatable>(
+        of value: Value,
+        perform action: @escaping (Value) -> Void
+    ) -> some View {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            self.onChange(of: value) { _, newValue in
+                action(newValue)
+            }
+        } else {
+            self.onChange(of: value, perform: action)
         }
     }
 }

@@ -5,12 +5,22 @@ enum DubSwitchPolicy {
     private static let preparationLeadSeconds = 6.0
     private static let activationHeadroomSeconds = 8.0
 
+    static func shouldSwitchToDubbedMaster(
+        isDubPlayable: Bool,
+        isFinalized: Bool,
+        allowProgressiveSwitching: Bool
+    ) -> Bool {
+        guard isDubPlayable else { return false }
+        return allowProgressiveSwitching || isFinalized
+    }
+
     static func hasPlayableDubData(
         segmentsReady: Int,
         totalSegments: Int,
         chunkCount: Int,
         resumePosition: Double,
         knownDuration: Double,
+        isFinalized: Bool = false,
         coverageStart: Double? = nil,
         coverageEnd: Double? = nil
     ) -> Bool {
@@ -22,9 +32,11 @@ enum DubSwitchPolicy {
             coverageEnd: coverageEnd
         ) else { return false }
         guard segmentsReady >= 3 else { return false }
+        if isFinalized {
+            return true
+        }
         if let windowAllowsPlayback = timelineWindowAllowsPlayback(
             resumePosition: resumePosition,
-            coverageStart: coverageStart,
             coverageEnd: coverageEnd
         ) {
             return windowAllowsPlayback
@@ -45,6 +57,7 @@ enum DubSwitchPolicy {
         chunkCount: Int,
         resumePosition: Double,
         knownDuration: Double,
+        isFinalized: Bool = false,
         coverageStart: Double? = nil,
         coverageEnd: Double? = nil
     ) -> Bool {
@@ -55,8 +68,11 @@ enum DubSwitchPolicy {
             coverageStart: coverageStart,
             coverageEnd: coverageEnd
         ) else { return false }
-        if let coverageStart, coverageStart.isFinite {
-            return resumePosition + preparationLeadSeconds >= coverageStart
+        if isFinalized {
+            return true
+        }
+        if let coverageEnd, coverageEnd.isFinite {
+            return coverageEnd >= max(resumePosition, 0) + preparationLeadSeconds
         }
 
         return fallbackCoverageCheck(
@@ -78,25 +94,21 @@ enum DubSwitchPolicy {
         coverageStart: Double? = nil,
         coverageEnd: Double? = nil
     ) -> Bool {
+        let isFinalized = isCompletionStatus(status)
         if shouldPrepareDubMaster(
             segmentsReady: segmentsReady,
             totalSegments: totalSegments,
             chunkCount: chunkCount,
             resumePosition: resumePosition,
             knownDuration: knownDuration,
+            isFinalized: isFinalized,
             coverageStart: coverageStart,
             coverageEnd: coverageEnd
         ) {
             return true
         }
 
-        let normalizedStatus = (status ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-
-        return normalizedStatus == "complete"
-            || normalizedStatus == "completed"
-            || normalizedStatus == "ready"
+        return isFinalized
     }
 
     private static func hasTimelineSignal(
@@ -110,10 +122,15 @@ enum DubSwitchPolicy {
             return true
         }
 
-        if let coverageStart, let coverageEnd,
-           coverageStart.isFinite,
+        if let coverageEnd,
            coverageEnd.isFinite,
-           coverageEnd > coverageStart {
+           coverageEnd > 0 {
+            return true
+        }
+
+        if let coverageStart,
+           coverageStart.isFinite,
+           coverageStart >= 0 {
             return true
         }
 
@@ -122,20 +139,28 @@ enum DubSwitchPolicy {
 
     private static func timelineWindowAllowsPlayback(
         resumePosition: Double,
-        coverageStart: Double?,
         coverageEnd: Double?
     ) -> Bool? {
-        guard let coverageStart,
-              let coverageEnd,
-              coverageStart.isFinite,
+        // coverageStart/coverageEnd describe translated dialogue chunks, while the HLS
+        // master can still provide lead/tail audio outside those chunk boundaries.
+        guard let coverageEnd,
               coverageEnd.isFinite,
-              coverageEnd > coverageStart else {
+              coverageEnd > 0 else {
             return nil
         }
 
         let effectiveResumePosition = max(resumePosition, 0)
-        guard effectiveResumePosition + 0.35 >= coverageStart else { return false }
         return coverageEnd >= effectiveResumePosition + activationHeadroomSeconds
+    }
+
+    private static func isCompletionStatus(_ status: String?) -> Bool {
+        let normalizedStatus = (status ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        return normalizedStatus == "complete"
+            || normalizedStatus == "completed"
+            || normalizedStatus == "ready"
     }
 
     private static func fallbackCoverageCheck(
@@ -155,6 +180,11 @@ enum DubSwitchPolicy {
     }
 }
 
+public enum PlayerEpisodeNavigationDirection: Equatable {
+    case previous
+    case next
+}
+
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
     
@@ -169,6 +199,7 @@ public class PlayerManager: ObservableObject {
             refreshPlaybackWakeLock()
         }
     }
+    @Published public private(set) var isPlaybackRequested: Bool = false
     @Published public var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var bufferedDuration: Double = 0
@@ -193,8 +224,13 @@ public class PlayerManager: ObservableObject {
     private var savedAudio: TrackInfo?
     private var savedSubtitle: TrackInfo?
     
-    @Published var selectedPlayerType: PlayerType = UserDefaults.standard.loadPlayerType() ?? .avPlayer {
+    @Published var selectedPlayerType: PlayerType = PlayerType.resolved(UserDefaults.standard.loadPlayerType()) {
         didSet {
+            let resolvedType = PlayerType.resolved(selectedPlayerType)
+            if resolvedType != selectedPlayerType {
+                selectedPlayerType = resolvedType
+                return
+            }
             UserDefaults.standard.savePlayerType(selectedPlayerType)
         }
     }
@@ -202,6 +238,9 @@ public class PlayerManager: ObservableObject {
     @Published var playerItems: [PlayerItem] = []
     @Published var currentPlayerItemIndex: Int = 0
     @Published public var contentType: PlayerContentType = .movie
+    @Published public private(set) var externalEpisodeCanPlayPrevious: Bool = false
+    @Published public private(set) var externalEpisodeCanPlayNext: Bool = false
+    @Published public private(set) var isExternalEpisodeNavigationInProgress: Bool = false
     @Published var shouldDismiss: Bool = false {
         didSet {
             playbackManager?.stop()
@@ -259,6 +298,8 @@ public class PlayerManager: ObservableObject {
     private var integrationsConfigured = false
     private var dubberConfiguration: DubberConfiguration?
     private let dubberClient = DubberClient()
+    // Stable mode: keep source playback uninterrupted until the dubbed stream is finalized.
+    private let allowProgressiveDubSwitching = false
     private var dubberPollTask: Task<Void, Never>?
     private var dubberEventsTask: Task<Void, Never>?
     private var dubberStallWatchdogTask: Task<Void, Never>?
@@ -296,9 +337,36 @@ public class PlayerManager: ObservableObject {
     private var stateCancellables = Set<AnyCancellable>()
     private var longLivedCancellables = Set<AnyCancellable>()
     private var isPlaybackWakeLockHeld = false
-    private var shouldResumePlaybackAfterStall = false
+    private var shouldResumePlaybackAfterStall: Bool {
+        get { isPlaybackRequested }
+        set { isPlaybackRequested = newValue }
+    }
     private var playbackResumeTask: Task<Void, Never>?
-    
+    private var playbackResumeProgressReferenceTime: Double?
+    private var externalEpisodeNavigationHandler: (@MainActor (PlayerEpisodeNavigationDirection) async -> Bool)?
+    private struct ExternalEpisodeNavigationSnapshot {
+        let canPlayPrevious: Bool
+        let canPlayNext: Bool
+        let handler: @MainActor (PlayerEpisodeNavigationDirection) async -> Bool
+    }
+    private struct PlaybackSwitchSnapshot {
+        let currentItem: PlayerItem?
+        let queue: [PlayerItem]
+        let currentIndex: Int
+        let contentType: PlayerContentType
+        let shouldResumePlayback: Bool
+        let externalEpisodeNavigation: ExternalEpisodeNavigationSnapshot?
+    }
+    private var primaryMuteController: PlayerMuteControlling? {
+        currentPlayer as? PlayerMuteControlling
+    }
+    private var preciseSeekController: PlayerPreciseSeeking? {
+        currentPlayer as? PlayerPreciseSeeking
+    }
+    private var seekWindowReporter: PlayerSeekWindowReporting? {
+        currentPlayer as? PlayerSeekWindowReporting
+    }
+
     private init() {
         setupGestureHandling()
         configureOrientationCallbacks()
@@ -307,24 +375,75 @@ public class PlayerManager: ObservableObject {
     // MARK: - Player Setup
     
     public func setPlayer(type: PlayerType? = nil) {
-        configureIntegrationsIfNeeded()
-        let type = type ?? UserDefaults.standard.loadPlayerType() ?? .avPlayer
-        debugLog("Setting player type=\(type)")
-        resetPlayer()
-        selectedPlayerType = type
-        let provider = PlayerFactory.getProvider(for: type)
-        setupPlayer(provider: provider)
+        let type = PlayerType.resolved(type ?? UserDefaults.standard.loadPlayerType())
+        configurePlayer(
+            type: type,
+            clearMediaContext: true,
+            clearDubWorkflow: true
+        )
     }
 
     func ensurePlayerConfigured(type: PlayerType? = nil) {
-        if let type, selectedPlayerType != type {
-            setPlayer(type: type)
+        if let type {
+            let resolvedType = PlayerType.resolved(type)
+            if selectedPlayerType != resolvedType {
+                if currentPlayer != nil || playerItem != nil || !playerItems.isEmpty || hasActiveDubWorkflow {
+                    switchPlayer(to: resolvedType)
+                } else {
+                    setPlayer(type: resolvedType)
+                }
+            }
             return
         }
 
         if currentPlayer == nil {
             setPlayer(type: type)
         }
+    }
+
+    private func configurePlayer(
+        type: PlayerType,
+        clearMediaContext: Bool,
+        clearDubWorkflow: Bool
+    ) {
+        let resolvedType = PlayerType.resolved(type)
+        if resolvedType != type {
+            debugLog("Requested unsupported player type=\(type). Falling back to \(resolvedType).")
+        }
+        configureIntegrationsIfNeeded()
+        debugLog(
+            "Setting player type=\(resolvedType) " +
+            "clearMediaContext=\(clearMediaContext) " +
+            "clearDubWorkflow=\(clearDubWorkflow)"
+        )
+        resetPlayer(
+            clearMediaContext: clearMediaContext,
+            clearDubWorkflow: clearDubWorkflow
+        )
+        selectedPlayerType = resolvedType
+        let provider = PlayerFactory.getProvider(for: resolvedType)
+        setupPlayer(provider: provider)
+    }
+
+    private func prepareDubWorkflowForBackendSwitch() {
+        guard hasActiveDubWorkflow else { return }
+        debugLog(
+            "Preserving dub workflow while switching backend. " +
+            "session_id=\(dubSessionID ?? "nil") " +
+            "dubbed_master=\(hasLoadedDubbedMaster) " +
+            "local_fallback=\(isLocalDubFallbackActive)"
+        )
+        cancelDubCompletionResync()
+        cancelDubPlaybackRecovery()
+        if hasLoadedDubbedMaster, !isLocalDubFallbackActive {
+            hasAutoSelectedDubTrack = false
+            hasAppliedSourceAudioFallback = false
+            isDubbedPlaybackActive = false
+        }
+        if isLocalDubFallbackActive {
+            dubFallbackPlayer.pause()
+        }
+        setPrimaryPlayerMuted(false)
     }
     
     private func setupPlayer(provider: PlayerProvider) {
@@ -344,16 +463,92 @@ public class PlayerManager: ObservableObject {
     // MARK: - Switch Player at Runtime
     
     public func switchPlayer(to type: PlayerType) {
-        guard selectedPlayerType != type else { return } // No need to switch if already selected
-        // Store the last position before switching players
-        lastPosition = currentPlayer?.currentTime ?? 0
+        let resolvedType = PlayerType.resolved(type)
+        guard selectedPlayerType != resolvedType else { return } // No need to switch if already selected
+        let resumePosition = max(currentPlayer?.currentTime ?? currentTime, 0)
+        lastPosition = resumePosition
         saveCurrentTracks()
-        setPlayer(type: type)
-        
-        // Reload the current media if videoURL is already set
-        if let url = playerItem?.url {
-            load(url: url, lastPosition: lastPosition)
+        let snapshot = makePlaybackSwitchSnapshot(resumePosition: resumePosition)
+        configurePlayer(
+            type: resolvedType,
+            clearMediaContext: false,
+            clearDubWorkflow: false
+        )
+
+        restorePlaybackSwitchSnapshot(snapshot)
+
+        if let currentItem = snapshot.currentItem {
+            load(url: currentItem.url, lastPosition: currentItem.lastPosition)
+            if !snapshot.shouldResumePlayback {
+                pause()
+            }
         }
+    }
+
+    private func makePlaybackSwitchSnapshot(resumePosition: Double) -> PlaybackSwitchSnapshot {
+        var restoredQueue = playerItems
+        let restoredIndex = restoredQueue.isEmpty
+            ? 0
+            : min(max(currentPlayerItemIndex, 0), restoredQueue.count - 1)
+        let resolvedCurrentItem = playerItem ?? restoredQueue[safe: restoredIndex]
+        let currentItem = resolvedCurrentItem.map {
+            makePlayerItemCopy(from: $0, resumePosition: resumePosition)
+        }
+
+        if let currentItem, !restoredQueue.isEmpty, restoredIndex < restoredQueue.count {
+            restoredQueue[restoredIndex] = currentItem
+        }
+
+        let externalEpisodeNavigation = externalEpisodeNavigationHandler.map {
+            ExternalEpisodeNavigationSnapshot(
+                canPlayPrevious: externalEpisodeCanPlayPrevious,
+                canPlayNext: externalEpisodeCanPlayNext,
+                handler: $0
+            )
+        }
+
+        return PlaybackSwitchSnapshot(
+            currentItem: currentItem,
+            queue: restoredQueue,
+            currentIndex: restoredIndex,
+            contentType: contentType,
+            shouldResumePlayback: shouldResumePlaybackAfterStall,
+            externalEpisodeNavigation: externalEpisodeNavigation
+        )
+    }
+
+    private func restorePlaybackSwitchSnapshot(_ snapshot: PlaybackSwitchSnapshot) {
+        let restoredIndex = snapshot.queue.isEmpty
+            ? 0
+            : min(max(snapshot.currentIndex, 0), snapshot.queue.count - 1)
+
+        playerItems = snapshot.queue
+        currentPlayerItemIndex = restoredIndex
+        contentType = snapshot.contentType
+        playerItem = snapshot.currentItem ?? snapshot.queue[safe: restoredIndex]
+
+        if let externalEpisodeNavigation = snapshot.externalEpisodeNavigation {
+            configureExternalEpisodeNavigation(
+                canPlayPrevious: externalEpisodeNavigation.canPlayPrevious,
+                canPlayNext: externalEpisodeNavigation.canPlayNext,
+                handler: externalEpisodeNavigation.handler
+            )
+        }
+    }
+
+    private func makePlayerItemCopy(from sourceItem: PlayerItem, resumePosition: Double?) -> PlayerItem {
+        PlayerItem(
+            title: sourceItem.title,
+            description: sourceItem.description,
+            url: sourceItem.url,
+            posterUrl: sourceItem.posterUrl,
+            castVideoUrl: sourceItem.castVideoUrl,
+            externalPlaybackURL: sourceItem.externalPlaybackURL,
+            externalPlaybackContentType: sourceItem.externalPlaybackContentType,
+            externalPlaybackDuration: sourceItem.externalPlaybackDuration,
+            lastPosition: resumePosition,
+            episodeIndex: sourceItem.episodeIndex
+        )
     }
     
     public func load(playerItem: PlayerItem) {
@@ -414,36 +609,7 @@ public class PlayerManager: ObservableObject {
 
     @MainActor
     public func stopDubbingAndReturnToOriginalAudio() {
-        guard hasActiveDubWorkflow else { return }
-
-        let sourceItem = activeDubSourceItem
-        let shouldRestoreSource = hasLoadedDubbedMaster && sourceItem != nil
-        let resumePosition = max(currentPlayer?.currentTime ?? currentTime, 0)
-
-        cancelDubWorkflow(reason: "User requested to stop dubbing.")
-        clearError()
-
-        if shouldRestoreSource, let sourceItem {
-            let restoredItem = PlayerItem(
-                title: sourceItem.title,
-                description: sourceItem.description,
-                url: sourceItem.url,
-                posterUrl: sourceItem.posterUrl,
-                castVideoUrl: sourceItem.castVideoUrl,
-                externalPlaybackURL: sourceItem.externalPlaybackURL,
-                externalPlaybackContentType: sourceItem.externalPlaybackContentType,
-                externalPlaybackDuration: sourceItem.externalPlaybackDuration,
-                lastPosition: resumePosition,
-                episodeIndex: sourceItem.episodeIndex
-            )
-
-            playerItem = restoredItem
-            if !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count {
-                playerItems[currentPlayerItemIndex] = restoredItem
-            }
-            load(url: sourceItem.url, lastPosition: resumePosition)
-        }
-
+        stopDubbingAndReturnToOriginalAudio(reason: "User requested to stop dubbing.")
         HapticsManager.shared.triggerImpactFeedback(style: .soft)
     }
 
@@ -529,12 +695,20 @@ public class PlayerManager: ObservableObject {
 
             dubSessionID = sessionID
             recordDubActivity(
-                "Dubber connected. Waiting for the dubbed HLS stream to become playable.",
+                allowProgressiveDubSwitching
+                    ? "Dubber connected. Waiting for the dubbed HLS stream to become playable."
+                    : "Dubber connected. Keeping the original audio until the dubbed stream is fully prepared.",
                 level: .success,
                 signature: "dub-session-started"
             )
             debugLog("Dub session started. session_id=\(sessionID)")
+            startDubberStallWatchdog(sessionID: sessionID)
             startDubberPolling(
+                sessionID: sessionID,
+                configuration: configuration,
+                sourceItem: sourceItem
+            )
+            startDubberEvents(
                 sessionID: sessionID,
                 configuration: configuration,
                 sourceItem: sourceItem
@@ -580,6 +754,7 @@ public class PlayerManager: ObservableObject {
         isPlaying = true
         isBuffering = true
         shouldResumePlaybackAfterStall = true
+        playbackResumeProgressReferenceTime = currentTime
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         userInteracted()
     }
@@ -663,7 +838,81 @@ public class PlayerManager: ObservableObject {
     }
     
     // MARK: - Player Items Navigation
+    public var canPlayNextItem: Bool {
+        if hasExternalEpisodeNavigation {
+            return externalEpisodeCanPlayNext && !isExternalEpisodeNavigationInProgress
+        }
+
+        return !playerItems.isEmpty && currentPlayerItemIndex < playerItems.count - 1
+    }
+
+    public var canPlayPreviousItem: Bool {
+        if hasExternalEpisodeNavigation {
+            return externalEpisodeCanPlayPrevious && !isExternalEpisodeNavigationInProgress
+        }
+
+        return !playerItems.isEmpty && currentPlayerItemIndex > 0
+    }
+
+    public func configureExternalEpisodeNavigation(
+        canPlayPrevious: Bool = true,
+        canPlayNext: Bool = true,
+        handler: @escaping @MainActor (PlayerEpisodeNavigationDirection) async -> Bool
+    ) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.configureExternalEpisodeNavigation(
+                    canPlayPrevious: canPlayPrevious,
+                    canPlayNext: canPlayNext,
+                    handler: handler
+                )
+            }
+            return
+        }
+
+        externalEpisodeNavigationHandler = handler
+        externalEpisodeCanPlayPrevious = canPlayPrevious
+        externalEpisodeCanPlayNext = canPlayNext
+    }
+
+    public func updateExternalEpisodeNavigationAvailability(
+        canPlayPrevious: Bool,
+        canPlayNext: Bool
+    ) {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.updateExternalEpisodeNavigationAvailability(
+                    canPlayPrevious: canPlayPrevious,
+                    canPlayNext: canPlayNext
+                )
+            }
+            return
+        }
+
+        guard hasExternalEpisodeNavigation else { return }
+        externalEpisodeCanPlayPrevious = canPlayPrevious
+        externalEpisodeCanPlayNext = canPlayNext
+    }
+
+    public func clearExternalEpisodeNavigation() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.clearExternalEpisodeNavigation()
+            }
+            return
+        }
+
+        externalEpisodeNavigationHandler = nil
+        externalEpisodeCanPlayPrevious = false
+        externalEpisodeCanPlayNext = false
+        isExternalEpisodeNavigationInProgress = false
+    }
+
     public func playNext() {
+        if handleExternalEpisodeNavigationIfNeeded(.next) {
+            return
+        }
+
         NotificationCenter.default.post(name: .PlayerKitNextItem, object: nil)
         saveCurrentTracks()
         guard !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count - 1 else { return }
@@ -672,6 +921,10 @@ public class PlayerManager: ObservableObject {
     }
     
     public func playPrevious() {
+        if handleExternalEpisodeNavigationIfNeeded(.previous) {
+            return
+        }
+
         NotificationCenter.default.post(name: .PlayerKitPrevItem, object: nil)
         saveCurrentTracks()
         guard !playerItems.isEmpty, currentPlayerItemIndex > 0 else { return }
@@ -682,6 +935,43 @@ public class PlayerManager: ObservableObject {
     private func loadPlayerItem(at index: Int) {
         let playerItem = playerItems[index]
         load(playerItem: playerItem)
+    }
+
+    private var hasExternalEpisodeNavigation: Bool {
+        contentType == .episode && externalEpisodeNavigationHandler != nil
+    }
+
+    private func handleExternalEpisodeNavigationIfNeeded(
+        _ direction: PlayerEpisodeNavigationDirection
+    ) -> Bool {
+        guard hasExternalEpisodeNavigation,
+              let handler = externalEpisodeNavigationHandler else {
+            return false
+        }
+
+        let canNavigate: Bool
+        switch direction {
+        case .previous:
+            canNavigate = externalEpisodeCanPlayPrevious
+        case .next:
+            canNavigate = externalEpisodeCanPlayNext
+        }
+
+        guard canNavigate, !isExternalEpisodeNavigationInProgress else {
+            return true
+        }
+
+        saveCurrentTracks()
+        clearError()
+        isExternalEpisodeNavigationInProgress = true
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await handler(direction)
+            self.isExternalEpisodeNavigationInProgress = false
+        }
+
+        return true
     }
 }
 
@@ -717,6 +1007,7 @@ extension PlayerManager {
         )
         shouldResumePlaybackAfterStall = true
         cancelPendingPlaybackResume()
+        playbackResumeProgressReferenceTime = max(currentPlayer?.currentTime ?? currentTime, 0)
         performPlaybackResumeAttempt()
         userInteracted()
     }
@@ -784,8 +1075,8 @@ extension PlayerManager {
             }
 
             if self.shouldUsePreciseDubSeek,
-               let avPlayer = self.currentPlayer as? AVPlayerWrapper {
-                avPlayer.seekExactly(to: targetTime, completion: completion)
+               let preciseSeekController = self.preciseSeekController {
+                preciseSeekController.seekExactly(to: targetTime, completion: completion)
             } else {
                 self.playbackManager?.seek(to: targetTime, completion: completion)
             }
@@ -802,10 +1093,15 @@ extension PlayerManager {
                 if self.isLocalDubFallbackActive {
                     self.dubFallbackPlayer.seek(to: targetTime)
                 }
+                if self.dubSessionID != nil, self.hasLoadedDubbedMaster {
+                    self.refreshTrackInfo()
+                    self.reconcileDubTrackSelection(at: targetTime)
+                }
                 if shouldResumeAfterSeek {
                     self.debugLog(
                         "Seek succeeded and playback should resume. target=\(debugInterval(targetTime))"
                     )
+                    self.playbackResumeProgressReferenceTime = targetTime
                     self.schedulePlaybackResumeIfNeeded(trigger: "seek")
                 }
             } else {
@@ -1008,8 +1304,24 @@ extension PlayerManager {
         }
 
         let canRetryFailedDubSwitch = shouldRetryDubbedMasterLoad(poll)
+        if allowProgressiveDubSwitching {
+            scheduleLocalDubFallbackPreparationIfNeeded(
+                sessionID: sessionID,
+                poll: poll
+            )
+            scheduleDubAudioProbeIfNeeded(
+                sessionID: sessionID,
+                configuration: configuration,
+                sourceItem: sourceItem,
+                force: isCompletionStatus
+            )
+        }
 
-        if poll.playable,
+        if DubSwitchPolicy.shouldSwitchToDubbedMaster(
+            isDubPlayable: poll.playable,
+            isFinalized: isCompletionStatus,
+            allowProgressiveSwitching: allowProgressiveDubSwitching
+        ),
            !hasLoadedDubbedMaster,
            dubSwitchAttemptCount < 3,
            (!hasDubSwitchFailed || canRetryFailedDubSwitch) {
@@ -1030,8 +1342,7 @@ extension PlayerManager {
 
         if hasLoadedDubbedMaster, isMediaReady {
             refreshTrackInfo()
-            autoSelectDubTrackIfNeeded()
-            selectSourceAudioFallbackIfNeeded()
+            reconcileDubTrackSelection()
         }
 
         if isCompletionStatus {
@@ -1095,6 +1406,7 @@ extension PlayerManager {
         poll: DubberClient.PollResponse
     ) {
         guard dubSessionID == sessionID else { return }
+        guard primaryMuteController != nil else { return }
         guard !isLocalDubFallbackActive else { return }
         guard dubFallbackPreparationTask == nil else { return }
         guard !hasAutoSelectedDubTrack else { return }
@@ -1327,8 +1639,7 @@ extension PlayerManager {
 
         if isMediaReady {
             refreshTrackInfo()
-            autoSelectDubTrackIfNeeded()
-            selectSourceAudioFallbackIfNeeded()
+            reconcileDubTrackSelection()
         }
 
         scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "probe")
@@ -1336,17 +1647,7 @@ extension PlayerManager {
 
     fileprivate func shouldProbeDubAudio(at playbackTime: Double) -> Bool {
         guard dubReadyChunkCount > 0 || isCompletionState(dubStatus) else { return false }
-
-        if let dubCoverageEndTime, dubCoverageEndTime.isFinite,
-           playbackTime - 0.35 > dubCoverageEndTime {
-            return false
-        }
-
-        if let dubCoverageStartTime, dubCoverageStartTime.isFinite {
-            return playbackTime + 6 >= dubCoverageStartTime
-        }
-
-        return dubReadyChunkCount > 0
+        return shouldPrepareDubContent(at: max(playbackTime, 0))
     }
 
     fileprivate func startDubberEvents(
@@ -1423,9 +1724,12 @@ extension PlayerManager {
                                 "events_received=\(self.dubberEventCount) " +
                                 "elapsed=\(self.dubDebugInterval(elapsedSinceStart))"
                             )
-                            self.reportError(.dubberRequestFailed("Dub status stream disconnected."))
-                            self.isDubLoading = false
-                            self.cancelDubberStallWatchdog()
+                            self.downgradeDubberEventsFailure(
+                                sessionID: sessionID,
+                                warning: "Live status stream disconnected. Continuing with direct polling.",
+                                activity: "Live status stream disconnected, but direct polling is still tracking dubbing progress.",
+                                signature: "sse-disconnected-\(exhaustedAttempt)"
+                            )
                         }
                         break
                     }
@@ -1464,18 +1768,13 @@ extension PlayerManager {
                     guard self.shouldRetryDubberEvents(after: error) else {
                         await MainActor.run {
                             guard self.dubSessionID == sessionID else { return }
-                            self.debugLog(
-                                "Dub SSE failed. session_id=\(sessionID) " +
-                                "error=\(self.networkErrorDebugDetails(error))"
+                            self.downgradeDubberEventsFailure(
+                                sessionID: sessionID,
+                                warning: "Live status stream failed. Continuing with direct polling.",
+                                activity: "Live status updates failed, but direct polling is still running.",
+                                signature: "sse-failed",
+                                error: error
                             )
-                            self.recordDubActivity(
-                                "Live dubbing stopped because the status stream failed.",
-                                level: .error,
-                                signature: "sse-failed"
-                            )
-                            self.reportError(.dubberRequestFailed(error.localizedDescription))
-                            self.isDubLoading = false
-                            self.cancelDubberStallWatchdog()
                         }
                         break
                     }
@@ -1487,18 +1786,13 @@ extension PlayerManager {
                     ) else {
                         await MainActor.run {
                             guard self.dubSessionID == sessionID else { return }
-                            self.debugLog(
-                                "Dub SSE failed after retries. session_id=\(sessionID) " +
-                                "error=\(self.networkErrorDebugDetails(error))"
+                            self.downgradeDubberEventsFailure(
+                                sessionID: sessionID,
+                                warning: "Live status stream stopped reconnecting. Continuing with direct polling.",
+                                activity: "Live status updates exhausted their retries, but direct polling is still active.",
+                                signature: "sse-retries-exhausted",
+                                error: error
                             )
-                            self.recordDubActivity(
-                                "Dubber could not reconnect after several tries.",
-                                level: .error,
-                                signature: "sse-retries-exhausted"
-                            )
-                            self.reportError(.dubberRequestFailed(error.localizedDescription))
-                            self.isDubLoading = false
-                            self.cancelDubberStallWatchdog()
                         }
                         break
                     }
@@ -1538,6 +1832,30 @@ extension PlayerManager {
                     self.dubberEventsTask = nil
                 }
             }
+        }
+    }
+
+    @MainActor
+    fileprivate func downgradeDubberEventsFailure(
+        sessionID: String,
+        warning: String,
+        activity: String,
+        signature: String,
+        error: Error? = nil
+    ) {
+        guard dubSessionID == sessionID else { return }
+        dubWarningMessage = warning
+        recordDubActivity(activity, level: .warning, signature: signature)
+        if let error {
+            debugLog(
+                "Dub SSE downgraded to polling only. session_id=\(sessionID) " +
+                "warning=\(warning) error=\(networkErrorDebugDetails(error))"
+            )
+        } else {
+            debugLog(
+                "Dub SSE downgraded to polling only. session_id=\(sessionID) " +
+                "warning=\(warning)"
+            )
         }
     }
 
@@ -1591,6 +1909,7 @@ extension PlayerManager {
                 )
                 reportError(.dubberRequestFailed(rawError))
                 isDubLoading = false
+                cancelDubberPolling()
                 cancelDubberStallWatchdog()
                 cancelDubberEvents()
                 return
@@ -1609,17 +1928,18 @@ extension PlayerManager {
                 dubCompletionObservedAt = nil
             }
 
-            scheduleDubAudioProbeIfNeeded(
-                sessionID: sessionID,
-                configuration: configuration,
-                sourceItem: sourceItem,
-                force: isCompletionStatus
-            )
+            if allowProgressiveDubSwitching {
+                scheduleDubAudioProbeIfNeeded(
+                    sessionID: sessionID,
+                    configuration: configuration,
+                    sourceItem: sourceItem,
+                    force: isCompletionStatus
+                )
+            }
 
             if hasLoadedDubbedMaster, isMediaReady {
                 refreshTrackInfo()
-                autoSelectDubTrackIfNeeded()
-                selectSourceAudioFallbackIfNeeded()
+                reconcileDubTrackSelection()
             }
 
             if isCompletionStatus {
@@ -1664,12 +1984,14 @@ extension PlayerManager {
 
             if isDoneCompletionStatus {
                 dubCompletionObservedAt = dubCompletionObservedAt ?? Date()
-                scheduleDubAudioProbeIfNeeded(
-                    sessionID: sessionID,
-                    configuration: configuration,
-                    sourceItem: sourceItem,
-                    force: true
-                )
+                if allowProgressiveDubSwitching {
+                    scheduleDubAudioProbeIfNeeded(
+                        sessionID: sessionID,
+                        configuration: configuration,
+                        sourceItem: sourceItem,
+                        force: true
+                    )
+                }
                 scheduleDubCompletionResyncIfNeeded(sessionID: sessionID, trigger: "done")
             }
 
@@ -1679,8 +2001,12 @@ extension PlayerManager {
                 level: .success,
                 signature: "sse-done"
             )
-            isDubLoading = false
-            cancelDubberStallWatchdog()
+            if isDubbedPlaybackActive {
+                isDubLoading = false
+                cancelDubberStallWatchdog()
+            } else if isDoneCompletionStatus {
+                dubProgressMessage = "Finalizing playable audio..."
+            }
             cancelDubberEvents()
         }
     }
@@ -1754,6 +2080,38 @@ extension PlayerManager {
         resetDubActivityLog()
     }
 
+    private func stopDubbingAndReturnToOriginalAudio(reason: String) {
+        guard hasActiveDubWorkflow else { return }
+
+        let sourceItem = activeDubSourceItem
+        let shouldRestoreSource = hasLoadedDubbedMaster && sourceItem != nil
+        let resumePosition = max(currentPlayer?.currentTime ?? currentTime, 0)
+
+        cancelDubWorkflow(reason: reason)
+        clearError()
+
+        if shouldRestoreSource, let sourceItem {
+            let restoredItem = PlayerItem(
+                title: sourceItem.title,
+                description: sourceItem.description,
+                url: sourceItem.url,
+                posterUrl: sourceItem.posterUrl,
+                castVideoUrl: sourceItem.castVideoUrl,
+                externalPlaybackURL: sourceItem.externalPlaybackURL,
+                externalPlaybackContentType: sourceItem.externalPlaybackContentType,
+                externalPlaybackDuration: sourceItem.externalPlaybackDuration,
+                lastPosition: resumePosition,
+                episodeIndex: sourceItem.episodeIndex
+            )
+
+            playerItem = restoredItem
+            if !playerItems.isEmpty, currentPlayerItemIndex < playerItems.count {
+                playerItems[currentPlayerItemIndex] = restoredItem
+            }
+            load(url: sourceItem.url, lastPosition: resumePosition)
+        }
+    }
+
     fileprivate func cancelDubCompletionResync() {
         dubCompletionResyncTask?.cancel()
         dubCompletionResyncTask = nil
@@ -1766,6 +2124,7 @@ extension PlayerManager {
         }
         playbackResumeTask?.cancel()
         playbackResumeTask = nil
+        playbackResumeProgressReferenceTime = nil
     }
 
     fileprivate func cancelDubPlaybackRecovery() {
@@ -1791,7 +2150,7 @@ extension PlayerManager {
         guard isMediaReady else { return }
 
         refreshTrackInfo()
-        autoSelectDubTrackIfNeeded()
+        reconcileDubTrackSelection()
         guard isDubbedPlaybackActive else { return }
         guard !hasScheduledDubCompletionResync else { return }
 
@@ -1816,7 +2175,7 @@ extension PlayerManager {
                     guard self.isMediaReady else { return }
 
                     self.refreshTrackInfo()
-                    self.autoSelectDubTrackIfNeeded()
+                    self.reconcileDubTrackSelection()
                     guard self.isDubbedPlaybackActive else { return }
 
                     let targetTime = max(self.currentPlayer?.currentTime ?? self.currentTime, 0)
@@ -1841,8 +2200,8 @@ extension PlayerManager {
 
     private func performPreciseDubSeek(to time: Double) {
         let clampedTime = max(time, 0)
-        if let avPlayer = currentPlayer as? AVPlayerWrapper {
-            avPlayer.seekExactly(to: clampedTime) { [weak self] success in
+        if let preciseSeekController {
+            preciseSeekController.seekExactly(to: clampedTime) { [weak self] success in
                 guard let self, success else { return }
                 self.currentTime = clampedTime
                 if self.isLocalDubFallbackActive {
@@ -1860,14 +2219,79 @@ extension PlayerManager {
         }
     }
 
+    private var isDubTimelineFinalized: Bool {
+        isCompletionState(dubStatus)
+    }
+
+    private var isDubTrackCurrentlySelected: Bool {
+        if let selectedAudio {
+            return isLikelyDubTrack(selectedAudio)
+        }
+
+        return hasAutoSelectedDubTrack && isDubbedPlaybackActive
+    }
+
+    private func currentDubPlaybackTime(or playbackTime: Double? = nil) -> Double {
+        max(playbackTime ?? currentPlayer?.currentTime ?? currentTime, 0)
+    }
+
+    private func canActivateDubTrack(at playbackTime: Double) -> Bool {
+        let knownDuration = max(duration, playbackTime)
+        return DubSwitchPolicy.hasPlayableDubData(
+            segmentsReady: dubSegmentsReady,
+            totalSegments: dubTotalSegments,
+            chunkCount: dubReadyChunkCount,
+            resumePosition: playbackTime,
+            knownDuration: knownDuration,
+            isFinalized: isDubTimelineFinalized,
+            coverageStart: dubCoverageStartTime,
+            coverageEnd: dubCoverageEndTime
+        )
+    }
+
+    private func shouldPrepareDubContent(at playbackTime: Double) -> Bool {
+        let knownDuration = max(duration, playbackTime)
+        return DubSwitchPolicy.shouldPrepareDubMaster(
+            segmentsReady: dubSegmentsReady,
+            totalSegments: dubTotalSegments,
+            chunkCount: dubReadyChunkCount,
+            resumePosition: playbackTime,
+            knownDuration: knownDuration,
+            isFinalized: isDubTimelineFinalized,
+            coverageStart: dubCoverageStartTime,
+            coverageEnd: dubCoverageEndTime
+        )
+    }
+
+    private func reconcileDubTrackSelection(
+        at playbackTime: Double? = nil,
+        forceSourceFallback: Bool = false
+    ) {
+        guard hasLoadedDubbedMaster else { return }
+
+        let resolvedPlaybackTime = currentDubPlaybackTime(or: playbackTime)
+        if forceSourceFallback || !canActivateDubTrack(at: resolvedPlaybackTime) {
+            selectSourceAudioFallbackIfNeeded(
+                at: resolvedPlaybackTime,
+                force: true
+            )
+            return
+        }
+
+        autoSelectDubTrackIfNeeded(at: resolvedPlaybackTime)
+        if !hasAutoSelectedDubTrack {
+            selectSourceAudioFallbackIfNeeded(at: resolvedPlaybackTime)
+        }
+    }
+
     private func shouldResumeSourcePlaybackDuringDubSeek(to targetTime: Double) -> Bool {
         guard dubSessionID != nil else { return false }
         guard hasLoadedDubbedMaster else { return false }
         guard !isLocalDubFallbackActive else { return false }
         guard !shouldUsePreciseDubSeek else { return false }
-        guard let avPlayer = currentPlayer as? AVPlayerWrapper else { return false }
+        guard let seekWindowReporter else { return false }
 
-        return !avPlayer.canSeekWithinCurrentWindow(to: targetTime)
+        return !seekWindowReporter.canSeekWithinCurrentWindow(to: targetTime, tolerance: 0.75)
     }
 
     private func continueDubWorkflowOnSourcePlayback(
@@ -1928,6 +2352,23 @@ extension PlayerManager {
                 targetTime: stalledTime
             )
             return
+        }
+
+        if !canActivateDubTrack(at: stalledTime) {
+            refreshTrackInfo()
+            selectSourceAudioFallbackIfNeeded(
+                at: stalledTime,
+                force: true
+            )
+            if !isDubTrackCurrentlySelected {
+                debugLog(
+                    "Dub track reached the live edge, falling back to source audio. " +
+                    "session_id=\(sessionID) time=\(stalledTime)"
+                )
+                playbackResumeProgressReferenceTime = stalledTime
+                schedulePlaybackResumeIfNeeded(trigger: "dub-audio-fallback")
+                return
+            }
         }
 
         continueDubWorkflowOnSourcePlayback(
@@ -2136,9 +2577,11 @@ extension PlayerManager {
         )
     }
 
-    fileprivate func autoSelectDubTrackIfNeeded() {
+    fileprivate func autoSelectDubTrackIfNeeded(at playbackTime: Double? = nil) {
         guard !isLocalDubFallbackActive else { return }
         guard !hasAutoSelectedDubTrack else { return }
+        let resolvedPlaybackTime = currentDubPlaybackTime(or: playbackTime)
+        guard canActivateDubTrack(at: resolvedPlaybackTime) else { return }
         guard let dubTrack = availableAudioTracks.first(where: { isLikelyDubTrack($0) }) else { return }
 
         debugLog("Auto-selecting dub track: \(dubTrack.name) (\(dubTrack.id))")
@@ -2169,21 +2612,34 @@ extension PlayerManager {
         debugLog("Dub track selection did not stick yet; will retry when tracks update again.")
     }
 
-    fileprivate func selectSourceAudioFallbackIfNeeded() {
+    fileprivate func selectSourceAudioFallbackIfNeeded(
+        at playbackTime: Double? = nil,
+        force: Bool = false
+    ) {
         guard !isLocalDubFallbackActive else { return }
-        guard !hasAutoSelectedDubTrack else { return }
-        guard !hasAppliedSourceAudioFallback else { return }
+        if !force {
+            guard !hasAutoSelectedDubTrack else { return }
+            guard !hasAppliedSourceAudioFallback else { return }
+        }
 
         if let selectedAudio, !isLikelyDubTrack(selectedAudio) {
             isDubbedPlaybackActive = false
+            hasAutoSelectedDubTrack = false
             hasAppliedSourceAudioFallback = true
             return
         }
 
         guard let fallbackTrack = availableAudioTracks.first(where: { !isLikelyDubTrack($0) }) else { return }
-        debugLog("Selecting source audio while dubbing is in progress: \(fallbackTrack.name) (\(fallbackTrack.id))")
-        selectAudioTrack(track: fallbackTrack)
+        let resolvedPlaybackTime = currentDubPlaybackTime(or: playbackTime)
+        if selectedAudio?.id != fallbackTrack.id {
+            debugLog(
+                "Selecting source audio while dubbing is in progress: \(fallbackTrack.name) (\(fallbackTrack.id)) " +
+                "playback=\(resolvedPlaybackTime)"
+            )
+            selectAudioTrack(track: fallbackTrack)
+        }
         isDubbedPlaybackActive = false
+        hasAutoSelectedDubTrack = false
         hasAppliedSourceAudioFallback = true
     }
 
@@ -2210,6 +2666,7 @@ extension PlayerManager {
             chunkCount: chunkCount,
             resumePosition: resumePosition,
             knownDuration: knownDuration,
+            isFinalized: isDubTimelineFinalized,
             coverageStart: dubCoverageStartTime,
             coverageEnd: dubCoverageEndTime
         )
@@ -2468,6 +2925,15 @@ extension PlayerManager {
 
 // MARK: - PiP Controls
 extension PlayerManager {
+    public var isPiPSupported: Bool {
+        (currentPlayer as? PlayerPictureInPictureSupporting)?.isPictureInPictureSupported ?? false
+    }
+
+    public var canTogglePiP: Bool {
+        guard let pipSupport = currentPlayer as? PlayerPictureInPictureSupporting else { return false }
+        return pipSupport.isPictureInPictureSupported && (pipSupport.isPictureInPicturePossible || isPiPActive)
+    }
+
     public func startPiP() {
         currentPlayer?.startPiP()
     }
@@ -2585,8 +3051,19 @@ extension PlayerManager {
     }
     
     public func resetPlayer() {
+        resetPlayer(clearMediaContext: true, clearDubWorkflow: true)
+    }
+
+    private func resetPlayer(
+        clearMediaContext: Bool,
+        clearDubWorkflow: Bool
+    ) {
         cancelPendingPlaybackResume()
-        cancelDubWorkflow(reason: "Resetting player manager.")
+        if clearDubWorkflow {
+            cancelDubWorkflow(reason: "Resetting player manager.")
+        } else {
+            prepareDubWorkflowForBackendSwitch()
+        }
         cancelDubPlaybackRecovery()
 
         if let stateSource = currentPlayer as? PlayerStateSource {
@@ -2606,8 +3083,12 @@ extension PlayerManager {
         isPlaying = false
         isBuffering = false
         isPiPActive = false
-        currentTime = 0
+        if clearMediaContext {
+            currentTime = 0
+        }
         duration = 0
+        bufferedDuration = 0
+        isExternalEpisodeNavigationInProgress = false
         shouldResumePlaybackAfterStall = false
         
         userInteracting = false
@@ -2622,10 +3103,13 @@ extension PlayerManager {
         selectedSubtitle = nil
         availableAudioTracks = []
         availableSubtitles = []
-        playerItem = nil
-        playerItems = []
-        currentPlayerItemIndex = 0
-        contentType = .movie
+        if clearMediaContext {
+            playerItem = nil
+            playerItems = []
+            currentPlayerItemIndex = 0
+            contentType = .movie
+            clearExternalEpisodeNavigation()
+        }
         
         stateCancellables.removeAll()
     }
@@ -2705,7 +3189,7 @@ extension PlayerManager {
     }
 
     private func setPrimaryPlayerMuted(_ muted: Bool) {
-        (currentPlayer as? AVPlayerWrapper)?.setMuted(muted)
+        primaryMuteController?.setMuted(muted)
     }
 
     private func applyRuntimeState(_ state: PlayerRuntimeState) {
@@ -2723,7 +3207,7 @@ extension PlayerManager {
         bufferedDuration = state.bufferedDuration
         logRuntimeStateIfChanged(state)
 
-        if state.isPlaying {
+        if hasPlaybackProgressedSinceResumeReference(currentTime: state.currentTime) {
             cancelPendingPlaybackResume()
         }
 
@@ -2746,8 +3230,7 @@ extension PlayerManager {
         }
 
         if dubSessionID != nil, hasLoadedDubbedMaster {
-            autoSelectDubTrackIfNeeded()
-            selectSourceAudioFallbackIfNeeded()
+            reconcileDubTrackSelection(at: state.currentTime)
         }
     }
 }
@@ -2789,6 +3272,9 @@ extension PlayerManager: PlayerLifecycleReporting {
             "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false) " +
             "buffering=\(currentPlayer?.isBuffering ?? false)"
         )
+        if playbackResumeProgressReferenceTime == nil {
+            playbackResumeProgressReferenceTime = max(currentPlayer?.currentTime ?? currentTime, 0)
+        }
         playbackManager?.play()
         if isLocalDubFallbackActive {
             dubFallbackPlayer.play(rate: playbackSpeed)
@@ -2816,12 +3302,21 @@ extension PlayerManager: PlayerLifecycleReporting {
             "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false) " +
             "buffering=\(currentPlayer?.isBuffering ?? false)"
         )
+        let resumeProgressReferenceTime = playbackResumeProgressReferenceTime
+            ?? max(currentPlayer?.currentTime ?? currentTime, 0)
         cancelPendingPlaybackResume()
+        playbackResumeProgressReferenceTime = resumeProgressReferenceTime
         playbackResumeTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.playbackResumeTask = nil }
 
-            let retryDelays: [UInt64] = [0, 180_000_000, 600_000_000]
+            let retryDelays: [UInt64] = [
+                0,
+                150_000_000,
+                350_000_000,
+                750_000_000,
+                1_500_000_000,
+            ]
             for delay in retryDelays {
                 if delay > 0 {
                     try? await Task.sleep(nanoseconds: delay)
@@ -2830,10 +3325,10 @@ extension PlayerManager: PlayerLifecycleReporting {
                 guard !Task.isCancelled else { return }
                 guard self.shouldResumePlaybackAfterStall, self.isMediaReady else { return }
 
-                if self.currentPlayer?.isPlaying == true {
-                    self.debugLog("Playback resume no-op because player is already playing. trigger=\(trigger)")
-                    self.isPlaying = true
-                    self.isBuffering = self.currentPlayer?.isBuffering ?? false
+                if self.hasPlaybackProgressedSinceResumeReference(
+                    currentTime: self.currentPlayer?.currentTime ?? self.currentTime
+                ) {
+                    self.debugLog("Playback resume completed after progress advanced. trigger=\(trigger)")
                     return
                 }
 
@@ -2841,6 +3336,12 @@ extension PlayerManager: PlayerLifecycleReporting {
                 self.performPlaybackResumeAttempt()
             }
         }
+    }
+
+    private func hasPlaybackProgressedSinceResumeReference(currentTime: Double) -> Bool {
+        guard let playbackResumeProgressReferenceTime else { return false }
+        guard currentTime.isFinite else { return false }
+        return currentTime > playbackResumeProgressReferenceTime + 0.15
     }
     
     func playerDidUpdateTracks() {
@@ -2866,8 +3367,7 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
         if hasLoadedDubbedMaster {
-            autoSelectDubTrackIfNeeded()
-            selectSourceAudioFallbackIfNeeded()
+            reconcileDubTrackSelection()
         }
     }
     
@@ -2904,7 +3404,19 @@ extension PlayerManager: PlayerLifecycleReporting {
 
         if let sessionID = dubSessionID,
            hasLoadedDubbedMaster,
-           !isLocalDubFallbackActive {
+           !allowProgressiveDubSwitching {
+            debugLog(
+                "Dubbed stream stalled in stable mode. Restoring original playback. " +
+                "session_id=\(sessionID) time=\(stalledTime) buffered=\(bufferedDuration)"
+            )
+            stopDubbingAndReturnToOriginalAudio(reason: "Dubbed stream stalled in stable mode.")
+            return
+        }
+
+        if let sessionID = dubSessionID,
+           hasLoadedDubbedMaster,
+           !isLocalDubFallbackActive,
+           isDubTrackCurrentlySelected {
             debugLog(
                 "Player stalled during dubbed playback. session_id=\(sessionID) " +
                 "time=\(stalledTime) buffered=\(bufferedDuration)"
@@ -2971,7 +3483,7 @@ extension PlayerManager {
                 
                 switch event {
                 case .playPause:
-                    self.isPlaying ? self.pause() : self.play()
+                    self.isPlaybackRequested ? self.pause() : self.play()
                     
                 case .rewind:
                     self.scrubBackward(by: 10)

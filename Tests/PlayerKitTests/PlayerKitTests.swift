@@ -28,6 +28,173 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(PlayerManager.shared.currentPlayerItemIndex, 1)
         XCTAssertEqual(PlayerManager.shared.playerItem?.title, "Episode 2")
     }
+
+    func testSwitchPlayerPreservesCurrentMovieItemAcrossBackendSwitch() throws {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.currentTime = 123.45
+        manager.currentPlayer = player
+
+        let item = PlayerItem(
+            title: "Movie",
+            description: "Description",
+            url: URL(string: "https://example.com/movie.m3u8")!,
+            posterUrl: URL(string: "https://example.com/poster.jpg"),
+            castVideoUrl: URL(string: "https://example.com/cast.mp4"),
+            externalPlaybackContentType: "application/x-mpegURL",
+            externalPlaybackDuration: 5400
+        )
+        manager.playerItem = item
+        manager.contentType = .movie
+
+        guard let targetType = alternatePlayerType(for: manager.selectedPlayerType) else {
+            throw XCTSkip("Current platform exposes only one supported backend.")
+        }
+
+        manager.switchPlayer(to: targetType)
+
+        XCTAssertEqual(manager.playerItem?.title, item.title)
+        XCTAssertEqual(manager.playerItem?.description, item.description)
+        XCTAssertEqual(manager.playerItem?.url, item.url)
+        XCTAssertEqual(manager.playerItem?.posterUrl, item.posterUrl)
+        XCTAssertEqual(manager.playerItem?.castVideoUrl, item.castVideoUrl)
+        XCTAssertEqual(manager.playerItem?.externalPlaybackContentType, item.externalPlaybackContentType)
+        XCTAssertEqual(manager.playerItem?.externalPlaybackDuration, item.externalPlaybackDuration)
+        XCTAssertEqual(manager.playerItem?.lastPosition ?? -1, 123.45, accuracy: 0.001)
+        XCTAssertEqual(manager.contentType, .movie)
+    }
+
+    func testSwitchPlayerPreservesPausedPlaybackIntent() throws {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.currentTime = 42
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.playerItem = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
+
+        manager.play()
+        manager.pause()
+        XCTAssertFalse(manager.isPlaybackRequested)
+
+        guard let targetType = alternatePlayerType(for: manager.selectedPlayerType) else {
+            throw XCTSkip("Current platform exposes only one supported backend.")
+        }
+
+        manager.switchPlayer(to: targetType)
+
+        XCTAssertFalse(manager.isPlaybackRequested)
+        XCTAssertFalse(manager.isPlaying)
+        XCTAssertEqual(manager.playerItem?.lastPosition ?? -1, 42, accuracy: 0.001)
+    }
+
+    func testSwitchPlayerPreservesEpisodeQueueAndExternalNavigation() throws {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.currentTime = 88
+        manager.currentPlayer = player
+
+        let episode1 = PlayerItem(title: "Episode 1", url: URL(string: "https://example.com/e1.m3u8")!, episodeIndex: 1)
+        let episode2 = PlayerItem(title: "Episode 2", url: URL(string: "https://example.com/e2.m3u8")!, episodeIndex: 2)
+        manager.playerItems = [episode1, episode2]
+        manager.currentPlayerItemIndex = 1
+        manager.playerItem = episode2
+        manager.contentType = .episode
+        manager.configureExternalEpisodeNavigation(canPlayPrevious: true, canPlayNext: false) { _ in
+            true
+        }
+
+        guard let targetType = alternatePlayerType(for: manager.selectedPlayerType) else {
+            throw XCTSkip("Current platform exposes only one supported backend.")
+        }
+
+        manager.switchPlayer(to: targetType)
+
+        XCTAssertEqual(manager.currentPlayerItemIndex, 1)
+        XCTAssertEqual(manager.playerItems.count, 2)
+        XCTAssertEqual(manager.playerItem?.title, "Episode 2")
+        XCTAssertEqual(manager.playerItem?.lastPosition ?? -1, 88, accuracy: 0.001)
+        XCTAssertEqual(manager.playerItems[1].lastPosition ?? -1, 88, accuracy: 0.001)
+        XCTAssertTrue(manager.canPlayPreviousItem)
+        XCTAssertFalse(manager.canPlayNextItem)
+
+        manager.updateExternalEpisodeNavigationAvailability(canPlayPrevious: false, canPlayNext: true)
+
+        XCTAssertFalse(manager.canPlayPreviousItem)
+        XCTAssertTrue(manager.canPlayNextItem)
+    }
+
+    func testEnsurePlayerConfiguredUsesSwitchForLoadedContent() throws {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.currentTime = 64
+        manager.currentPlayer = player
+
+        let item = PlayerItem(
+            title: "Movie",
+            description: "Description",
+            url: URL(string: "https://example.com/movie.m3u8")!,
+            posterUrl: URL(string: "https://example.com/poster.jpg")
+        )
+        manager.playerItem = item
+        manager.contentType = .movie
+
+        guard let targetType = alternatePlayerType(for: manager.selectedPlayerType) else {
+            throw XCTSkip("Current platform exposes only one supported backend.")
+        }
+        manager.ensurePlayerConfigured(type: targetType)
+
+        XCTAssertEqual(manager.selectedPlayerType, targetType)
+        XCTAssertEqual(manager.playerItem?.title, item.title)
+        XCTAssertEqual(manager.playerItem?.url, item.url)
+        XCTAssertEqual(manager.playerItem?.lastPosition ?? -1, 64, accuracy: 0.001)
+        XCTAssertEqual(manager.contentType, .movie)
+    }
+
+    func testPlayNextUsesExternalEpisodeNavigationHandlerInsteadOfLocalEpisodeList() async {
+        let manager = PlayerManager.shared
+        let episode1 = PlayerItem(title: "Episode 1", url: URL(string: "https://example.com/e1.m3u8")!, episodeIndex: 1)
+        let episode2 = PlayerItem(title: "Episode 2", url: URL(string: "https://example.com/e2.m3u8")!, episodeIndex: 2)
+        let navigationExpectation = expectation(description: "External episode navigation invoked")
+        let recorder = EpisodeNavigationRecorder()
+
+        await MainActor.run {
+            manager.playerItems = [episode1, episode2]
+            manager.currentPlayerItemIndex = 0
+            manager.contentType = .episode
+            manager.configureExternalEpisodeNavigation(canPlayPrevious: false, canPlayNext: true) { direction in
+                await recorder.record(direction)
+                navigationExpectation.fulfill()
+                return true
+            }
+
+            manager.playNext()
+        }
+
+        await fulfillment(of: [navigationExpectation], timeout: 1.0)
+        let receivedDirections = await recorder.snapshot()
+
+        XCTAssertEqual(receivedDirections.count, 1)
+        XCTAssertEqual(receivedDirections.first, .next)
+        XCTAssertEqual(manager.currentPlayerItemIndex, 0)
+        XCTAssertFalse(manager.isExternalEpisodeNavigationInProgress)
+    }
+
+    func testExternalEpisodeNavigationAvailabilityOverridesPrevNextAvailability() {
+        let manager = PlayerManager.shared
+        manager.contentType = .episode
+
+        manager.configureExternalEpisodeNavigation(canPlayPrevious: false, canPlayNext: true) { _ in
+            true
+        }
+
+        XCTAssertFalse(manager.canPlayPreviousItem)
+        XCTAssertTrue(manager.canPlayNextItem)
+
+        manager.updateExternalEpisodeNavigationAvailability(canPlayPrevious: true, canPlayNext: false)
+
+        XCTAssertTrue(manager.canPlayPreviousItem)
+        XCTAssertFalse(manager.canPlayNextItem)
+    }
     
     func testLoadSingleItemSetsMovieContentTypeByDefault() {
         let movie = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
@@ -137,6 +304,7 @@ final class PlayerKitTests: XCTestCase {
 
         XCTAssertTrue(manager.isPlaying)
         XCTAssertTrue(manager.isBuffering)
+        XCTAssertTrue(manager.isPlaybackRequested)
         XCTAssertEqual(manager.currentTime, 0, accuracy: 0.001)
     }
 
@@ -154,6 +322,7 @@ final class PlayerKitTests: XCTestCase {
 
         XCTAssertTrue(manager.isMediaReady)
         XCTAssertTrue(manager.isPlaying)
+        XCTAssertTrue(manager.isPlaybackRequested)
         XCTAssertGreaterThanOrEqual(player.playCallCount, 1)
     }
 
@@ -172,7 +341,28 @@ final class PlayerKitTests: XCTestCase {
         try? await Task.sleep(nanoseconds: 250_000_000)
 
         XCTAssertTrue(manager.isPlaying)
+        XCTAssertTrue(manager.isPlaybackRequested)
         XCTAssertGreaterThanOrEqual(player.playCallCount, 2)
+    }
+
+    func testPlayerDidBecomeReadyKeepsRetryingWhenStartupFalselyReportsPlaying() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        player.autoplayOnLoad = false
+        player.playAttemptsBeforePlaying = 4
+        player.reportsPlayingDuringStartup = true
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+
+        let item = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
+        manager.load(playerItem: item)
+        manager.playerDidBecomeReady()
+
+        try? await Task.sleep(nanoseconds: 1_400_000_000)
+
+        XCTAssertTrue(manager.isPlaying)
+        XCTAssertTrue(manager.isPlaybackRequested)
+        XCTAssertGreaterThanOrEqual(player.playCallCount, 4)
     }
     
     func testCastManagerReceivesPlayerItemProviderBinding() {
@@ -197,9 +387,11 @@ final class PlayerKitTests: XCTestCase {
         
         AudioSessionManager.shared.onResumeRequested?()
         XCTAssertTrue(manager.isPlaying)
+        XCTAssertTrue(manager.isPlaybackRequested)
         
         AudioSessionManager.shared.onPauseRequested?()
         XCTAssertFalse(manager.isPlaying)
+        XCTAssertFalse(manager.isPlaybackRequested)
     }
 
     func testPlayerDidStallDoesNotResumeWhenPlaybackWasPaused() {
@@ -215,6 +407,7 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(player.playCallCount, 1)
         XCTAssertEqual(player.pauseCallCount, 1)
         XCTAssertTrue(manager.isBuffering)
+        XCTAssertFalse(manager.isPlaybackRequested)
     }
 
     func testPlayerDidStallResumesWhenPlaybackShouldContinue() async {
@@ -231,6 +424,22 @@ final class PlayerKitTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(player.playCallCount, 2)
         XCTAssertTrue(manager.isPlaying)
+        XCTAssertTrue(manager.isPlaybackRequested)
+    }
+
+    func testPlaybackRequestRemainsPlayingDuringTransientStall() {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.isMediaReady = true
+
+        manager.play()
+        player.isPlaying = false
+        manager.playerDidStall()
+
+        XCTAssertTrue(manager.isPlaybackRequested)
+        XCTAssertTrue(manager.isBuffering)
     }
 
     func testPlayerFacadeLoadURLCreatesDefaultPlayerItem() {
@@ -706,13 +915,27 @@ final class PlayerKitTests: XCTestCase {
         )
     }
 
-    func testDubSwitchPolicyBlocksActivationBeforeCoverageWindowStarts() {
-        XCTAssertFalse(
+    func testDubSwitchPolicyAllowsActivationBeforeFirstDialogueWhenLiveEdgeHasHeadroom() {
+        XCTAssertTrue(
             DubSwitchPolicy.hasPlayableDubData(
                 segmentsReady: 12,
                 totalSegments: 55,
                 chunkCount: 6,
                 resumePosition: 7.2,
+                knownDuration: 720,
+                coverageStart: 33.223,
+                coverageEnd: 58.249
+            )
+        )
+    }
+
+    func testDubSwitchPolicyBlocksActivationNearLiveEdgeWhileProcessing() {
+        XCTAssertFalse(
+            DubSwitchPolicy.hasPlayableDubData(
+                segmentsReady: 12,
+                totalSegments: 55,
+                chunkCount: 6,
+                resumePosition: 52.0,
                 knownDuration: 720,
                 coverageStart: 33.223,
                 coverageEnd: 58.249
@@ -734,6 +957,21 @@ final class PlayerKitTests: XCTestCase {
         )
     }
 
+    func testDubSwitchPolicyAllowsPlaybackPastLastDialogueWhenTimelineIsFinalized() {
+        XCTAssertTrue(
+            DubSwitchPolicy.hasPlayableDubData(
+                segmentsReady: 12,
+                totalSegments: 55,
+                chunkCount: 6,
+                resumePosition: 84.0,
+                knownDuration: 720,
+                isFinalized: true,
+                coverageStart: 33.223,
+                coverageEnd: 58.249
+            )
+        )
+    }
+
     func testDubSwitchPolicyRetriesBeforeCompleteWhenPlayableChunksExist() {
         XCTAssertTrue(
             DubSwitchPolicy.shouldRetryAfterFailure(
@@ -743,6 +981,26 @@ final class PlayerKitTests: XCTestCase {
                 resumePosition: 9.1,
                 knownDuration: 720,
                 status: "Translating..."
+            )
+        )
+    }
+
+    func testDubSwitchPolicyBlocksProgressiveSwitchWhenStableModePrefersFinalizedPlayback() {
+        XCTAssertFalse(
+            DubSwitchPolicy.shouldSwitchToDubbedMaster(
+                isDubPlayable: true,
+                isFinalized: false,
+                allowProgressiveSwitching: false
+            )
+        )
+    }
+
+    func testDubSwitchPolicyAllowsSwitchWhenDubIsFinalizedInStableMode() {
+        XCTAssertTrue(
+            DubSwitchPolicy.shouldSwitchToDubbedMaster(
+                isDubPlayable: true,
+                isFinalized: true,
+                allowProgressiveSwitching: false
             )
         )
     }
@@ -854,6 +1112,7 @@ private final class MockPlayer: PlayerProtocol {
     var pauseCallCount = 0
     var autoplayOnLoad = true
     var playAttemptsBeforePlaying = 1
+    var reportsPlayingDuringStartup = false
     var pauseOnSeek = false
     var ignoredPlayAttemptsAfterSeek = 0
     private var ignoredPlayAttemptsRemaining = 0
@@ -865,7 +1124,11 @@ private final class MockPlayer: PlayerProtocol {
             isPlaying = false
             return
         }
-        isPlaying = playCallCount >= playAttemptsBeforePlaying
+        if playCallCount >= playAttemptsBeforePlaying {
+            isPlaying = true
+        } else {
+            isPlaying = reportsPlayingDuringStartup
+        }
     }
 
     func pause() {
@@ -921,4 +1184,20 @@ private final class MockPlayer: PlayerProtocol {
     func fetchStreamingInfo() -> StreamingInfo {
         .placeholder
     }
+}
+
+private actor EpisodeNavigationRecorder {
+    private var directions: [PlayerEpisodeNavigationDirection] = []
+
+    func record(_ direction: PlayerEpisodeNavigationDirection) {
+        directions.append(direction)
+    }
+
+    func snapshot() -> [PlayerEpisodeNavigationDirection] {
+        directions
+    }
+}
+
+private func alternatePlayerType(for type: PlayerType) -> PlayerType? {
+    PlayerType.supportedCases.first(where: { $0 != type })
 }

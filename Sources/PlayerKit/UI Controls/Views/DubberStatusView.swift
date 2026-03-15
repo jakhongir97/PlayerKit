@@ -237,6 +237,7 @@ struct DubberStatusView: View {
             )
         }
         .buttonStyle(.plain)
+        .desktopHoverLift()
     }
 
     private var primaryActionColors: [Color] {

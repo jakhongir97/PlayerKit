@@ -33,7 +33,6 @@ struct MediaOptionsMenu: View {
             .buttonStyle(.plain)
             .transaction { $0.animation = nil }
         } else if #available(iOS 15.0, macOS 12.0, *) {
-            // iOS 15–25: material-based "glass"
             HStack {
                 PlaybackSpeedMenu(playerManager: playerManager)
 
@@ -48,7 +47,6 @@ struct MediaOptionsMenu: View {
             .contentShape(Capsule())
             .buttonStyle(.plain)
         } else {
-            // Very old fallback
             HStack {
                 PlaybackSpeedMenu(playerManager: playerManager)
 

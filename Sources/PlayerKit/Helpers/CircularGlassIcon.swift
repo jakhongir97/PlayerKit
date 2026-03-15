@@ -12,6 +12,7 @@ private struct CircularGlassIcon: ViewModifier {
     var iconSize: CGFloat = 20
     var frameSize: CGFloat = 30
     var padding: CGFloat = 10
+    var desktopHoverEnabled: Bool = true
 
     func body(content: Content) -> some View {
         content
@@ -22,6 +23,7 @@ private struct CircularGlassIcon: ViewModifier {
             .contentShape(Circle())
             .clipShape(Circle())
             .modifier(GlassCircle())
+            .desktopHoverLift(enabled: desktopHoverEnabled)
     }
 
     private struct GlassCircle: ViewModifier {
@@ -29,7 +31,6 @@ private struct CircularGlassIcon: ViewModifier {
             if #available(iOS 26.0, macOS 26.0, *) {
                 content.glassEffect(.clear, in: .circle)
             } else if #available(iOS 15.0, macOS 12.0, *) {
-                // Material-based fallback
                 content
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay(
@@ -45,7 +46,15 @@ private struct CircularGlassIcon: ViewModifier {
 public extension View {
     func circularGlassIcon(iconSize: CGFloat = 20,
                            frameSize: CGFloat = 30,
-                           padding: CGFloat = 10) -> some View {
-        modifier(CircularGlassIcon(iconSize: iconSize, frameSize: frameSize, padding: padding))
+                           padding: CGFloat = 10,
+                           desktopHoverEnabled: Bool = true) -> some View {
+        modifier(
+            CircularGlassIcon(
+                iconSize: iconSize,
+                frameSize: frameSize,
+                padding: padding,
+                desktopHoverEnabled: desktopHoverEnabled
+            )
+        )
     }
 }

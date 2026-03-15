@@ -10,18 +10,17 @@ struct PiPButton: View {
     var body: some View {
         Button(action: {
             if playerManager.isPiPActive {
-                playerManager.stopPiP()  // Stop PiP if it's active
+                playerManager.stopPiP()
             } else {
-                playerManager.startPiP()  // Start PiP if it's not active
+                playerManager.startPiP()
             }
         }) {
-            // Change the image based on whether PiP is active
             Image(systemName: playerManager.isPiPActive ? "pip.fill" : "pip")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(10)
+                .circularGlassIcon()
+                .opacity(playerManager.canTogglePiP ? 1 : 0.5)
         }
         .buttonStyle(.plain)
+        .disabled(!playerManager.canTogglePiP)
         .accessibilityLabel(playerManager.isPiPActive ? "Stop Picture in Picture" : "Start Picture in Picture")
         .accessibilityHint("Toggles Picture in Picture mode")
         .accessibilityIdentifier("player.pip")

@@ -7,9 +7,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var player: SmoothPlayer?
     private var playerView = AVPlayerView()
     private var currentSourceURL: URL?
-    #if os(iOS)
     private var pipController: AVPictureInPictureController?
-    #endif
     
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playbackEndedObserver: Any?
@@ -321,26 +319,42 @@ extension AVPlayerWrapper: ViewRenderingProtocol {
     }
     
     public func setupPiP() {
-        #if os(iOS)
-        pipController = AVPictureInPictureController(playerLayer: playerView.playerLayer)
-        pipController?.delegate = self
-        #endif
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            pipController = nil
+            return
+        }
+
+        if pipController == nil {
+            pipController = AVPictureInPictureController(playerLayer: playerView.playerLayer)
+            pipController?.delegate = self
+        }
     }
     
     public func startPiP() {
-        #if os(iOS)
-        if AVPictureInPictureController.isPictureInPictureSupported() {
-            pipController?.startPictureInPicture()
-        } else {
-            print("PiP is not supported on this device.")
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            debugLog("PiP start ignored because the platform does not support Picture in Picture.")
+            return
         }
-        #endif
+
+        if pipController == nil {
+            setupPiP()
+        }
+
+        guard let pipController else {
+            debugLog("PiP start ignored because the controller is unavailable.")
+            return
+        }
+
+        guard pipController.isPictureInPicturePossible || pipController.isPictureInPictureActive else {
+            debugLog("PiP start ignored because Picture in Picture is not possible yet.")
+            return
+        }
+
+        pipController.startPictureInPicture()
     }
     
     public func stopPiP() {
-        #if os(iOS)
         pipController?.stopPictureInPicture()
-        #endif
     }
 }
 
@@ -363,10 +377,8 @@ extension AVPlayerWrapper: GestureHandlingProtocol {
     }
 }
 
-// MARK: - AVPictureInPictureControllerDelegate
-#if os(iOS)
 extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
-    public func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    public func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         lifecycleReporter?.playerDidChangePiPState(isActive: true)
     }
     
@@ -374,16 +386,38 @@ extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
         lifecycleReporter?.playerDidChangePiPState(isActive: false)
     }
     
-    public func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController) async -> Bool {
-        await MainActor.run {
-            setGravityToDefault()
+    public func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError error: Error
+    ) {
+        debugLog("PiP failed to start. error=\(error.localizedDescription)")
+        lifecycleReporter?.playerDidChangePiPState(isActive: false)
+    }
+
+    public func pictureInPictureController(
+        _ pictureInPictureController: AVPictureInPictureController,
+        restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            self?.setGravityToDefault()
+            completionHandler(true)
         }
-        return true
     }
 }
-#endif
 
 extension AVPlayerWrapper: PlayerEventSource {}
+
+extension AVPlayerWrapper: PlayerMuteControlling, PlayerPreciseSeeking, PlayerSeekWindowReporting {}
+
+extension AVPlayerWrapper: PlayerPictureInPictureSupporting {
+    var isPictureInPictureSupported: Bool {
+        AVPictureInPictureController.isPictureInPictureSupported()
+    }
+
+    var isPictureInPicturePossible: Bool {
+        pipController?.isPictureInPicturePossible ?? false
+    }
+}
 
 extension AVPlayerWrapper: PlayerStateSource {
     func startRuntimeStateUpdates() {

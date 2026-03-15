@@ -4,7 +4,7 @@ struct NextButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
     private var isDisabled: Bool {
-        playerManager.playerItems.isEmpty || playerManager.currentPlayerItemIndex >= playerManager.playerItems.count - 1
+        !playerManager.canPlayNextItem
     }
 
     var body: some View {
@@ -13,7 +13,7 @@ struct NextButtonView: View {
             HapticsManager.shared.triggerImpactFeedback(style: .light)
         }) {
             Image("next", bundle: .module)
-                .circularGlassIcon(frameSize: 40)
+                .circularGlassIcon(frameSize: 40, desktopHoverEnabled: !isDisabled)
                 .opacity(isDisabled ? 0.5 : 1.0)
         }
         .buttonStyle(.plain)

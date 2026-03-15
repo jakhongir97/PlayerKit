@@ -6,14 +6,14 @@ struct PlayPauseButtonView: View {
     var body: some View {
         HStack {
             Button(action: {
-                playerManager.isPlaying ? playerManager.pause() : playerManager.play()
+                playerManager.isPlaybackRequested ? playerManager.pause() : playerManager.play()
                 HapticsManager.shared.triggerImpactFeedback(style: .medium)
             }) {
-                Image(playerManager.isPlaying ? "pause" : "play", bundle: .module)
-                    .circularGlassIcon(frameSize: 60)
+                Image(playerManager.isPlaybackRequested ? "pause" : "play", bundle: .module)
+                    .circularGlassIcon(frameSize: PlayerKitPlatform.isDesktop ? 64 : 60)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(playerManager.isPlaying ? "Pause" : "Play")
+            .accessibilityLabel(playerManager.isPlaybackRequested ? "Pause" : "Play")
             .accessibilityHint("Toggles playback")
             .accessibilityIdentifier("player.playPause")
         }

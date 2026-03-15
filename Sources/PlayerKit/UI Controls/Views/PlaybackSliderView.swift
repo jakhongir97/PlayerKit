@@ -99,7 +99,7 @@ struct PlaybackSliderView: View {
         .onAppear {
             sliderValue = playerManager.currentTime
         }
-        .onChange(of: playerManager.currentTime) { _, newValue in
+        .compatOnChange(of: playerManager.currentTime) { newValue in
             if !isEditingSlider {
                 sliderValue = newValue
                 if let pendingSeekValue, abs(pendingSeekValue - newValue) < 0.75 {

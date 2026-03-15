@@ -11,9 +11,7 @@ struct RotateButtonView: View {
     var body: some View {
         Button(action: toggleOrientation) {
             Image(systemName: "rotate.right")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(10)
+                .circularGlassIcon()
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Rotate player")

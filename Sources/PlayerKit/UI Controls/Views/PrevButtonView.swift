@@ -4,7 +4,7 @@ struct PrevButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
     private var isDisabled: Bool {
-        playerManager.playerItems.isEmpty || playerManager.currentPlayerItemIndex <= 0
+        !playerManager.canPlayPreviousItem
     }
 
     var body: some View {
@@ -13,7 +13,7 @@ struct PrevButtonView: View {
             HapticsManager.shared.triggerImpactFeedback(style: .light)
         }) {
             Image("prev", bundle: .module)
-                .circularGlassIcon(frameSize: 40)
+                .circularGlassIcon(frameSize: 40, desktopHoverEnabled: !isDisabled)
                 .opacity(isDisabled ? 0.5 : 1.0)
         }
         .buttonStyle(.plain)
