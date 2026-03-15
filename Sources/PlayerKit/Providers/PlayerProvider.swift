@@ -25,7 +25,7 @@ class VLCPlayerProvider: PlayerProvider {
 
 class PlayerFactory {
     static func getProvider(for type: PlayerType) -> PlayerProvider {
-        switch type {
+        switch PlayerType.resolved(type) {
         case .avPlayer:
             return AVPlayerProvider()
         case .vlcPlayer:

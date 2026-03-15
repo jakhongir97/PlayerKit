@@ -1,12 +1,19 @@
-#if canImport(VLCKit) && canImport(UIKit)
+#if canImport(VLCKit)
+import Foundation
 import VLCKit
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public var player: VLCMediaPlayer
     private let playerView = VLCPlayerView()
+    #if canImport(UIKit)
     public var pipController: VLCPictureInPictureWindowControlling?
     private var drawableProxy: VLCPlayerDrawableProxy?
+    #endif
     private var lastPosition: Double?
     private var shouldEmitRuntimeState = false
     
@@ -16,12 +23,15 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     public override init() {
         self.player = VLCMediaPlayer()
         super.init()
-        
+
+        #if canImport(UIKit)
         drawableProxy = VLCPlayerDrawableProxy(wrapper: self)
-        
-        player.delegate = self
         player.drawable = drawableProxy
-        
+        #else
+        player.drawable = playerView
+        #endif
+
+        player.delegate = self
         setupObservers()
     }
     
@@ -33,16 +43,22 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     }
     
     func setupObservers() {
+        #if canImport(UIKit)
         NotificationCenter.default.addObserver(self, selector: #selector(handleDeviceLock), name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+        #endif
     }
     
+    #if canImport(UIKit)
     @objc private func handleDeviceLock() {
         player.pause()
     }
+    #endif
     
     deinit {
         print("VLCPlayerWrapper deinit")
+        #if canImport(UIKit)
         NotificationCenter.default.removeObserver(self, name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+        #endif
     }
     
 }
@@ -71,6 +87,10 @@ extension VLCPlayerWrapper: PlaybackControlProtocol {
     public func stop() {
         player.stop()
         emitRuntimeState()
+    }
+
+    public func setMuted(_ muted: Bool) {
+        player.audio?.isMuted = muted
     }
 }
 
@@ -207,6 +227,11 @@ extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
                 self.lifecycleReporter?.playerDidEndPlayback()
                 self.emitRuntimeState()
             }
+        } else if newState == .buffering {
+            DispatchQueue.main.async {
+                self.lifecycleReporter?.playerDidStall()
+                self.emitRuntimeState()
+            }
         } else if newState == .error {
             DispatchQueue.main.async {
                 self.lifecycleReporter?.playerDidFail(with: .mediaLoadFailed("VLC playback error"))
@@ -225,26 +250,29 @@ extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
 
 // MARK: - ViewRenderingProtocol
 extension VLCPlayerWrapper: ViewRenderingProtocol {
-    // Implement getPlayerView to return the cached UIView
-    public func getPlayerView() -> UIView {
+    public func getPlayerView() -> PKView {
         return playerView
     }
     
     public func setupPiP() {}
     
     public func startPiP() {
+        #if canImport(UIKit)
         pipController?.startPictureInPicture()
+        #endif
     }
     
     public func stopPiP() {
+        #if canImport(UIKit)
         pipController?.stopPictureInPicture()
+        #endif
     }
 }
 
 // MARK: - GestureHandlingProtocol
 extension VLCPlayerWrapper: GestureHandlingProtocol {
     public func handlePinchGesture(scale: CGFloat) {
-        guard !UIDevice.current.isPortrait else { return }
+        guard !PlayerKitPlatform.isPortraitInterface else { return }
         scale > 1 ? setGravityToFill() : setGravityToDefault()
     }
     
@@ -262,9 +290,13 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
     }
     
     private func currentAspectRatio() -> String {
-        let screenWidth = UIScreen.main.bounds.width
-        let screenHeight = UIScreen.main.bounds.height
-        return "\(Int(screenWidth)):\(Int(screenHeight))"
+        let bounds = playerView.bounds
+        let width = Int(bounds.width)
+        let height = Int(bounds.height)
+        if width > 0, height > 0 {
+            return "\(width):\(height)"
+        }
+        return "16:9"
     }
 }
 
@@ -325,6 +357,26 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
 
 extension VLCPlayerWrapper: PlayerEventSource {}
 
+extension VLCPlayerWrapper: PlayerMuteControlling {}
+
+extension VLCPlayerWrapper: PlayerPictureInPictureSupporting {
+    var isPictureInPictureSupported: Bool {
+        #if canImport(UIKit)
+        true
+        #else
+        false
+        #endif
+    }
+
+    var isPictureInPicturePossible: Bool {
+        #if canImport(UIKit)
+        pipController != nil
+        #else
+        false
+        #endif
+    }
+}
+
 extension VLCPlayerWrapper: PlayerStateSource {
     func startRuntimeStateUpdates() {
         shouldEmitRuntimeState = true
@@ -349,6 +401,8 @@ extension VLCPlayerWrapper {
         onRuntimeStateChange?(state)
     }
 }
+#elseif os(macOS)
+public typealias VLCPlayerWrapper = DesktopVLCPlayerWrapper
 #else
 public typealias VLCPlayerWrapper = AVPlayerWrapper
 #endif

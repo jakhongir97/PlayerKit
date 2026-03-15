@@ -37,6 +37,47 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(PlayerManager.shared.contentType, .movie)
         XCTAssertEqual(PlayerManager.shared.playerItem?.title, "Movie")
     }
+
+    func testSupportedPlayerTypesMatchCurrentPlatform() {
+        if PlayerType.vlcPlayer.isSupported {
+        XCTAssertEqual(PlayerType.supportedCases, [.vlcPlayer, .avPlayer])
+        XCTAssertTrue(PlayerType.vlcPlayer.isSupported)
+        } else {
+        XCTAssertEqual(PlayerType.supportedCases, [.avPlayer])
+        XCTAssertFalse(PlayerType.vlcPlayer.isSupported)
+        }
+    }
+
+    func testDesktopVLCWrapperCanStartRuntimeUpdatesWithoutLoadedMedia() throws {
+        #if os(macOS) && !canImport(VLCKit)
+        let wrapper = DesktopVLCPlayerWrapper()
+
+        wrapper.startRuntimeStateUpdates()
+
+        XCTAssertFalse(wrapper.isPlaying)
+        XCTAssertEqual(wrapper.currentTime, 0, accuracy: 0.001)
+        XCTAssertEqual(wrapper.duration, 0, accuracy: 0.001)
+
+        wrapper.stopRuntimeStateUpdates()
+        #else
+        throw XCTSkip("Desktop libVLC wrapper is not the active backend on this platform.")
+        #endif
+    }
+
+    func testUserDefaultsResolvesUnsupportedStoredPlayerType() {
+        let suiteName = "PlayerKitTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        defaults.set(PlayerType.vlcPlayer.rawValue, forKey: "PlayerKit.SelectedPlayerType")
+
+        XCTAssertEqual(
+            defaults.loadPlayerType(),
+            PlayerType.vlcPlayer.isSupported ? .vlcPlayer : .avPlayer
+        )
+    }
     
     func testReportErrorUpdatesStateAndPostsNotification() {
         let expectation = expectation(forNotification: .PlayerKitDidFail, object: nil) { notification in

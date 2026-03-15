@@ -6,6 +6,25 @@ public enum PlayerType: String, CaseIterable, Identifiable, Codable {
 
     public var id: String { rawValue }
 
+    public static var supportedCases: [PlayerType] {
+        #if canImport(VLCKit)
+        [.vlcPlayer, .avPlayer]
+        #elseif os(macOS)
+        desktopVLCAvailability ? [.vlcPlayer, .avPlayer] : [.avPlayer]
+        #else
+        [.avPlayer]
+        #endif
+    }
+
+    public var isSupported: Bool {
+        Self.supportedCases.contains(self)
+    }
+
+    static func resolved(_ preferred: PlayerType?) -> PlayerType {
+        guard let preferred, preferred.isSupported else { return .avPlayer }
+        return preferred
+    }
+
     var title: String {
         switch self {
         case .vlcPlayer:
@@ -15,6 +34,28 @@ public enum PlayerType: String, CaseIterable, Identifiable, Codable {
         }
     }
 }
+
+#if os(macOS)
+private let desktopVLCAvailability: Bool = {
+    let processInfo = ProcessInfo.processInfo
+    if processInfo.processName == "xctest" {
+        return false
+    }
+    if processInfo.arguments.contains(where: { $0.hasSuffix(".xctest") }) {
+        return false
+    }
+    if Bundle.allBundles.contains(where: { $0.bundlePath.hasSuffix(".xctest") }) {
+        return false
+    }
+    guard processInfo.environment["XCTestConfigurationFilePath"] == nil else {
+        return false
+    }
+    let fileManager = FileManager.default
+    let libDirectory = "/Applications/VLC.app/Contents/MacOS/lib"
+    return fileManager.fileExists(atPath: "\(libDirectory)/libvlc.dylib")
+        && fileManager.fileExists(atPath: "\(libDirectory)/libvlccore.dylib")
+}()
+#endif
 
 enum SeekDirection: CustomStringConvertible {
     case forward

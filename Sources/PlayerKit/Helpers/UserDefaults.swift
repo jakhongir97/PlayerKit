@@ -16,6 +16,6 @@ extension UserDefaults {
 
     func loadPlayerType() -> PlayerType? {
         guard let raw = string(forKey: Self.kSelectedPlayerType) else { return nil }
-        return PlayerType(rawValue: raw)
+        return PlayerType.resolved(PlayerType(rawValue: raw))
     }
 }
