@@ -985,11 +985,21 @@ final class PlayerKitTests: XCTestCase {
         )
     }
 
-    func testDubSwitchPolicyBlocksProgressiveSwitchWhenStableModePrefersFinalizedPlayback() {
-        XCTAssertFalse(
+    func testDubSwitchPolicyAllowsSwitchAsSoonAsDubBecomesPlayable() {
+        XCTAssertTrue(
             DubSwitchPolicy.shouldSwitchToDubbedMaster(
                 isDubPlayable: true,
                 isFinalized: false,
+                allowProgressiveSwitching: false
+            )
+        )
+    }
+
+    func testDubSwitchPolicyStillBlocksSwitchWhenDubIsNotPlayable() {
+        XCTAssertFalse(
+            DubSwitchPolicy.shouldSwitchToDubbedMaster(
+                isDubPlayable: false,
+                isFinalized: true,
                 allowProgressiveSwitching: false
             )
         )

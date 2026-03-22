@@ -10,8 +10,9 @@ enum DubSwitchPolicy {
         isFinalized: Bool,
         allowProgressiveSwitching: Bool
     ) -> Bool {
-        guard isDubPlayable else { return false }
-        return allowProgressiveSwitching || isFinalized
+        _ = isFinalized
+        _ = allowProgressiveSwitching
+        return isDubPlayable
     }
 
     static func hasPlayableDubData(
@@ -298,7 +299,7 @@ public class PlayerManager: ObservableObject {
     private var integrationsConfigured = false
     private var dubberConfiguration: DubberConfiguration?
     private let dubberClient = DubberClient()
-    // Stable mode: keep source playback uninterrupted until the dubbed stream is finalized.
+    // Stable mode still avoids the local progressive fallback path, but HLS can switch as soon as it is playable.
     private let allowProgressiveDubSwitching = false
     private var dubberPollTask: Task<Void, Never>?
     private var dubberEventsTask: Task<Void, Never>?
@@ -697,7 +698,7 @@ public class PlayerManager: ObservableObject {
             recordDubActivity(
                 allowProgressiveDubSwitching
                     ? "Dubber connected. Waiting for the dubbed HLS stream to become playable."
-                    : "Dubber connected. Keeping the original audio until the dubbed stream is fully prepared.",
+                    : "Dubber connected. Keeping the original audio until the dubbed HLS stream becomes playable.",
                 level: .success,
                 signature: "dub-session-started"
             )
