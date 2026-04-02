@@ -3,6 +3,7 @@ import Foundation
 struct DubberClient {
     private struct StartRequest: Encodable {
         let video_url: String
+        let title: String
         let language: String
         let translate_from: String
     }
@@ -231,6 +232,7 @@ struct DubberClient {
 
     func startSession(
         sourceURL: URL,
+        title: String,
         configuration: DubberConfiguration,
         language: String?,
         translateFrom: String?
@@ -240,15 +242,21 @@ struct DubberClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let resolvedTitle = {
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? sourceURL.lastPathComponent : trimmed
+        }()
         let payload = StartRequest(
             video_url: sourceURL.absoluteString,
+            title: resolvedTitle,
             language: language ?? configuration.defaultLanguage,
             translate_from: translateFrom ?? configuration.defaultTranslateFrom
         )
         request.httpBody = try JSONEncoder().encode(payload)
         let requestStart = Date()
         debugLog(
-            "Sending dub start request. language=\(payload.language) " +
+            "Sending dub start request. title=\(resolvedTitle) " +
+            "language=\(payload.language) " +
             "translate_from=\(payload.translate_from)"
         )
 

@@ -7,7 +7,10 @@ struct BottomControlsView: View {
     private let pillInsets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
     private var showsPiP: Bool { playerManager.isPiPSupported }
     private var showsRotate: Bool { isIPhone }
-    private var shouldGroupTrailingActions: Bool {
+    private var showsTrailingIconActions: Bool {
+        showsPiP || showsRotate
+    }
+    private var shouldGroupTrailingIconActions: Bool {
         [showsPiP, showsRotate].filter { $0 }.count > 1
     }
 
@@ -17,10 +20,16 @@ struct BottomControlsView: View {
             BufferingIndicatorView(playerManager: playerManager)
             Spacer()
 
-            if shouldGroupTrailingActions {
-                groupedTrailingActions
-            } else {
-                ungroupedTrailingActions
+            HStack(spacing: 12) {
+                SkipIntroButtonView(playerManager: playerManager)
+
+                if showsTrailingIconActions {
+                    if shouldGroupTrailingIconActions {
+                        groupedTrailingIconActions
+                    } else {
+                        ungroupedTrailingIconActions
+                    }
+                }
             }
         }
     }
@@ -38,7 +47,7 @@ struct BottomControlsView: View {
     }
 
     @ViewBuilder
-    private var groupedTrailingActions: some View {
+    private var groupedTrailingIconActions: some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             GlassEffectContainer {
                 trailingActionsContent
@@ -63,7 +72,7 @@ struct BottomControlsView: View {
     }
 
     @ViewBuilder
-    private var ungroupedTrailingActions: some View {
+    private var ungroupedTrailingIconActions: some View {
         if showsPiP {
             PiPButton(playerManager: playerManager)
         }

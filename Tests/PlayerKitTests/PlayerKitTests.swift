@@ -482,6 +482,17 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(item.preferredExternalPlaybackContentType, "video/custom")
     }
 
+    func testPlayerItemPreferredDubSessionTitleFallsBackToMovieTitleWhenDubTitleIsBlank() {
+        let item = PlayerItem(
+            title: "Movie Title",
+            description: "Description",
+            dubTitle: "   ",
+            url: URL(string: "https://example.com/stream.m3u8")!
+        )
+
+        XCTAssertEqual(item.preferredDubSessionTitle, "Movie Title")
+    }
+
     func testPlayerFacadeLoadPreservesExternalPlaybackMetadata() {
         let manager = PlayerManager.shared
         let player = Player(playerManager: manager)

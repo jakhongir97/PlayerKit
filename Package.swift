@@ -19,7 +19,7 @@ let vlcBinaryTarget: Target = hasLocalVLCKit
 let package = Package(
     name: "PlayerKit",
     platforms: [
-        .iOS(.v14),
+        .iOS(.v15),
         .macOS(.v14),
     ],
     products: [

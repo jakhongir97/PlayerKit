@@ -8,6 +8,9 @@ struct PlayerControlsView: View {
     }
 
     var body: some View {
+        let showsPinnedDubberSheet = playerManager.isDubberSheetPinned
+        let showsTopControls = !playerManager.isLocked && (playerManager.areControlsVisible || showsPinnedDubberSheet)
+
         ZStack {
             Color.black.opacity(0.5)
                 .edgesIgnoringSafeArea(.all)
@@ -16,7 +19,7 @@ struct PlayerControlsView: View {
 
             VStack {
                 TopControlsView(playerManager: playerManager)
-                    .opacity((playerManager.isLocked || !playerManager.areControlsVisible) ? 0 : 1)
+                    .opacity(showsTopControls ? 1 : 0)
 
                 Spacer()
 
@@ -42,7 +45,7 @@ struct PlayerControlsView: View {
                 }
             }
             .padding(isIPhone ? 16 : 32)
-            .allowsHitTesting(playerManager.areControlsVisible)
+            .allowsHitTesting(playerManager.areControlsVisible || showsPinnedDubberSheet)
         }
     }
 }

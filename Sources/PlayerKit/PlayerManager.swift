@@ -263,6 +263,7 @@ public class PlayerManager: ObservableObject {
     @Published public private(set) var selectedDubSourceLanguageCode: String = "auto"
     @Published private(set) var dubActivityLog: [DubberActivityLogEntry] = []
     @Published var isDubberEnabled: Bool = false
+    @Published var isDubberSheetPinned: Bool = false
     @Published public var isMediaReady: Bool = false {
         didSet {
             if isMediaReady {
@@ -541,6 +542,7 @@ public class PlayerManager: ObservableObject {
         PlayerItem(
             title: sourceItem.title,
             description: sourceItem.description,
+            dubTitle: sourceItem.dubTitle,
             url: sourceItem.url,
             posterUrl: sourceItem.posterUrl,
             castVideoUrl: sourceItem.castVideoUrl,
@@ -689,6 +691,7 @@ public class PlayerManager: ObservableObject {
         do {
             let sessionID = try await dubberClient.startSession(
                 sourceURL: sourceItem.url,
+                title: sourceItem.preferredDubSessionTitle,
                 configuration: configuration,
                 language: resolvedLanguage,
                 translateFrom: resolvedTranslateFrom
@@ -2078,6 +2081,7 @@ extension PlayerManager {
         activeDubSourceItem = nil
         dubSwitchAttemptCount = 0
         hasDubSwitchFailed = false
+        isDubberSheetPinned = false
         resetDubActivityLog()
     }
 
@@ -2095,6 +2099,7 @@ extension PlayerManager {
             let restoredItem = PlayerItem(
                 title: sourceItem.title,
                 description: sourceItem.description,
+                dubTitle: sourceItem.dubTitle,
                 url: sourceItem.url,
                 posterUrl: sourceItem.posterUrl,
                 castVideoUrl: sourceItem.castVideoUrl,
@@ -2305,6 +2310,7 @@ extension PlayerManager {
         let sourcePlaybackItem = PlayerItem(
             title: sourceItem.title,
             description: sourceItem.description,
+            dubTitle: sourceItem.dubTitle,
             url: sourceItem.url,
             posterUrl: sourceItem.posterUrl,
             castVideoUrl: sourceItem.castVideoUrl,
@@ -2546,6 +2552,7 @@ extension PlayerManager {
         let dubbedItem = PlayerItem(
             title: sourceItem.title,
             description: sourceItem.description,
+            dubTitle: sourceItem.dubTitle,
             url: masterURL,
             posterUrl: sourceItem.posterUrl,
             externalPlaybackURL: masterURL,
@@ -3001,6 +3008,14 @@ extension PlayerManager {
 
 // MARK: - Control Visibility Management
 extension PlayerManager {
+    func pinDubberSheet() {
+        isDubberSheetPinned = true
+    }
+
+    func releaseDubberSheetPin() {
+        isDubberSheetPinned = false
+    }
+
     /// Called whenever the user interacts, showing controls and resetting the auto-hide timer
     public func userInteracted() {
         guard !gestureManager.isMultipleTapping else { return }
