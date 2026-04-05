@@ -15,20 +15,20 @@ struct BottomControlsView: View {
     }
 
     var body: some View {
-        HStack {
+        HStack(spacing: 12) {
             MediaOptionsMenu(playerManager: playerManager)
             BufferingIndicatorView(playerManager: playerManager)
+            SkipIntroButtonView(playerManager: playerManager)
+
             Spacer()
 
-            HStack(spacing: 12) {
-                SkipIntroButtonView(playerManager: playerManager)
+            SkipOutroButtonView(playerManager: playerManager)
 
-                if showsTrailingIconActions {
-                    if shouldGroupTrailingIconActions {
-                        groupedTrailingIconActions
-                    } else {
-                        ungroupedTrailingIconActions
-                    }
+            if showsTrailingIconActions {
+                if shouldGroupTrailingIconActions {
+                    groupedTrailingIconActions
+                } else {
+                    ungroupedTrailingIconActions
                 }
             }
         }
