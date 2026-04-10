@@ -1160,8 +1160,19 @@ extension PlayerManager {
     }
     
     public func selectAudioTrack(track: TrackInfo) {
+        let shouldResumeAfterTrackSelection = shouldResumePlaybackAfterStall
+        let trackSelectionReferenceTime = max(currentPlayer?.currentTime ?? currentTime, 0)
+
         selectedAudio = track
         trackManager?.selectAudioTrack(withID: track.id)
+        if shouldResumeAfterTrackSelection {
+            debugLog(
+                "Audio track selected while playback should continue. " +
+                "track=\(track.name) current=\(debugInterval(trackSelectionReferenceTime))"
+            )
+            playbackResumeProgressReferenceTime = trackSelectionReferenceTime
+            schedulePlaybackResumeIfNeeded(trigger: "audio-track-selection")
+        }
         userInteracted()
     }
 
