@@ -7,11 +7,18 @@ struct BottomControlsView: View {
     private let pillInsets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
     private var showsPiP: Bool { playerManager.isPiPSupported }
     private var showsRotate: Bool { isIPhone }
+    private var showsFullscreen: Bool {
+        #if os(macOS)
+        true
+        #else
+        false
+        #endif
+    }
     private var showsTrailingIconActions: Bool {
-        showsPiP || showsRotate
+        showsPiP || showsRotate || showsFullscreen
     }
     private var shouldGroupTrailingIconActions: Bool {
-        [showsPiP, showsRotate].filter { $0 }.count > 1
+        [showsPiP, showsRotate, showsFullscreen].filter { $0 }.count > 1
     }
 
     var body: some View {
@@ -42,6 +49,9 @@ struct BottomControlsView: View {
             }
             if showsRotate {
                 RotateButtonView(playerManager: playerManager)
+            }
+            if showsFullscreen {
+                FullscreenButtonView(playerManager: playerManager)
             }
         }
     }
@@ -78,6 +88,9 @@ struct BottomControlsView: View {
         }
         if !showsPiP && showsRotate {
             RotateButtonView(playerManager: playerManager)
+        }
+        if !showsPiP && !showsRotate && showsFullscreen {
+            FullscreenButtonView(playerManager: playerManager)
         }
     }
 }
