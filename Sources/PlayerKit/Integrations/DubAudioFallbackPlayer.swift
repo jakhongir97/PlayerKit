@@ -186,6 +186,7 @@ final class DubAudioFallbackPlayer {
         playerItem.audioTimePitchAlgorithm = .timeDomain
 
         let player = AVPlayer(playerItem: playerItem)
+        configureContentProtection(for: player)
         player.automaticallyWaitsToMinimizeStalling = false
         statusObserver = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             self?.debugLog(
@@ -323,5 +324,15 @@ final class DubAudioFallbackPlayer {
 
     private func debugLog(_ message: String) {
         print("[PlayerKit][DubAudioFallback] \(message)")
+    }
+
+    private func configureContentProtection(for player: AVPlayer) {
+        player.allowsExternalPlayback = false
+        #if os(iOS)
+        player.usesExternalPlaybackWhileExternalScreenIsActive = false
+        #endif
+        if #available(iOS 15.0, tvOS 15.0, macOS 12.0, *) {
+            player.audiovisualBackgroundPlaybackPolicy = .pauses
+        }
     }
 }

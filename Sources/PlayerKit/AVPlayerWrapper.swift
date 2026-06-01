@@ -218,14 +218,16 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         debugLog("Loading AVPlayer item. url=\(url.debugDescription) resume=\(lastPosition?.description ?? "nil")")
         let playerItem = AVPlayerItem(url: url)
         if let player = player {
+            configureContentProtection(for: player)
             player.automaticallyWaitsToMinimizeStalling = false
             player.replaceCurrentItem(with: playerItem)
             debugLog("Reusing existing AVPlayer instance for new item.")
         } else {
             player = SmoothPlayer(playerItem: playerItem)
             playerView.player = player
-            setupPiP()
-            player?.allowsExternalPlayback = true
+            if let player {
+                configureContentProtection(for: player)
+            }
             player?.automaticallyWaitsToMinimizeStalling = false
             debugLog("Created SmoothPlayer backing instance.")
         }
@@ -319,15 +321,7 @@ extension AVPlayerWrapper: ViewRenderingProtocol {
     }
     
     public func setupPiP() {
-        guard AVPictureInPictureController.isPictureInPictureSupported() else {
-            pipController = nil
-            return
-        }
-
-        if pipController == nil {
-            pipController = AVPictureInPictureController(playerLayer: playerView.playerLayer)
-            pipController?.delegate = self
-        }
+        pipController = nil
     }
     
     public func startPiP() {
@@ -411,7 +405,7 @@ extension AVPlayerWrapper: PlayerMuteControlling, PlayerPreciseSeeking, PlayerSe
 
 extension AVPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool {
-        AVPictureInPictureController.isPictureInPictureSupported()
+        false
     }
 
     var isPictureInPicturePossible: Bool {
@@ -497,6 +491,16 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
 }
 
 extension AVPlayerWrapper {
+    private func configureContentProtection(for player: AVPlayer) {
+        player.allowsExternalPlayback = false
+        #if os(iOS)
+        player.usesExternalPlaybackWhileExternalScreenIsActive = false
+        #endif
+        if #available(iOS 15.0, tvOS 15.0, macOS 12.0, *) {
+            player.audiovisualBackgroundPlaybackPolicy = .pauses
+        }
+    }
+
     var seekableTimeWindow: ClosedRange<Double>? {
         guard let ranges = player?.currentItem?.seekableTimeRanges,
               !ranges.isEmpty else {

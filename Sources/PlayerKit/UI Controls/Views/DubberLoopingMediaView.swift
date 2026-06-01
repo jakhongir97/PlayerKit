@@ -119,6 +119,7 @@ private final class Coordinator {
         detach(from: view)
 
         let player = AVQueuePlayer()
+        configureContentProtection(for: player)
         player.isMuted = true
         player.actionAtItemEnd = .none
 
@@ -144,6 +145,16 @@ private final class Coordinator {
     private func configure(view: AVPlayerView, with player: AVPlayer) {
         view.player = player
         view.playerLayer.videoGravity = .resizeAspectFill
+    }
+
+    private func configureContentProtection(for player: AVPlayer) {
+        player.allowsExternalPlayback = false
+        #if os(iOS)
+        player.usesExternalPlaybackWhileExternalScreenIsActive = false
+        #endif
+        if #available(iOS 15.0, tvOS 15.0, macOS 12.0, *) {
+            player.audiovisualBackgroundPlaybackPolicy = .pauses
+        }
     }
 
     private func updatePlayback(_ shouldPlay: Bool, for player: AVQueuePlayer) {
