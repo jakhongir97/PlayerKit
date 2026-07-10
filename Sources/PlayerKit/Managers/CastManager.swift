@@ -78,7 +78,7 @@ class CastManager: NSObject, ObservableObject {
     func playMediaOnCast() {
         guard let remoteMediaClient = sessionManager.currentCastSession?.remoteMediaClient else {
             onError?(.castSessionUnavailable)
-            print("Error: No active cast session.")
+            PlayerKitLog.debug("CastManager", "Error: No active cast session.")
             return
         }
         guard let playerItem = currentPlayerItemProvider?() else {
@@ -147,30 +147,30 @@ class CastManager: NSObject, ObservableObject {
 // MARK: - GCKSessionManagerListener
 extension CastManager: GCKSessionManagerListener {
     func sessionManager(_ sessionManager: GCKSessionManager, didStart session: GCKCastSession) {
-        print("Cast session started")
+        PlayerKitLog.debug("CastManager", "Cast session started")
         session.remoteMediaClient?.add(self)
         isConnectedToCastDevice = true
         playMediaOnCast()
     }
     
     func sessionManager(_ sessionManager: GCKSessionManager, didResumeSession session: GCKSession) {
-        print("Cast session resumed")
+        PlayerKitLog.debug("CastManager", "Cast session resumed")
         (session as? GCKCastSession)?.remoteMediaClient?.add(self)
         isConnectedToCastDevice = true
     }
     
     func sessionManager(_ sessionManager: GCKSessionManager, didEnd session: GCKCastSession, withError error: Error?) {
-        print("Cast session ended with error: \(String(describing: error))")
+        PlayerKitLog.debug("CastManager", "Cast session ended with error: \(String(describing: error))")
         session.remoteMediaClient?.remove(self)
         resetCastState()
         if let error = error {
-            print("Session ended with error: \(error.localizedDescription)")
+            PlayerKitLog.debug("CastManager", "Session ended with error: \(error.localizedDescription)")
         }
     }
     
     func sessionManager(_ sessionManager: GCKSessionManager, didFailToStartSessionWithError error: Error?) {
         if let error = error {
-            print("Failed to start session with error: \(error.localizedDescription)")
+            PlayerKitLog.debug("CastManager", "Failed to start session with error: \(error.localizedDescription)")
         }
     }
     
@@ -183,26 +183,26 @@ extension CastManager: GCKSessionManagerListener {
 // MARK: - GCKRemoteMediaClientListener
 extension CastManager: GCKRemoteMediaClientListener {
     func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaStatus: GCKMediaStatus?) {
-        print("Media status updated: \(String(describing: mediaStatus))")
+        PlayerKitLog.debug("CastManager", "Media status updated: \(String(describing: mediaStatus))")
     }
 }
 
 // MARK: - GCKRequestDelegate
 extension CastManager: GCKRequestDelegate {
     func requestDidComplete(_ request: GCKRequest) {
-        print("Cast request completed")
+        PlayerKitLog.debug("CastManager", "Cast request completed")
     }
     
     func request(_ request: GCKRequest, didFailWithError error: GCKError) {
         onError?(.unknown("Cast request failed: \(error.localizedDescription)"))
-        print("Cast request failed with error: \(error.localizedDescription)")
+        PlayerKitLog.debug("CastManager", "Cast request failed with error: \(error.localizedDescription)")
     }
 }
 
 // MARK: - GCKLoggerDelegate
 extension CastManager: GCKLoggerDelegate {
     func logMessage(_ message: String, fromFunction function: String) {
-        print("Google Cast Log - Function: \(function) Message: \(message)")
+        PlayerKitLog.debug("CastManager", "Google Cast Log - Function: \(function) Message: \(message)")
     }
 }
 #else

@@ -2769,8 +2769,8 @@ extension PlayerManager {
         return true
     }
 
-    fileprivate func debugLog(_ message: String) {
-        print("[PlayerKit][PlayerManager] \(message)")
+    fileprivate func debugLog(_ message: @autoclosure () -> String) {
+        PlayerKitLog.debug("PlayerManager", message())
     }
 
     private func debugInterval(_ value: Double) -> String {

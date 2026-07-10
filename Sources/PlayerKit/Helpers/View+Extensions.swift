@@ -17,7 +17,7 @@ extension View {
             if #available(iOS 16.0, *) {
                 let geometryPreferences = UIWindowScene.GeometryPreferences.iOS(interfaceOrientations: orientationMask)
                 windowScene.requestGeometryUpdate(geometryPreferences) { error in
-                    print("Failed to set orientation: \(error)")
+                    PlayerKitLog.debug("Orientation", "Failed to set orientation: \(error)")
                 }
             } else {
                 UIDevice.current.setValue(orientation.rawValue, forKey: "orientation")

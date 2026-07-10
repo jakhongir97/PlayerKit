@@ -80,7 +80,7 @@ class SmoothPlayer: AVPlayer {
         return String(format: "%.3f", seconds)
     }
 
-    private func debugLog(_ message: String) {
-        print("[PlayerKit][SmoothPlayer] \(message)")
+    private func debugLog(_ message: @autoclosure () -> String) {
+        PlayerKitLog.debug("SmoothPlayer", message())
     }
 }

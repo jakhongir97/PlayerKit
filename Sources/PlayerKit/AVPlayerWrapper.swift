@@ -27,7 +27,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     }
     
     deinit {
-        print("AvPlayerWrapper deinit")
+        PlayerKitLog.debug("AVPlayerWrapper", "deinit")
         playerItemStatusObserver = nil
         removePlaybackEndedObserver()
         removeRuntimeTimeObserver()
@@ -737,8 +737,8 @@ extension AVPlayerWrapper {
             "errorLog=\(errorLogSummary)"
     }
 
-    private func debugLog(_ message: String) {
-        print("[PlayerKit][AVPlayerWrapper] \(message)")
+    private func debugLog(_ message: @autoclosure () -> String) {
+        PlayerKitLog.debug("AVPlayerWrapper", message())
     }
 
     private func timeControlStatusLabel(_ status: AVPlayer.TimeControlStatus) -> String {

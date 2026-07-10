@@ -37,7 +37,7 @@ struct CastButton: UIViewRepresentable {
             if GCKCastContext.sharedInstance().castState != .noDevicesAvailable {
                 GCKCastContext.sharedInstance().presentCastDialog()
             } else {
-                print("No Chromecast devices available")
+                PlayerKitLog.debug("CastButton", "No Chromecast devices available")
             }
         }
 

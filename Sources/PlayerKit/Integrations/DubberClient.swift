@@ -617,8 +617,8 @@ struct DubberClient {
         }
     }
 
-    private func debugLog(_ message: String) {
-        print("[PlayerKit][DubberClient] \(message)")
+    private func debugLog(_ message: @autoclosure () -> String) {
+        PlayerKitLog.debug("DubberClient", message())
     }
 
     private func fetchText(from url: URL) async throws -> String {

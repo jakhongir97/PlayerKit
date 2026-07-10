@@ -55,7 +55,7 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     #endif
     
     deinit {
-        print("VLCPlayerWrapper deinit")
+        PlayerKitLog.debug("VLCPlayerWrapper", "deinit")
         #if canImport(UIKit)
         NotificationCenter.default.removeObserver(self, name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
         #endif

@@ -114,7 +114,7 @@ struct PlaybackSliderView: View {
         return String(format: "%.3f", value)
     }
 
-    private func debugLog(_ message: String) {
-        print("[PlayerKit][PlaybackSliderView] \(message)")
+    private func debugLog(_ message: @autoclosure () -> String) {
+        PlayerKitLog.debug("PlaybackSliderView", message())
     }
 }

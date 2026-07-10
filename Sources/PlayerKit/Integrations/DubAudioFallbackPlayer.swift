@@ -322,8 +322,8 @@ final class DubAudioFallbackPlayer {
         debugLog("Stopped local fallback audio.")
     }
 
-    private func debugLog(_ message: String) {
-        print("[PlayerKit][DubAudioFallback] \(message)")
+    private func debugLog(_ message: @autoclosure () -> String) {
+        PlayerKitLog.debug("DubAudioFallback", message())
     }
 
     private func configureContentProtection(for player: AVPlayer) {

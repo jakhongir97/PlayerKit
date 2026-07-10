@@ -21,7 +21,7 @@ class AudioSessionManager: NSObject {
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setActive(true)
         } catch {
-            print("AudioSessionManager: Failed to configure audio session: \(error)")
+            PlayerKitLog.debug("AudioSessionManager", "Failed to configure audio session: \(error)")
         }
     }
 

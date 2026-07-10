@@ -106,8 +106,8 @@ public struct PlayerView: View {
         presentationMode.wrappedValue.dismiss()
     }
 
-    private func debugLog(_ message: String) {
-        print("[PlayerKit][PlayerView] \(message)")
+    private func debugLog(_ message: @autoclosure () -> String) {
+        PlayerKitLog.debug("PlayerView", message())
     }
 }
 
