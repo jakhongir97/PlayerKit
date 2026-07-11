@@ -217,9 +217,14 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         currentSourceURL = url
         debugLog("Loading AVPlayer item. url=\(url.debugDescription) resume=\(lastPosition?.description ?? "nil")")
         let playerItem = AVPlayerItem(url: url)
+        // Automatic stall-waiting must stay enabled: with it disabled AVPlayer
+        // renders straight through HLS buffer underruns, which is audible as
+        // crackle/stutter instead of a clean rebuffer. Fast startup is
+        // preserved by play() calling playImmediately(atRate:) once the item
+        // is ready.
         if let player = player {
             configureContentProtection(for: player)
-            player.automaticallyWaitsToMinimizeStalling = false
+            player.automaticallyWaitsToMinimizeStalling = true
             player.replaceCurrentItem(with: playerItem)
             debugLog("Reusing existing AVPlayer instance for new item.")
         } else {
@@ -228,7 +233,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             if let player {
                 configureContentProtection(for: player)
             }
-            player?.automaticallyWaitsToMinimizeStalling = false
+            player?.automaticallyWaitsToMinimizeStalling = true
             debugLog("Created SmoothPlayer backing instance.")
         }
         configureRuntimeStateObserverIfNeeded()
