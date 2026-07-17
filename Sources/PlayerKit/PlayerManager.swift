@@ -204,7 +204,8 @@ public class PlayerManager: ObservableObject {
     @Published public var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var bufferedDuration: Double = 0
-    @Published var playbackSpeed: Float = 1.0
+    @Published public private(set) var playbackSpeed: Float = 1.0
+    @Published public var suppressesHeuristicSkipButtons: Bool = false
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
     @Published var isPiPActive: Bool = false

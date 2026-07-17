@@ -16,7 +16,8 @@ struct SkipIntroButtonView: View {
     }
 
     var body: some View {
-        if let introTargetSeconds,
+        if !playerManager.suppressesHeuristicSkipButtons,
+           let introTargetSeconds,
            shouldShowButton(targetTime: introTargetSeconds) {
             SkipSegmentButton(title: "Skip Intro", systemImage: "goforward") {
                 playerManager.userInteracted()
@@ -74,7 +75,8 @@ struct SkipOutroButtonView: View {
     }
 
     var body: some View {
-        if let outroStartSeconds,
+        if !playerManager.suppressesHeuristicSkipButtons,
+           let outroStartSeconds,
            shouldShowButton(startTime: outroStartSeconds) {
             SkipSegmentButton(title: "Skip Outro", systemImage: "goforward") {
                 playerManager.userInteracted()
