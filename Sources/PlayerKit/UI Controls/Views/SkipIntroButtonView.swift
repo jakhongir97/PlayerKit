@@ -19,14 +19,18 @@ struct SkipIntroButtonView: View {
         if !playerManager.suppressesHeuristicSkipButtons,
            let introTargetSeconds,
            shouldShowButton(targetTime: introTargetSeconds) {
-            SkipSegmentButton(title: "Skip Intro", systemImage: "goforward") {
+            SkipSegmentButton(title: title, systemImage: "goforward") {
                 playerManager.userInteracted()
                 playerManager.seek(to: introTargetSeconds)
             }
-            .accessibilityLabel("Skip Intro")
+            .accessibilityLabel(title)
             .accessibilityHint("Skips the opening section of this episode")
             .accessibilityIdentifier("player.skipIntro")
         }
+    }
+
+    private var title: String {
+        playerManager.heuristicSkipButtonTitles.skipIntro
     }
 
     private var introTargetSeconds: Double? {
@@ -78,7 +82,7 @@ struct SkipOutroButtonView: View {
         if !playerManager.suppressesHeuristicSkipButtons,
            let outroStartSeconds,
            shouldShowButton(startTime: outroStartSeconds) {
-            SkipSegmentButton(title: "Skip Outro", systemImage: "goforward") {
+            SkipSegmentButton(title: title, systemImage: "goforward") {
                 playerManager.userInteracted()
                 if playerManager.canPlayNextItem {
                     playerManager.playNext()
@@ -87,10 +91,17 @@ struct SkipOutroButtonView: View {
 
                 playerManager.seek(to: skipTargetTime)
             }
-            .accessibilityLabel("Skip Outro")
+            .accessibilityLabel(title)
             .accessibilityHint("Skips the ending section of this episode")
             .accessibilityIdentifier("player.skipOutro")
         }
+    }
+
+    // The tap advances instead of seeking when another item is queued, so the label
+    // has to follow the same branch or it promises the wrong thing.
+    private var title: String {
+        let titles = playerManager.heuristicSkipButtonTitles
+        return playerManager.canPlayNextItem ? titles.nextEpisode : titles.skipOutro
     }
 
     private var outroStartSeconds: Double? {

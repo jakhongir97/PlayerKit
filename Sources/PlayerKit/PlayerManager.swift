@@ -186,6 +186,25 @@ public enum PlayerEpisodeNavigationDirection: Equatable {
     case next
 }
 
+/// Titles for the heuristic skip controls. PlayerKit ships no string tables, so a
+/// localized host injects its own copy here; the English defaults keep every other
+/// host rendering exactly what it rendered before this seam existed.
+public struct HeuristicSkipButtonTitles: Equatable {
+    public var skipIntro: String
+    public var skipOutro: String
+    public var nextEpisode: String
+
+    public init(
+        skipIntro: String = "Skip Intro",
+        skipOutro: String = "Skip Outro",
+        nextEpisode: String = "Next Episode"
+    ) {
+        self.skipIntro = skipIntro
+        self.skipOutro = skipOutro
+        self.nextEpisode = nextEpisode
+    }
+}
+
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
     
@@ -206,6 +225,7 @@ public class PlayerManager: ObservableObject {
     @Published var bufferedDuration: Double = 0
     @Published public private(set) var playbackSpeed: Float = 1.0
     @Published public var suppressesHeuristicSkipButtons: Bool = false
+    @Published public var heuristicSkipButtonTitles = HeuristicSkipButtonTitles()
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
     @Published var isPiPActive: Bool = false
