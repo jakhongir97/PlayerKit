@@ -84,7 +84,9 @@ public struct PlayerView: View {
                 debugLog("Single-item load mode has no item.")
                 return
             }
-            debugLog("Loading single item title=\(playerItem.title) url=\(playerItem.url.debugDescription)")
+            debugLog(
+                "Loading single item title_present=\(!playerItem.title.isEmpty) source_present=true"
+            )
             playerManager.load(playerItem: playerItem)
         case .episodes(let items, let index):
             debugLog("Loading episode list count=\(items.count) currentIndex=\(index)")

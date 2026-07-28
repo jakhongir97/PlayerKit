@@ -26,6 +26,7 @@ struct PlayerControlsView: View {
                 HStack {
                     InfoButtonView(playerManager: playerManager)
                         .opacity((playerManager.isLocked || !playerManager.areControlsVisible) ? 0 : 1)
+                        .accessibilityHidden(playerManager.isLocked || !playerManager.areControlsVisible)
                     Spacer()
                     
                     MiddleControlsView(playerManager: playerManager)

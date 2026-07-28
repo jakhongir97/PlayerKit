@@ -20,32 +20,50 @@ struct InfoButtonView: View {
     }
 
     var body: some View {
+        #if os(macOS)
+        infoButton
+            .help("Playback status")
+            .accessibilityLabel("Playback status")
+            .accessibilityHint("Shows playback quality and details you can copy for support")
+            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+                HLSPlaybackDiagnosticsView(playerManager: playerManager)
+            }
+        #else
+        infoButton
+            .accessibilityLabel("Streaming information")
+            .accessibilityHint("Shows bitrate, buffer, frame rate and resolution")
+            .overlay(
+                Group {
+                    if showPopover {
+                        StreamingInfoView(playerManager: playerManager)
+                            .frame(width: 200)
+                            .offset(
+                                x: isLandscape ? 60 : 0,
+                                y: isLandscape ? 0 : -110
+                            )
+                            .transition(.opacity)
+                            .zIndex(1)
+                    }
+                },
+                alignment: .leading
+            )
+        #endif
+    }
+
+    private var infoButton: some View {
         Button(action: {
+            #if os(macOS)
+            showPopover.toggle()
+            #else
             withAnimation(.spring()) {
                 showPopover.toggle()
             }
+            #endif
         }) {
             Image(systemName: "info")
                 .circularGlassIcon()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Streaming information")
-        .accessibilityHint("Shows bitrate, buffer, frame rate and resolution")
         .accessibilityIdentifier("player.info")
-        .overlay(
-            Group {
-                if showPopover {
-                    StreamingInfoView(playerManager: playerManager)
-                        .frame(width: 200)
-                        .offset(
-                            x: isLandscape ? 60 : 0,
-                            y: isLandscape ? 0 : -110
-                        )
-                        .transition(.opacity)
-                        .zIndex(1)
-                }
-            },
-            alignment: .leading
-        )
     }
 }

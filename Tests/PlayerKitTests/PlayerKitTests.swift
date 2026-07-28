@@ -1099,7 +1099,7 @@ final class PlayerKitTests: XCTestCase {
         wait(for: [expectation], timeout: 1.0)
     }
 
-    func testAVPlayerWrapperDisablesAutomaticStallWaiting() {
+    func testAVPlayerWrapperKeepsAutomaticStallWaitingEnabled() {
         let wrapper = AVPlayerWrapper()
         let view = wrapper.getPlayerView()
 
@@ -1110,7 +1110,7 @@ final class PlayerKitTests: XCTestCase {
             return
         }
 
-        XCTAssertFalse(player.automaticallyWaitsToMinimizeStalling)
+        XCTAssertTrue(player.automaticallyWaitsToMinimizeStalling)
     }
 
     private func boundPlayer(from view: PKView, file: StaticString = #filePath, line: UInt = #line) -> AVPlayer? {

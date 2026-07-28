@@ -12,8 +12,45 @@ public struct PlayerItem {
     public let externalPlaybackDuration: Double?
     public var lastPosition: Double? // Optional last playback position
     public let episodeIndex: Int?
-    
+
+    #if os(macOS)
+    /// A non-secret, app-owned opaque identifier used only to derive the
+    /// diagnostics fingerprint. Never pass signed URLs, headers, or tokens.
+    public let playbackHealthAssetIdentifier: String?
+    /// Set by the app only for remote, clear HLS movie or episode playback.
+    public let playbackHealthMonitoringEligible: Bool
+    #endif
+
     // Add a public initializer
+    #if os(macOS)
+    public init(title: String,
+                description: String? = nil,
+                dubTitle: String? = nil,
+                url: URL,
+                posterUrl: URL? = nil,
+                castVideoUrl: URL? = nil,
+                externalPlaybackURL: URL? = nil,
+                externalPlaybackContentType: String? = nil,
+                externalPlaybackDuration: Double? = nil,
+                lastPosition: Double? = nil,
+                episodeIndex: Int? = nil,
+                playbackHealthAssetIdentifier: String? = nil,
+                playbackHealthMonitoringEligible: Bool = false) {
+        self.title = title
+        self.description = description
+        self.dubTitle = dubTitle
+        self.url = url
+        self.posterUrl = posterUrl
+        self.castVideoUrl = castVideoUrl ?? externalPlaybackURL
+        self.externalPlaybackURL = externalPlaybackURL ?? castVideoUrl
+        self.externalPlaybackContentType = externalPlaybackContentType
+        self.externalPlaybackDuration = externalPlaybackDuration
+        self.lastPosition = lastPosition
+        self.episodeIndex = episodeIndex
+        self.playbackHealthAssetIdentifier = playbackHealthAssetIdentifier
+        self.playbackHealthMonitoringEligible = playbackHealthMonitoringEligible
+    }
+    #else
     public init(title: String,
                 description: String? = nil,
                 dubTitle: String? = nil,
@@ -37,6 +74,7 @@ public struct PlayerItem {
         self.lastPosition = lastPosition
         self.episodeIndex = episodeIndex
     }
+    #endif
 }
 
 extension PlayerItem {
