@@ -1,4 +1,5 @@
 #if os(macOS)
+import CoreMedia
 import Foundation
 import XCTest
 @testable import PlayerKit
@@ -253,6 +254,86 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         )
     }
 
+    func testBufferStateRejectsInvalidTimeAndRangesWithoutInventingHeadroom() {
+        let validRange = CMTimeRange(
+            start: CMTime(seconds: 10, preferredTimescale: 600),
+            duration: CMTime(seconds: 5, preferredTimescale: 600)
+        )
+
+        XCTAssertEqual(
+            playbackDiagnosticsBufferState(
+                currentTime: nil,
+                loadedTimeRanges: [validRange]
+            ),
+            .unknown
+        )
+        XCTAssertEqual(
+            playbackDiagnosticsBufferState(
+                currentTime: .nan,
+                loadedTimeRanges: [validRange]
+            ),
+            .unknown
+        )
+        XCTAssertEqual(
+            playbackDiagnosticsBufferState(
+                currentTime: 10,
+                loadedTimeRanges: [
+                    CMTimeRange(
+                        start: .invalid,
+                        duration: CMTime(seconds: 5, preferredTimescale: 600)
+                    ),
+                    CMTimeRange(
+                        start: .zero,
+                        duration: CMTime(seconds: -1, preferredTimescale: 600)
+                    ),
+                ]
+            ),
+            .unknown
+        )
+    }
+
+    func testBufferStateMergesOnlyAdjacentRangesAroundCurrentPosition() {
+        let state = playbackDiagnosticsBufferState(
+            currentTime: 11,
+            loadedTimeRanges: [
+                CMTimeRange(
+                    start: CMTime(seconds: 10, preferredTimescale: 600),
+                    duration: CMTime(seconds: 2, preferredTimescale: 600)
+                ),
+                CMTimeRange(
+                    start: CMTime(seconds: 12.1, preferredTimescale: 600),
+                    duration: CMTime(seconds: 2.9, preferredTimescale: 600)
+                ),
+                CMTimeRange(
+                    start: CMTime(seconds: 20, preferredTimescale: 600),
+                    duration: CMTime(seconds: 5, preferredTimescale: 600)
+                ),
+            ]
+        )
+
+        XCTAssertEqual(state.bufferedUntil ?? -1, 15, accuracy: 0.001)
+        XCTAssertEqual(state.headroom ?? -1, 4, accuracy: 0.001)
+    }
+
+    func testPlaybackMetadataSanitizersRejectNonfiniteAndExtremeValues() {
+        XCTAssertEqual(
+            sanitizedPlaybackDiagnosticsResolution(width: 1920, height: 1080),
+            "1920×1080"
+        )
+        XCTAssertNil(
+            sanitizedPlaybackDiagnosticsResolution(width: .infinity, height: 1080)
+        )
+        XCTAssertNil(
+            sanitizedPlaybackDiagnosticsResolution(width: 100_000, height: 1080)
+        )
+        XCTAssertEqual(sanitizedPlaybackDiagnosticsFrameRate(59.94), 59.94)
+        XCTAssertNil(sanitizedPlaybackDiagnosticsFrameRate(.infinity))
+        XCTAssertNil(sanitizedPlaybackDiagnosticsFrameRate(2_000))
+        XCTAssertEqual(sanitizedPlaybackDiagnosticsRate(-2), -2)
+        XCTAssertNil(sanitizedPlaybackDiagnosticsRate(.nan))
+        XCTAssertNil(sanitizedPlaybackDiagnosticsRate(100))
+    }
+
     func testAccessLogAggregationSumsPeriodsAndKeepsLatestPointMetrics() {
         let first = makeNetwork(
             mediaRequestCount: 2,
@@ -336,6 +417,7 @@ final class PlaybackDiagnosticsTests: XCTestCase {
 
     func testCopiedReportContainsStructuredSafeStateOnly() {
         let manifestControlledName = "https://media.example/audio?token=manifest-secret"
+        let evidenceID = UUID()
         let selectedTrack = PlaybackDiagnosticsTrack(
             identifier: "sha256:track",
             name: manifestControlledName,
@@ -371,32 +453,55 @@ final class PlaybackDiagnosticsTests: XCTestCase {
                     )
                 )
             ],
-            incidents: [
-                PlaybackDiagnosticsIncident(
-                    id: UUID(),
-                    capturedAt: Date(timeIntervalSince1970: 101),
-                    mediaTime: 10,
-                    selectedAudioTrack: selectedTrack,
-                    itemStatus: "ready",
-                    timeControlStatus: "playing",
-                    waitingReason: nil,
-                    bufferHeadroom: 20,
-                    isPlaybackLikelyToKeepUp: true,
-                    isPlaybackBufferEmpty: false,
-                    resolution: "1920×1080",
-                    frameRate: 24,
-                    observedBitRate: 5_000_000,
-                    indicatedBitRate: 4_000_000,
-                    accessLogStallCount: 1,
-                    observedHLSRequestCount: 12,
-                    failedHLSRequestCount: 2,
-                    metricStallCount: 1,
-                    postStartWaitCount: 2,
-                    seekWaitCount: 1,
-                    errorLogEventCount: 3,
-                    retainedHealthEventCount: 4
-                )
-            ]
+            storyboard: PlaybackDiagnosticsStoryboard(
+                samples: [],
+                evidence: [
+                    PlaybackDiagnosticsEvidence(
+                        id: evidenceID,
+                        occurredAt: Date(timeIntervalSince1970: 101),
+                        mediaTime: 10,
+                        kind: .failedSegmentRequest,
+                        level: .warning,
+                        title: "Media segment request failed",
+                        measurement: "HTTP 503"
+                    )
+                ],
+                incidents: [
+                    PlaybackDiagnosticsAutomaticIncident(
+                        id: UUID(),
+                        kind: .repeatedRequestFailures,
+                        severity: .warning,
+                        startedAt: Date(timeIntervalSince1970: 101),
+                        lastObservedAt: Date(timeIntervalSince1970: 102),
+                        endedAt: nil,
+                        impact: "Multiple media requests failed.",
+                        likelyCause: "Repeated delivery failures were measured.",
+                        evidenceIDs: [evidenceID],
+                        measuredValues: ["3 failures in 30 seconds"],
+                        nextAction: "Inspect sanitized request timing.",
+                        evidenceStrength: .direct
+                    )
+                ],
+                bookmarks: [
+                    PlaybackDiagnosticsBookmark(
+                        id: UUID(),
+                        capturedAt: Date(timeIntervalSince1970: 103),
+                        mediaTime: 10,
+                        selectedAudioTrack: selectedTrack,
+                        itemStatus: "ready",
+                        timeControlStatus: "playing",
+                        waitingReason: nil,
+                        bufferHeadroom: 20,
+                        resolution: "1920×1080",
+                        frameRate: 24,
+                        observedBitRate: 5_000_000,
+                        indicatedBitRate: 4_000_000,
+                        accessLogStallCount: 1,
+                        metricStallCount: 1,
+                        errorLogEventCount: 3
+                    )
+                ]
+            )
         )
 
         let report = snapshot.report()
@@ -414,8 +519,10 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         XCTAssertTrue(report.contains("audio_track[0]=id=sha256:track language=ru"))
         XCTAssertTrue(report.contains("subtitle_track[0]=id=sha256:subtitle language=uz"))
         XCTAssertTrue(report.contains("track_id=sha256:event-track track_language=ru"))
-        XCTAssertTrue(report.contains("failed_hls_requests=2"))
-        XCTAssertTrue(report.contains("retained_candidates=4"))
+        XCTAssertTrue(report.contains("kind=failedSegmentRequest"))
+        XCTAssertTrue(report.contains("kind=repeatedRequestFailures"))
+        XCTAssertTrue(report.contains("bookmarks=1"))
+        XCTAssertTrue(report.contains("track_id=sha256:track track_language=ru"))
     }
 
     func testUnexpectedHTMLOrJSONMediaResponseIsAnObservationalIssue() {
@@ -523,6 +630,8 @@ final class PlaybackDiagnosticsTests: XCTestCase {
 
         XCTAssertTrue(attached.session.monitorAttached)
         XCTAssertEqual(attached.session.assetIdentifier, "42")
+        XCTAssertEqual(attached.session.sessionID, wrapper.activePlaybackHealthSessionID)
+        XCTAssertNotNil(attached.session.startedAt)
         XCTAssertEqual(attached.playback.isLikelyHLS, true)
         if #available(macOS 15, *) {
             XCTAssertTrue(
@@ -557,6 +666,41 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         XCTAssertEqual(fingerprint?.count, 71)
         XCTAssertNotEqual(fingerprint, opaqueIdentifier)
         XCTAssertFalse(opaqueSnapshot.report().contains(opaqueIdentifier))
+    }
+
+    func testWrapperCreatesPrivatePerItemIdentityWithoutAVMetrics() throws {
+        let wrapper = AVPlayerWrapper()
+        defer { wrapper.stop() }
+        let firstURL = try XCTUnwrap(
+            URL(
+                string: "https://media.example/movie/master.m3u8?token=first#one"
+            )
+        )
+        let secondURL = try XCTUnwrap(
+            URL(
+                string: "https://media.example/movie/master.m3u8?token=second#two"
+            )
+        )
+
+        wrapper.load(url: firstURL)
+        let first = wrapper.fetchPlaybackDiagnostics(
+            monitoringEnabled: false,
+            recentHealthEvents: []
+        )
+        wrapper.load(url: secondURL)
+        let second = wrapper.fetchPlaybackDiagnostics(
+            monitoringEnabled: false,
+            recentHealthEvents: []
+        )
+
+        XCTAssertFalse(first.session.monitorAttached)
+        XCTAssertNotNil(first.session.sessionID)
+        XCTAssertNotNil(first.session.startedAt)
+        XCTAssertTrue(first.session.assetIdentifier?.hasPrefix("sha256:") == true)
+        XCTAssertEqual(first.session.assetIdentifier, second.session.assetIdentifier)
+        XCTAssertNotEqual(first.session.sessionID, second.session.sessionID)
+        XCTAssertFalse(first.report().contains("token=first"))
+        XCTAssertFalse(second.report().contains("token=second"))
     }
 
     func testTerminalFailureVariantWaitAndTransportEvidenceAreSanitizedAndScoped() {
@@ -822,6 +966,39 @@ final class PlaybackDiagnosticsTests: XCTestCase {
                 + switches.unknownDirectionCount,
             switches.succeededCount
         )
+        XCTAssertEqual(switches.recentTransitions.count, 3)
+        XCTAssertEqual(
+            switches.recentTransitions.last?.occurredAt,
+            Date(timeIntervalSince1970: 3)
+        )
+    }
+
+    func testRecentVariantTransitionsAreBounded() {
+        var switches = PlaybackHealthVariantSwitchTelemetry()
+        let variant = PlaybackHealthVariant(
+            peakBitRate: 2_000,
+            averageBitRate: 1_000,
+            resolution: "1920×1080",
+            frameRate: 24
+        )
+
+        for index in 0..<(PlaybackHealthVariantSwitchTelemetry.recentTransitionCapacity + 5) {
+            switches.record(
+                from: variant,
+                to: variant,
+                succeeded: true,
+                occurredAt: Date(timeIntervalSince1970: Double(index))
+            )
+        }
+
+        XCTAssertEqual(
+            switches.recentTransitions.count,
+            PlaybackHealthVariantSwitchTelemetry.recentTransitionCapacity
+        )
+        XCTAssertEqual(
+            switches.recentTransitions.first?.occurredAt,
+            Date(timeIntervalSince1970: 5)
+        )
     }
 
     func testPlaybackSummarySanitizesInvalidValuesAndUnsafeErrorDomain() {
@@ -903,7 +1080,222 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         )
     }
 
-    func testManualIncidentsAreBoundedClearedAndResetPerItem() throws {
+    func testReportUsesUnknownForUnavailableMeasurements() {
+        let report = PlaybackDiagnosticsSnapshot
+            .unavailable(.noPlayerItem)
+            .report()
+
+        XCTAssertTrue(report.contains("loaded_range_count=unknown"))
+        XCTAssertTrue(report.contains("likely_to_keep_up=unknown"))
+        XCTAssertTrue(report.contains("access_log_periods=unknown"))
+        XCTAssertTrue(report.contains("error_log_entries=unknown"))
+        XCTAssertTrue(report.contains("storyboard_samples=unknown"))
+        XCTAssertFalse(report.contains("loaded_range_count=0"))
+    }
+
+    func testReportRedactsUntrustedFreeFormText() {
+        let canary = "https://user@example.com/segment?token=report-secret"
+        let snapshot = makeSnapshot(
+            errors: [
+                PlaybackDiagnosticsError(
+                    occurredAt: Date(timeIntervalSince1970: 100),
+                    domain: canary,
+                    code: 500
+                )
+            ],
+            storyboard: PlaybackDiagnosticsStoryboard(
+                samples: [],
+                evidence: [
+                    PlaybackDiagnosticsEvidence(
+                        id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                        occurredAt: Date(timeIntervalSince1970: 101),
+                        mediaTime: 10,
+                        kind: .errorLogEntry,
+                        level: .notice,
+                        title: canary,
+                        measurement: "authorization=Bearer report-secret"
+                    )
+                ],
+                incidents: [],
+                bookmarks: []
+            )
+        )
+
+        let report = snapshot.report()
+
+        XCTAssertTrue(report.contains("[redacted]"))
+        XCTAssertFalse(report.contains(canary))
+        XCTAssertFalse(report.contains("report-secret"))
+        XCTAssertFalse(report.contains("user@example.com"))
+    }
+
+    func testReportOrderingIsStableAcrossEquivalentCollectionOrder() {
+        let sampleOne = reportSample(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            capturedAt: Date(timeIntervalSince1970: 110),
+            mediaTime: 10
+        )
+        let sampleTwo = reportSample(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            capturedAt: Date(timeIntervalSince1970: 120),
+            mediaTime: 20
+        )
+        let evidenceOne = PlaybackDiagnosticsEvidence(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!,
+            occurredAt: Date(timeIntervalSince1970: 111),
+            mediaTime: 11,
+            kind: .failedSegmentRequest,
+            level: .warning,
+            title: "Segment request failed",
+            measurement: "HTTP 503"
+        )
+        let evidenceTwo = PlaybackDiagnosticsEvidence(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000012")!,
+            occurredAt: Date(timeIntervalSince1970: 121),
+            mediaTime: 21,
+            kind: .recovery,
+            level: .observation,
+            title: "Playback recovered",
+            measurement: "2.000 seconds"
+        )
+        let incidentID = UUID(uuidString: "00000000-0000-0000-0000-000000000021")!
+        let incidentForward = reportIncident(
+            id: incidentID,
+            startedAt: Date(timeIntervalSince1970: 112),
+            evidenceIDs: [evidenceOne.id, evidenceTwo.id],
+            measuredValues: ["HTTP 503", "2.000 seconds"]
+        )
+        let incidentReverse = reportIncident(
+            id: incidentID,
+            startedAt: Date(timeIntervalSince1970: 112),
+            evidenceIDs: [evidenceTwo.id, evidenceOne.id],
+            measuredValues: ["2.000 seconds", "HTTP 503"]
+        )
+        let secondIncident = reportIncident(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000022")!,
+            startedAt: Date(timeIntervalSince1970: 122),
+            evidenceIDs: [evidenceTwo.id],
+            measuredValues: ["Recovered"]
+        )
+        let bookmarkID = UUID(uuidString: "00000000-0000-0000-0000-000000000031")!
+        let bookmarkForward = reportBookmark(
+            id: bookmarkID,
+            capturedAt: Date(timeIntervalSince1970: 113),
+            nearbySampleIDs: [sampleOne.id, sampleTwo.id],
+            nearbyEvidenceIDs: [evidenceOne.id, evidenceTwo.id]
+        )
+        let bookmarkReverse = reportBookmark(
+            id: bookmarkID,
+            capturedAt: Date(timeIntervalSince1970: 113),
+            nearbySampleIDs: [sampleTwo.id, sampleOne.id],
+            nearbyEvidenceIDs: [evidenceTwo.id, evidenceOne.id]
+        )
+        let secondBookmark = reportBookmark(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000032")!,
+            capturedAt: Date(timeIntervalSince1970: 123),
+            nearbySampleIDs: [sampleTwo.id],
+            nearbyEvidenceIDs: [evidenceTwo.id]
+        )
+        let audioTracks = [
+            PlaybackDiagnosticsTrack(
+                identifier: "sha256:audio-a",
+                name: "Audio A",
+                languageCode: "en",
+                isSelected: true
+            ),
+            PlaybackDiagnosticsTrack(
+                identifier: "sha256:audio-b",
+                name: "Audio B",
+                languageCode: "uz",
+                isSelected: false
+            ),
+        ]
+        let subtitleTracks = [
+            PlaybackDiagnosticsTrack(
+                identifier: "sha256:subtitle-a",
+                name: "Subtitle A",
+                languageCode: "en",
+                isSelected: false
+            ),
+            PlaybackDiagnosticsTrack(
+                identifier: "sha256:subtitle-b",
+                name: "Subtitle B",
+                languageCode: "uz",
+                isSelected: true
+            ),
+        ]
+        let errors = [
+            PlaybackDiagnosticsError(
+                occurredAt: Date(timeIntervalSince1970: 114),
+                domain: NSURLErrorDomain,
+                code: -1
+            ),
+            PlaybackDiagnosticsError(
+                occurredAt: Date(timeIntervalSince1970: 124),
+                domain: NSPOSIXErrorDomain,
+                code: 2
+            ),
+        ]
+        let events = [
+            healthEvent(
+                mediaTime: 14,
+                confidence: .medium,
+                mediaType: .audio
+            ),
+            healthEvent(
+                mediaTime: 24,
+                confidence: .high,
+                mediaType: .audio
+            ),
+        ]
+        var forwardMonitor = PlaybackHealthMonitorTelemetry.initial(for: .observing)
+        forwardMonitor.requestTrace.record(requestTraceEntry(index: 1))
+        forwardMonitor.requestTrace.record(requestTraceEntry(index: 2))
+        var reverseMonitor = PlaybackHealthMonitorTelemetry.initial(for: .observing)
+        reverseMonitor.requestTrace.record(requestTraceEntry(index: 2))
+        reverseMonitor.requestTrace.record(requestTraceEntry(index: 1))
+        let forwardStoryboard = PlaybackDiagnosticsStoryboard(
+            sessionStartedAt: Date(timeIntervalSince1970: 100),
+            firstPlayingAt: Date(timeIntervalSince1970: 101),
+            firstLikelyToKeepUpAt: Date(timeIntervalSince1970: 102),
+            endedAt: Date(timeIntervalSince1970: 130),
+            samples: [sampleOne, sampleTwo],
+            evidence: [evidenceOne, evidenceTwo],
+            incidents: [incidentForward, secondIncident],
+            bookmarks: [bookmarkForward, secondBookmark]
+        )
+        let reverseStoryboard = PlaybackDiagnosticsStoryboard(
+            sessionStartedAt: Date(timeIntervalSince1970: 100),
+            firstPlayingAt: Date(timeIntervalSince1970: 101),
+            firstLikelyToKeepUpAt: Date(timeIntervalSince1970: 102),
+            endedAt: Date(timeIntervalSince1970: 130),
+            samples: [sampleTwo, sampleOne],
+            evidence: [evidenceTwo, evidenceOne],
+            incidents: [secondIncident, incidentReverse],
+            bookmarks: [secondBookmark, bookmarkReverse]
+        )
+
+        let forward = makeSnapshot(
+            audioTracks: audioTracks,
+            subtitleTracks: subtitleTracks,
+            errors: errors,
+            events: events,
+            monitor: forwardMonitor,
+            storyboard: forwardStoryboard
+        )
+        let reverse = makeSnapshot(
+            audioTracks: Array(audioTracks.reversed()),
+            subtitleTracks: Array(subtitleTracks.reversed()),
+            errors: Array(errors.reversed()),
+            events: Array(events.reversed()),
+            monitor: reverseMonitor,
+            storyboard: reverseStoryboard
+        )
+
+        XCTAssertEqual(forward.report(), reverse.report())
+    }
+
+    func testBookmarksAreBoundedClearedAndResetPerItem() throws {
         let manager = PlayerManager.shared
         manager.isPlaybackHealthMonitoringEnabled = true
         manager.setPlayer(type: .avPlayer)
@@ -917,16 +1309,16 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         )
 
         for _ in 0..<22 {
-            XCTAssertNotNil(manager.capturePlaybackDiagnosticsIncident())
+            XCTAssertNotNil(manager.capturePlaybackDiagnosticsBookmark())
         }
 
-        XCTAssertEqual(manager.fetchPlaybackDiagnostics().incidents.count, 20)
-        XCTAssertTrue(manager.fetchPlaybackDiagnostics().report().contains("manual_incidents=20"))
+        XCTAssertEqual(manager.fetchPlaybackDiagnostics().storyboard.bookmarks.count, 20)
+        XCTAssertTrue(manager.fetchPlaybackDiagnostics().report().contains("bookmarks=20"))
 
         manager.clearPlaybackDiagnosticsEvents()
-        XCTAssertTrue(manager.fetchPlaybackDiagnostics().incidents.isEmpty)
+        XCTAssertTrue(manager.fetchPlaybackDiagnostics().storyboard.bookmarks.isEmpty)
 
-        XCTAssertNotNil(manager.capturePlaybackDiagnosticsIncident())
+        XCTAssertNotNil(manager.capturePlaybackDiagnosticsBookmark())
         manager.load(
             playerItem: PlayerItem(
                 title: "Second",
@@ -935,10 +1327,42 @@ final class PlaybackDiagnosticsTests: XCTestCase {
                 playbackHealthAssetIdentifier: "43"
             )
         )
-        XCTAssertTrue(manager.fetchPlaybackDiagnostics().incidents.isEmpty)
+        XCTAssertTrue(manager.fetchPlaybackDiagnostics().storyboard.bookmarks.isEmpty)
     }
 
-    func testRetainedIncidentTrackDropsManifestControlledDisplayName() throws {
+    func testStoppingFreezesSessionAndResetClearsIt() throws {
+        let manager = PlayerManager.shared
+        manager.setPlayer(type: .avPlayer)
+        manager.load(
+            playerItem: PlayerItem(
+                title: "Lifecycle",
+                url: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("diagnostics-lifecycle.m3u8"),
+                playbackHealthAssetIdentifier: "44"
+            )
+        )
+
+        let active = manager.fetchPlaybackDiagnostics()
+        let sessionID = try XCTUnwrap(active.session.sessionID)
+        XCTAssertTrue(manager.hasActivePlaybackDiagnosticsItem)
+        XCTAssertFalse(active.storyboard.samples.isEmpty)
+
+        manager.stop()
+
+        let frozen = manager.fetchPlaybackDiagnostics()
+        XCTAssertFalse(manager.hasActivePlaybackDiagnosticsItem)
+        XCTAssertEqual(frozen.session.sessionID, sessionID)
+        XCTAssertNotNil(frozen.storyboard.endedAt)
+        XCTAssertNil(manager.capturePlaybackDiagnosticsBookmark())
+
+        manager.resetPlayer()
+
+        let reset = manager.fetchPlaybackDiagnostics()
+        XCTAssertEqual(reset.session.availability, .noPlayerItem)
+        XCTAssertTrue(reset.storyboard.samples.isEmpty)
+    }
+
+    func testRetainedBookmarkTrackDropsManifestControlledDisplayName() throws {
         let canary = "https://media.example/audio?token=retained-secret"
         let retained = try XCTUnwrap(
             retainedPlaybackDiagnosticsAudioTrack(
@@ -1022,6 +1446,98 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         }
     }
 
+    private func reportSample(
+        id: UUID,
+        capturedAt: Date,
+        mediaTime: Double
+    ) -> PlaybackDiagnosticsSample {
+        PlaybackDiagnosticsSample(
+            id: id,
+            capturedAt: capturedAt,
+            sessionElapsed: capturedAt.timeIntervalSince1970 - 100,
+            mediaTime: mediaTime,
+            state: .playing,
+            waitingReason: nil,
+            playbackRate: 1,
+            isPlaybackLikelyToKeepUp: true,
+            isPlaybackBufferEmpty: false,
+            isPlaybackBufferFull: false,
+            bufferHeadroom: 20,
+            observedBitRate: 5_000_000,
+            indicatedBitRate: 4_000_000,
+            resolution: "1920×1080",
+            frameRate: 24,
+            droppedVideoFrameCount: 1,
+            droppedVideoFrameDelta: 0,
+            renditionPeakBitRate: 5_000_000,
+            renditionAverageBitRate: 4_000_000,
+            renditionResolution: "1920×1080",
+            renditionFrameRate: 24,
+            sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000042"),
+            assetIdentifier: "sha256:asset",
+            availability: .activeAVMetrics
+        )
+    }
+
+    private func reportIncident(
+        id: UUID,
+        startedAt: Date,
+        evidenceIDs: [UUID],
+        measuredValues: [String]
+    ) -> PlaybackDiagnosticsAutomaticIncident {
+        PlaybackDiagnosticsAutomaticIncident(
+            id: id,
+            kind: .repeatedRequestFailures,
+            severity: .warning,
+            startedAt: startedAt,
+            lastObservedAt: startedAt.addingTimeInterval(1),
+            endedAt: startedAt.addingTimeInterval(2),
+            impact: "Multiple requests failed.",
+            likelyCause: "Correlated request failures were measured.",
+            evidenceIDs: evidenceIDs,
+            measuredValues: measuredValues,
+            nextAction: "Inspect request timing.",
+            evidenceStrength: .correlated
+        )
+    }
+
+    private func reportBookmark(
+        id: UUID,
+        capturedAt: Date,
+        nearbySampleIDs: [UUID],
+        nearbyEvidenceIDs: [UUID]
+    ) -> PlaybackDiagnosticsBookmark {
+        PlaybackDiagnosticsBookmark(
+            id: id,
+            capturedAt: capturedAt,
+            sessionElapsed: capturedAt.timeIntervalSince1970 - 100,
+            mediaTime: capturedAt.timeIntervalSince1970 - 100,
+            nearbySampleIDs: nearbySampleIDs,
+            nearbyEvidenceIDs: nearbyEvidenceIDs,
+            selectedAudioTrack: PlaybackDiagnosticsTrack(
+                identifier: "sha256:audio-a",
+                name: "Selected audio track",
+                languageCode: "en",
+                isSelected: true
+            ),
+            itemStatus: "ready",
+            timeControlStatus: "playing",
+            waitingReason: nil,
+            bufferHeadroom: 20,
+            resolution: "1920×1080",
+            frameRate: 24,
+            observedBitRate: 5_000_000,
+            indicatedBitRate: 4_000_000,
+            accessLogStallCount: 1,
+            metricStallCount: 1,
+            observedHLSRequestCount: 10,
+            failedHLSRequestCount: 2,
+            postStartWaitCount: 1,
+            seekWaitCount: 0,
+            errorLogEventCount: 1
+        )
+    }
+
     private func makeSnapshot(
         availability: PlaybackDiagnosticsAvailability = .activeAVMetrics,
         capturedAt: Date = Date(timeIntervalSince1970: 200),
@@ -1033,7 +1549,7 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         events: [PlaybackHealthEvent] = [],
         monitor: PlaybackHealthMonitorTelemetry = .initial(for: .observing),
         history: PlaybackDiagnosticsHistory? = nil,
-        incidents: [PlaybackDiagnosticsIncident] = []
+        storyboard: PlaybackDiagnosticsStoryboard = .empty
     ) -> PlaybackDiagnosticsSnapshot {
         PlaybackDiagnosticsSnapshot(
             session: PlaybackDiagnosticsSnapshot.Session(
@@ -1065,7 +1581,7 @@ final class PlaybackDiagnosticsTests: XCTestCase {
                     droppedCount: 0,
                     clearedCount: 0
                 ),
-            incidents: incidents
+            storyboard: storyboard
         )
     }
 

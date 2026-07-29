@@ -435,6 +435,11 @@ final class PlaybackHealthClassifierTests: XCTestCase {
             item: item,
             occurredAt: Date(timeIntervalSince1970: 31)
         )
+        monitor.recordTerminalPlaybackFailure(
+            error: NSError(domain: NSURLErrorDomain, code: 888),
+            item: item,
+            occurredAt: Date(timeIntervalSince1970: 31.5)
+        )
         monitor.recordNaturalPlaybackEnd(
             for: item,
             occurredAt: Date(timeIntervalSince1970: 32)
@@ -456,6 +461,64 @@ final class PlaybackHealthClassifierTests: XCTestCase {
             Date(timeIntervalSince1970: 32)
         )
         XCTAssertNotNil(telemetry.naturalEnd?.mediaTime)
+    }
+
+    func testNativeStallsAreAcceptedAndNearDuplicateSignalsAreSuppressed() {
+        let item = AVPlayerItem(url: URL(fileURLWithPath: "/dev/null"))
+        let monitor = MacOSPlaybackHealthMonitor(
+            item: item,
+            assetIdentifier: "42",
+            selectedAudioTrackProvider: { nil },
+            eventHandler: { _ in }
+        )
+        defer { monitor.stop() }
+
+        monitor.recordPlaybackStall(
+            for: item,
+            occurredAt: Date(timeIntervalSince1970: 10)
+        )
+        monitor.recordPlaybackStall(
+            for: item,
+            occurredAt: Date(timeIntervalSince1970: 10.5)
+        )
+        XCTAssertEqual(monitor.telemetrySnapshot.stallCount, 1)
+
+        monitor.recordPlaybackStall(
+            for: item,
+            occurredAt: Date(timeIntervalSince1970: 13)
+        )
+        XCTAssertEqual(monitor.telemetrySnapshot.stallCount, 2)
+        XCTAssertEqual(
+            monitor.telemetrySnapshot.latestStallAt,
+            Date(timeIntervalSince1970: 13)
+        )
+    }
+
+    func testStoppedMonitorRejectsLateTelemetryMutations() {
+        let item = AVPlayerItem(url: URL(fileURLWithPath: "/dev/null"))
+        let monitor = MacOSPlaybackHealthMonitor(
+            item: item,
+            assetIdentifier: "42",
+            selectedAudioTrackProvider: { nil },
+            eventHandler: { _ in }
+        )
+
+        monitor.stop()
+        let stopped = monitor.telemetrySnapshot
+        monitor.recordPlaybackStall(for: item)
+        monitor.recordTerminalPlaybackFailure(
+            error: NSError(domain: NSURLErrorDomain, code: 777),
+            item: item
+        )
+        monitor.recordNaturalPlaybackEnd(for: item)
+        monitor.recordSeekStarted()
+        monitor.recordSeekCompleted(didSeekInBuffer: true)
+        monitor.recordTimeControlStatus(
+            .playing,
+            waitingReason: nil
+        )
+
+        XCTAssertEqual(monitor.telemetrySnapshot, stopped)
     }
 
     func testNaturalEndClearsOnlyAfterMaterialResumeAndPreservesTerminalFailure() {
@@ -802,7 +865,9 @@ final class PlaybackHealthIntegrationTests: XCTestCase {
             playbackHealthMonitoringEligible: true
         )
         XCTAssertNotNil(wrapper.activePlaybackHealthSessionID)
-        XCTAssertNil(wrapper.activePlaybackHealthAssetIdentifier)
+        XCTAssertTrue(
+            wrapper.activePlaybackHealthAssetIdentifier?.hasPrefix("sha256:") == true
+        )
 
         wrapper.load(
             url: remoteURL,

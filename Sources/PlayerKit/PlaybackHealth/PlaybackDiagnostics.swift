@@ -1,6 +1,46 @@
 #if os(macOS)
 import Foundation
 
+// ponytail: These ceilings reject corrupt or adversarial AVFoundation metadata.
+// Raise them only when real playback hardware needs larger dimensions/rates.
+private let playbackDiagnosticsMaximumDimension = 65_536.0
+private let playbackDiagnosticsMaximumFrameRate = 1_000.0
+private let playbackDiagnosticsMaximumPlaybackRate = 64.0
+
+func sanitizedPlaybackDiagnosticsResolution(
+    width: Double,
+    height: Double
+) -> String? {
+    guard width.isFinite,
+          height.isFinite,
+          width > 0,
+          height > 0,
+          width <= playbackDiagnosticsMaximumDimension,
+          height <= playbackDiagnosticsMaximumDimension else {
+        return nil
+    }
+    return "\(Int(width.rounded()))×\(Int(height.rounded()))"
+}
+
+func sanitizedPlaybackDiagnosticsFrameRate(_ value: Double?) -> Double? {
+    guard let value,
+          value.isFinite,
+          value > 0,
+          value <= playbackDiagnosticsMaximumFrameRate else {
+        return nil
+    }
+    return value
+}
+
+func sanitizedPlaybackDiagnosticsRate(_ value: Double?) -> Double? {
+    guard let value,
+          value.isFinite,
+          abs(value) <= playbackDiagnosticsMaximumPlaybackRate else {
+        return nil
+    }
+    return value
+}
+
 enum PlaybackDiagnosticsAvailability: String, Sendable {
     case startingAVMetrics
     case activeAVMetrics
@@ -86,31 +126,6 @@ struct PlaybackDiagnosticsError: Equatable, Sendable {
     let occurredAt: Date?
     let domain: String?
     let code: Int
-}
-
-struct PlaybackDiagnosticsIncident: Identifiable, Equatable, Sendable {
-    let id: UUID
-    let capturedAt: Date
-    let mediaTime: Double?
-    let selectedAudioTrack: PlaybackDiagnosticsTrack?
-    let itemStatus: String
-    let timeControlStatus: String
-    let waitingReason: String?
-    let bufferHeadroom: Double?
-    let isPlaybackLikelyToKeepUp: Bool
-    let isPlaybackBufferEmpty: Bool
-    let resolution: String?
-    let frameRate: Double?
-    let observedBitRate: Double?
-    let indicatedBitRate: Double?
-    let accessLogStallCount: Int?
-    let observedHLSRequestCount: Int
-    let failedHLSRequestCount: Int
-    let metricStallCount: Int
-    let postStartWaitCount: Int
-    let seekWaitCount: Int
-    let errorLogEventCount: Int
-    let retainedHealthEventCount: Int
 }
 
 enum PlaybackHealthMonitorStreamState: String, Equatable, Sendable {
@@ -509,7 +524,16 @@ struct PlaybackHealthVariant: Equatable, Sendable {
     let frameRate: Double?
 }
 
+struct PlaybackHealthVariantTransition: Equatable, Sendable {
+    let occurredAt: Date
+    let from: PlaybackHealthVariant?
+    let to: PlaybackHealthVariant
+    let succeeded: Bool
+}
+
 struct PlaybackHealthVariantSwitchTelemetry: Equatable, Sendable {
+    static let recentTransitionCapacity = 20
+
     var totalCount = 0
     var succeededCount = 0
     var failedCount = 0
@@ -521,6 +545,7 @@ struct PlaybackHealthVariantSwitchTelemetry: Equatable, Sendable {
     var latestSucceeded: Bool?
     var latestFrom: PlaybackHealthVariant?
     var latestTo: PlaybackHealthVariant?
+    var recentTransitions: [PlaybackHealthVariantTransition] = []
 
     mutating func record(
         from: PlaybackHealthVariant?,
@@ -564,6 +589,19 @@ struct PlaybackHealthVariantSwitchTelemetry: Equatable, Sendable {
         latestSucceeded = succeeded
         latestFrom = from
         latestTo = to
+        recentTransitions.append(
+            PlaybackHealthVariantTransition(
+                occurredAt: occurredAt,
+                from: from,
+                to: to,
+                succeeded: succeeded
+            )
+        )
+        if recentTransitions.count > Self.recentTransitionCapacity {
+            recentTransitions.removeFirst(
+                recentTransitions.count - Self.recentTransitionCapacity
+            )
+        }
     }
 }
 
@@ -708,18 +746,37 @@ struct PlaybackDiagnosticsHistory: Equatable, Sendable {
 struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
     struct Session: Equatable, Sendable {
         let capturedAt: Date
+        let startedAt: Date?
         let availability: PlaybackDiagnosticsAvailability
         let backend: String
         let monitorAttached: Bool
         let sessionID: UUID?
         let assetIdentifier: String?
+
+        init(
+            capturedAt: Date,
+            startedAt: Date? = nil,
+            availability: PlaybackDiagnosticsAvailability,
+            backend: String,
+            monitorAttached: Bool,
+            sessionID: UUID?,
+            assetIdentifier: String?
+        ) {
+            self.capturedAt = capturedAt
+            self.startedAt = startedAt
+            self.availability = availability
+            self.backend = backend
+            self.monitorAttached = monitorAttached
+            self.sessionID = sessionID
+            self.assetIdentifier = assetIdentifier
+        }
     }
 
     struct Playback: Equatable, Sendable {
         let itemStatus: String
         let timeControlStatus: String
         let waitingReason: String?
-        let rate: Double
+        let rate: Double?
         let currentTime: Double?
         let duration: Double?
         let bufferedUntil: Double?
@@ -835,7 +892,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
     let recentHealthEvents: [PlaybackHealthEvent]
     let monitor: PlaybackHealthMonitorTelemetry?
     let history: PlaybackDiagnosticsHistory
-    let incidents: [PlaybackDiagnosticsIncident]
+    let storyboard: PlaybackDiagnosticsStoryboard
 
     static func unavailable(_ availability: PlaybackDiagnosticsAvailability) -> Self {
         return Self(
@@ -851,7 +908,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                 itemStatus: "unavailable",
                 timeControlStatus: "unavailable",
                 waitingReason: nil,
-                rate: 0,
+                rate: nil,
                 currentTime: nil,
                 duration: nil,
                 bufferedUntil: nil,
@@ -899,7 +956,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
             recentHealthEvents: [],
             monitor: nil,
             history: .empty,
-            incidents: []
+            storyboard: .empty
         )
     }
 
@@ -1331,7 +1388,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
             )
         }
 
-        if let error = recentErrors.last {
+        if let error = recentErrors.max(by: Self.errorRecencySort) {
             let diagnosis = [error.domain, String(error.code)]
                 .compactMap { $0 }
                 .joined(separator: " / ")
@@ -1407,73 +1464,118 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
     func report() -> String {
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let hasItem = playback.itemStatus != "unavailable"
+        let hasSessionEvidence = hasItem
+            || session.startedAt != nil
+            || storyboard.sessionStartedAt != nil
+            || session.sessionID != nil
+        let selectedAudioTrack = audioTracks
+            .sorted(by: Self.trackSort)
+            .first(where: \.isSelected)
+        let metricsCoverage: String
+        switch session.availability {
+        case .activeAVMetrics:
+            metricsCoverage = "typed_avmetrics"
+        case .startingAVMetrics:
+            metricsCoverage = "typed_avmetrics_starting"
+        case .activeErrorLogFallback, .failedAVMetrics, .endedAVMetrics:
+            metricsCoverage = "reduced_error_log_fallback"
+        case .monitoringDisabled, .monitorNotAttached:
+            metricsCoverage = "not_collected"
+        case .noPlayerItem, .unsupportedBackend:
+            metricsCoverage = "unavailable"
+        }
         var lines = [
             "PlayerKit HLS Diagnostics",
+            "schema_version=2",
+            "value_semantics=measured values are direct platform observations; inferred values are labeled incidents; unknown means unavailable or not measured",
+            "privacy_scope=sanitized identifiers, counters, categories, and timings only; no URLs, request bodies, headers, comments, or display names",
+            "number_format=en_US_POSIX fixed three-decimal seconds and bitrates",
+            "timestamp_format=UTC ISO-8601 with milliseconds",
+            "coverage_typed_hls_metrics=\(metricsCoverage)",
+            "collection_limit_request_trace=\(PlaybackHealthRequestTraceTelemetry.capacity)",
+            "collection_limit_variant_transitions=\(PlaybackHealthVariantSwitchTelemetry.recentTransitionCapacity)",
+            "collection_limit_storyboard_samples=\(PlaybackDiagnosticsSessionReducer.sampleCapacity)",
+            "collection_limit_storyboard_evidence=\(PlaybackDiagnosticsSessionReducer.evidenceCapacity)",
+            "collection_limit_storyboard_incidents=\(PlaybackDiagnosticsSessionReducer.incidentCapacity)",
+            "collection_limit_storyboard_bookmarks=\(PlaybackDiagnosticsSessionReducer.bookmarkCapacity)",
+            "calibration_note=request and incident heuristics require correlated retained evidence; absence of retained evidence does not prove absence",
+            "[measured]",
             "captured_at=\(Self.iso8601(session.capturedAt))",
             "os_version=\(Self.singleLine(ProcessInfo.processInfo.operatingSystemVersionString))",
             "app_version=\(Self.singleLine(appVersion ?? "unknown"))",
             "app_build=\(Self.singleLine(appBuild ?? "unknown"))",
             "availability=\(session.availability.rawValue)",
-            "backend=\(session.backend)",
+            "backend=\(Self.singleLine(session.backend))",
             "monitor_attached=\(session.monitorAttached)",
             "health_session_id=\(session.sessionID?.uuidString ?? "unknown")",
-            "asset_id=\(session.assetIdentifier ?? "missing")",
-            "item_status=\(playback.itemStatus)",
-            "time_control=\(playback.timeControlStatus)",
-            "waiting_reason=\(playback.waitingReason ?? "none")",
-            "rate=\(Self.decimal(playback.rate))",
-            "current_seconds=\(Self.decimal(playback.currentTime))",
-            "duration_seconds=\(Self.decimal(playback.duration))",
-            "buffered_until_seconds=\(Self.decimal(playback.bufferedUntil))",
-            "buffer_headroom_seconds=\(Self.decimal(playback.bufferHeadroom))",
-            "loaded_range_count=\(playback.loadedRangeCount)",
-            "seekable_range_count=\(playback.seekableRangeCount)",
-            "likely_to_keep_up=\(playback.isPlaybackLikelyToKeepUp)",
-            "buffer_empty=\(playback.isPlaybackBufferEmpty)",
-            "buffer_full=\(playback.isPlaybackBufferFull)",
-            "automatically_waits_to_minimize_stalling=\(playback.automaticallyWaitsToMinimizeStalling)",
-            "muted=\(playback.isMuted)",
-            "volume=\(Self.decimal(playback.volume))",
-            "playback_type=\(playback.playbackType ?? "unknown")",
-            "likely_hls=\(playback.isLikelyHLS.map(String.init) ?? "unknown")",
-            "resolution=\(playback.resolution ?? "unknown")",
-            "frame_rate=\(Self.decimal(playback.frameRate))",
-            "preferred_forward_buffer_seconds=\(Self.decimal(playback.preferredForwardBufferDuration))",
-            "preferred_peak_bitrate_bps=\(Self.decimal(playback.preferredPeakBitRate))",
-            "preferred_maximum_resolution=\(playback.preferredMaximumResolution ?? "automatic")",
-            "access_log_periods=\(network.accessLogEventCount)",
-            "observed_bitrate_bps=\(Self.decimal(network.observedBitRate))",
-            "indicated_bitrate_bps=\(Self.decimal(network.indicatedBitRate))",
-            "indicated_average_bitrate_bps=\(Self.decimal(network.indicatedAverageBitRate))",
-            "average_video_bitrate_bps=\(Self.decimal(network.averageVideoBitRate))",
-            "average_audio_bitrate_bps=\(Self.decimal(network.averageAudioBitRate))",
-            "observed_bitrate_standard_deviation_bps=\(Self.decimal(network.observedBitRateStandardDeviation))",
-            "switch_bitrate_bps=\(Self.decimal(network.switchBitRate))",
-            "media_requests=\(Self.integer(network.mediaRequestCount))",
-            "stalls=\(Self.integer(network.numberOfStalls))",
-            "dropped_video_frames=\(Self.integer(network.droppedVideoFrameCount))",
-            "overdue_downloads=\(Self.integer(network.overdueDownloadCount))",
-            "bytes_transferred=\(network.bytesTransferred.map(String.init) ?? "unknown")",
-            "transfer_seconds=\(Self.decimal(network.transferDuration))",
-            "segments_downloaded_seconds=\(Self.decimal(network.segmentsDownloadedDuration))",
-            "duration_watched_seconds=\(Self.decimal(network.durationWatched))",
-            "startup_seconds=\(Self.decimal(network.startupTime))",
-            "server_address_change_count=\(Self.integer(network.serverAddressChangeCount))",
-            "error_log_entries=\(errorLogEventCount)",
-            "health_events_received=\(history.receivedCount)",
-            "health_events_retained=\(history.retainedCount)",
-            "health_events_dropped=\(history.droppedCount)",
-            "health_events_cleared=\(history.clearedCount)",
-            "manual_incidents=\(incidents.count)",
-            "selected_audio_track_id=\(audioTracks.first(where: { $0.isSelected })?.identifier ?? "unknown")",
-            "selected_audio_track_language=\(audioTracks.first(where: { $0.isSelected })?.languageCode ?? "unknown")"
+            "asset_id=\(Self.singleLine(session.assetIdentifier ?? "unknown"))",
+            "session_started_at=\(Self.optionalISO8601(session.startedAt ?? storyboard.sessionStartedAt))",
+            "session_ended_at=\(Self.optionalISO8601(storyboard.endedAt))",
+            "first_playing_at=\(Self.optionalISO8601(storyboard.firstPlayingAt))",
+            "first_likely_to_keep_up_at=\(Self.optionalISO8601(storyboard.firstLikelyToKeepUpAt))",
+            "startup_to_playing_seconds=\(Self.interval(from: storyboard.sessionStartedAt ?? session.startedAt, to: storyboard.firstPlayingAt))",
+            "startup_to_likely_to_keep_up_seconds=\(Self.interval(from: storyboard.sessionStartedAt ?? session.startedAt, to: storyboard.firstLikelyToKeepUpAt))",
+            "session_elapsed_seconds=\(Self.interval(from: storyboard.sessionStartedAt ?? session.startedAt, to: storyboard.endedAt ?? session.capturedAt))",
+            "item_status=\(Self.singleLine(playback.itemStatus))",
+            "time_control=\(Self.singleLine(playback.timeControlStatus))",
+            "waiting_reason=\(hasItem ? Self.singleLine(playback.waitingReason ?? "none") : "unknown")",
+            "rate=\(hasItem ? Self.decimal(playback.rate) : "unknown")",
+            "current_seconds=\(hasItem ? Self.decimal(playback.currentTime) : "unknown")",
+            "duration_seconds=\(hasItem ? Self.decimal(playback.duration) : "unknown")",
+            "buffered_until_seconds=\(hasItem ? Self.decimal(playback.bufferedUntil) : "unknown")",
+            "buffer_headroom_seconds=\(hasItem ? Self.decimal(playback.bufferHeadroom) : "unknown")",
+            "loaded_range_count=\(Self.available(playback.loadedRangeCount, when: hasItem))",
+            "seekable_range_count=\(Self.available(playback.seekableRangeCount, when: hasItem))",
+            "likely_to_keep_up=\(Self.available(playback.isPlaybackLikelyToKeepUp, when: hasItem))",
+            "buffer_empty=\(Self.available(playback.isPlaybackBufferEmpty, when: hasItem))",
+            "buffer_full=\(Self.available(playback.isPlaybackBufferFull, when: hasItem))",
+            "automatically_waits_to_minimize_stalling=\(Self.available(playback.automaticallyWaitsToMinimizeStalling, when: hasItem))",
+            "muted=\(Self.available(playback.isMuted, when: hasItem))",
+            "volume=\(hasItem ? Self.decimal(playback.volume) : "unknown")",
+            "playback_type=\(hasItem ? Self.singleLine(playback.playbackType ?? "unknown") : "unknown")",
+            "likely_hls=\(hasItem ? playback.isLikelyHLS.map(String.init) ?? "unknown" : "unknown")",
+            "resolution=\(hasItem ? Self.singleLine(playback.resolution ?? "unknown") : "unknown")",
+            "frame_rate=\(hasItem ? Self.decimal(playback.frameRate) : "unknown")",
+            "preferred_forward_buffer_seconds=\(hasItem ? Self.decimal(playback.preferredForwardBufferDuration) : "unknown")",
+            "preferred_peak_bitrate_bps=\(hasItem ? Self.decimal(playback.preferredPeakBitRate) : "unknown")",
+            "preferred_maximum_resolution=\(hasItem ? Self.singleLine(playback.preferredMaximumResolution ?? "automatic") : "unknown")",
+            "access_log_periods=\(Self.available(network.accessLogEventCount, when: hasItem))",
+            "observed_bitrate_bps=\(hasItem ? Self.decimal(network.observedBitRate) : "unknown")",
+            "indicated_bitrate_bps=\(hasItem ? Self.decimal(network.indicatedBitRate) : "unknown")",
+            "indicated_average_bitrate_bps=\(hasItem ? Self.decimal(network.indicatedAverageBitRate) : "unknown")",
+            "average_video_bitrate_bps=\(hasItem ? Self.decimal(network.averageVideoBitRate) : "unknown")",
+            "average_audio_bitrate_bps=\(hasItem ? Self.decimal(network.averageAudioBitRate) : "unknown")",
+            "observed_bitrate_standard_deviation_bps=\(hasItem ? Self.decimal(network.observedBitRateStandardDeviation) : "unknown")",
+            "switch_bitrate_bps=\(hasItem ? Self.decimal(network.switchBitRate) : "unknown")",
+            "media_requests=\(hasItem ? Self.integer(network.mediaRequestCount) : "unknown")",
+            "stalls=\(hasItem ? Self.integer(network.numberOfStalls) : "unknown")",
+            "dropped_video_frames=\(hasItem ? Self.integer(network.droppedVideoFrameCount) : "unknown")",
+            "overdue_downloads=\(hasItem ? Self.integer(network.overdueDownloadCount) : "unknown")",
+            "bytes_transferred=\(hasItem ? network.bytesTransferred.map(String.init) ?? "unknown" : "unknown")",
+            "transfer_seconds=\(hasItem ? Self.decimal(network.transferDuration) : "unknown")",
+            "segments_downloaded_seconds=\(hasItem ? Self.decimal(network.segmentsDownloadedDuration) : "unknown")",
+            "duration_watched_seconds=\(hasItem ? Self.decimal(network.durationWatched) : "unknown")",
+            "startup_seconds=\(hasItem ? Self.decimal(network.startupTime) : "unknown")",
+            "server_address_change_count=\(hasItem ? Self.integer(network.serverAddressChangeCount) : "unknown")",
+            "error_log_entries=\(Self.available(errorLogEventCount, when: hasItem))",
+            "health_events_received=\(Self.available(history.receivedCount, when: hasSessionEvidence))",
+            "health_events_retained=\(Self.available(history.retainedCount, when: hasSessionEvidence))",
+            "health_events_dropped=\(Self.available(history.droppedCount, when: hasSessionEvidence))",
+            "health_events_cleared=\(Self.available(history.clearedCount, when: hasSessionEvidence))",
+            "storyboard_samples=\(Self.available(storyboard.samples.count, when: hasSessionEvidence))",
+            "storyboard_evidence=\(Self.available(storyboard.evidence.count, when: hasSessionEvidence))",
+            "automatic_incidents=\(Self.available(storyboard.incidents.count, when: hasSessionEvidence))",
+            "bookmarks=\(Self.available(storyboard.bookmarks.count, when: hasSessionEvidence))",
+            "selected_audio_track_id=\(Self.singleLine(selectedAudioTrack?.identifier ?? "unknown"))",
+            "selected_audio_track_language=\(Self.singleLine(selectedAudioTrack?.languageCode ?? "unknown"))"
         ]
 
         if let monitor {
             lines.append(contentsOf: [
                 "monitor_stream_state=\(monitor.streamState.rawValue)",
                 "monitor_fallback_reason=\(monitor.fallbackReason?.rawValue ?? "none")",
-                "monitor_stream_failure_domain=\(monitor.streamFailure?.domain ?? "none")",
+                "monitor_stream_failure_domain=\(Self.singleLine(monitor.streamFailure?.domain ?? "none"))",
                 "monitor_stream_failure_code=\(monitor.streamFailure.map { String($0.code) } ?? "none")",
                 "natural_end_observed=\(monitor.naturalEnd != nil)",
                 "natural_end_at=\(Self.optionalISO8601(monitor.naturalEnd?.occurredAt))",
@@ -1518,14 +1620,14 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                 "likely_to_keep_up_latest_media_seconds=\(Self.decimal(monitor.likelyToKeepUp.latest?.mediaTime))",
                 "likely_to_keep_up_latest_time_taken_seconds=\(Self.decimal(monitor.likelyToKeepUp.latest?.timeTaken))",
                 "likely_to_keep_up_latest_loaded_seconds=\(Self.decimal(monitor.likelyToKeepUp.latest?.loadedRangeDuration))",
-                "initial_playlist_request_count=\(monitor.likelyToKeepUp.initialRequests?.playlists.requestCount ?? 0)",
-                "initial_playlist_duration_sample_count=\(monitor.likelyToKeepUp.initialRequests?.playlists.durationSampleCount ?? 0)",
+                "initial_playlist_request_count=\(Self.integer(monitor.likelyToKeepUp.initialRequests?.playlists.requestCount))",
+                "initial_playlist_duration_sample_count=\(Self.integer(monitor.likelyToKeepUp.initialRequests?.playlists.durationSampleCount))",
                 "initial_playlist_request_seconds=\(Self.decimal(monitor.likelyToKeepUp.initialRequests?.playlists.summedRequestDuration))",
-                "initial_segment_request_count=\(monitor.likelyToKeepUp.initialRequests?.segments.requestCount ?? 0)",
-                "initial_segment_duration_sample_count=\(monitor.likelyToKeepUp.initialRequests?.segments.durationSampleCount ?? 0)",
+                "initial_segment_request_count=\(Self.integer(monitor.likelyToKeepUp.initialRequests?.segments.requestCount))",
+                "initial_segment_duration_sample_count=\(Self.integer(monitor.likelyToKeepUp.initialRequests?.segments.durationSampleCount))",
                 "initial_segment_request_seconds=\(Self.decimal(monitor.likelyToKeepUp.initialRequests?.segments.summedRequestDuration))",
-                "initial_content_key_request_count=\(monitor.likelyToKeepUp.initialRequests?.contentKeys.requestCount ?? 0)",
-                "initial_content_key_duration_sample_count=\(monitor.likelyToKeepUp.initialRequests?.contentKeys.durationSampleCount ?? 0)",
+                "initial_content_key_request_count=\(Self.integer(monitor.likelyToKeepUp.initialRequests?.contentKeys.requestCount))",
+                "initial_content_key_duration_sample_count=\(Self.integer(monitor.likelyToKeepUp.initialRequests?.contentKeys.durationSampleCount))",
                 "initial_content_key_request_seconds=\(Self.decimal(monitor.likelyToKeepUp.initialRequests?.contentKeys.summedRequestDuration))",
                 "seek_started_count=\(monitor.seeks.startedCount)",
                 "seek_completed_count=\(monitor.seeks.completedCount)",
@@ -1547,11 +1649,11 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                 "variant_switch_latest_succeeded=\(monitor.variantSwitches.latestSucceeded.map(String.init) ?? "unknown")",
                 "variant_switch_from_peak_bps=\(Self.decimal(monitor.variantSwitches.latestFrom?.peakBitRate))",
                 "variant_switch_from_average_bps=\(Self.decimal(monitor.variantSwitches.latestFrom?.averageBitRate))",
-                "variant_switch_from_resolution=\(monitor.variantSwitches.latestFrom?.resolution ?? "unknown")",
+                "variant_switch_from_resolution=\(Self.singleLine(monitor.variantSwitches.latestFrom?.resolution ?? "unknown"))",
                 "variant_switch_from_fps=\(Self.decimal(monitor.variantSwitches.latestFrom?.frameRate))",
                 "variant_switch_to_peak_bps=\(Self.decimal(monitor.variantSwitches.latestTo?.peakBitRate))",
                 "variant_switch_to_average_bps=\(Self.decimal(monitor.variantSwitches.latestTo?.averageBitRate))",
-                "variant_switch_to_resolution=\(monitor.variantSwitches.latestTo?.resolution ?? "unknown")",
+                "variant_switch_to_resolution=\(Self.singleLine(monitor.variantSwitches.latestTo?.resolution ?? "unknown"))",
                 "variant_switch_to_fps=\(Self.decimal(monitor.variantSwitches.latestTo?.frameRate))",
                 "initial_wait_count=\(monitor.waiting.initialWaitCount)",
                 "post_start_wait_count=\(monitor.waiting.postStartWaitCount)",
@@ -1562,7 +1664,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                 "longest_wait_seconds=\(Self.decimal(monitor.waiting.longestWaitDuration))",
                 "last_wait_seconds=\(Self.decimal(monitor.waiting.lastWaitDuration))",
                 "last_wait_kind=\(monitor.waiting.lastKind?.rawValue ?? "none")",
-                "last_wait_reason=\(monitor.waiting.lastReason ?? "none")",
+                "last_wait_reason=\(Self.singleLine(monitor.waiting.lastReason ?? "none"))",
                 "last_wait_ended_at=\(Self.optionalISO8601(monitor.waiting.lastEndedAt))",
                 "slow_delivery_audio_count=\(monitor.slowDelivery.audioCount)",
                 "slow_delivery_video_count=\(monitor.slowDelivery.videoCount)",
@@ -1587,7 +1689,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
             if let summary = monitor.playbackSummary {
                 lines.append(
                     "playback_summary=\(Self.iso8601(summary.occurredAt)) " +
-                    "error_domain=\(summary.error?.domain ?? "none") " +
+                    "error_domain=\(Self.singleLine(summary.error?.domain ?? "none")) " +
                     "error_code=\(summary.error.map { String($0.code) } ?? "none") " +
                     "error_recovered=\(summary.errorDidRecover.map(String.init) ?? "unknown") " +
                     "recoverable_errors=\(Self.integer(summary.recoverableErrorCount)) " +
@@ -1606,7 +1708,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                 lines.append(
                     "terminal_failure=\(Self.iso8601(failure.occurredAt)) " +
                     "position=\(Self.decimal(failure.mediaTime)) " +
-                    "domain=\(failure.error.domain ?? "none") code=\(failure.error.code)"
+                    "domain=\(Self.singleLine(failure.error.domain ?? "none")) code=\(failure.error.code)"
                 )
             }
 
@@ -1623,14 +1725,16 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                     "response_body_bytes=\(context.responseBodyBytes.map(String.init) ?? "unknown") " +
                     "http_status=\(context.httpStatusCode.map(String.init) ?? "unknown") " +
                     "redirect_count=\(context.redirectCount.map(String.init) ?? "unknown") " +
-                    "protocol=\(context.networkProtocol ?? "unknown") " +
+                    "protocol=\(Self.singleLine(context.networkProtocol ?? "unknown")) " +
                     "dns_seconds=\(Self.decimal(context.dnsDuration)) " +
                     "connect_seconds=\(Self.decimal(context.connectDuration)) " +
                     "tls_seconds=\(Self.decimal(context.tlsDuration))"
                 )
             }
 
-            for (index, entry) in monitor.requestTrace.entries.enumerated() {
+            for (index, entry) in monitor.requestTrace.entries
+                .sorted(by: Self.requestTraceSort)
+                .enumerated() {
                 lines.append(
                     "request_trace[\(index)]=at=\(Self.iso8601(entry.occurredAt)) " +
                     "kind=\(entry.kind.rawValue) media=\(entry.mediaType.rawValue) " +
@@ -1642,7 +1746,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                     "mime=\(entry.mimeCategory?.rawValue ?? "unknown") " +
                     "cache=\(entry.wasReadFromCache.map(String.init) ?? "unknown") " +
                     "redirects=\(entry.redirectCount.map(String.init) ?? "unknown") " +
-                    "protocol=\(entry.networkProtocol ?? "unknown") " +
+                    "protocol=\(Self.singleLine(entry.networkProtocol ?? "unknown")) " +
                     "response_bytes=\(entry.responseBodyBytes.map(String.init) ?? "unknown") " +
                     "decoded_bytes=\(entry.decodedBodyBytes.map(String.init) ?? "unknown") " +
                     "reused=\(entry.reusedConnection.map(String.init) ?? "unknown") " +
@@ -1655,73 +1759,147 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                     "segment_delivery_ratio=\(Self.decimal(entry.segmentDeliveryRatio))"
                 )
             }
+
+            for (index, transition) in monitor.variantSwitches.recentTransitions
+                .sorted(by: Self.variantTransitionSort)
+                .enumerated() {
+                lines.append(
+                    "variant_transition[\(index)]=at=\(Self.iso8601(transition.occurredAt)) " +
+                    "succeeded=\(transition.succeeded) " +
+                    "from_peak_bps=\(Self.decimal(transition.from?.peakBitRate)) " +
+                    "from_average_bps=\(Self.decimal(transition.from?.averageBitRate)) " +
+                    "from_resolution=\(Self.singleLine(transition.from?.resolution ?? "unknown")) " +
+                    "from_fps=\(Self.decimal(transition.from?.frameRate)) " +
+                    "to_peak_bps=\(Self.decimal(transition.to.peakBitRate)) " +
+                    "to_average_bps=\(Self.decimal(transition.to.averageBitRate)) " +
+                    "to_resolution=\(Self.singleLine(transition.to.resolution ?? "unknown")) " +
+                    "to_fps=\(Self.decimal(transition.to.frameRate))"
+                )
+            }
         }
 
-        for (index, track) in audioTracks.enumerated() {
+        for (index, track) in audioTracks.sorted(by: Self.trackSort).enumerated() {
             lines.append(
-                "audio_track[\(index)]=id=\(track.identifier ?? "unknown") " +
-                "language=\(track.languageCode ?? "unknown") " +
+                "audio_track[\(index)]=id=\(Self.singleLine(track.identifier ?? "unknown")) " +
+                "language=\(Self.singleLine(track.languageCode ?? "unknown")) " +
                 "selected=\(track.isSelected)"
             )
         }
 
-        for (index, track) in subtitleTracks.enumerated() {
+        for (index, track) in subtitleTracks.sorted(by: Self.trackSort).enumerated() {
             lines.append(
-                "subtitle_track[\(index)]=id=\(track.identifier ?? "unknown") " +
-                "language=\(track.languageCode ?? "unknown") " +
+                "subtitle_track[\(index)]=id=\(Self.singleLine(track.identifier ?? "unknown")) " +
+                "language=\(Self.singleLine(track.languageCode ?? "unknown")) " +
                 "selected=\(track.isSelected)"
             )
         }
 
-        for (index, error) in recentErrors.enumerated() {
+        for (index, error) in recentErrors.sorted(by: Self.errorSort).enumerated() {
             lines.append(
                 "error[\(index)]=at=\(Self.optionalISO8601(error.occurredAt)) " +
-                "domain=\(error.domain ?? "none") code=\(error.code)"
+                "domain=\(Self.singleLine(error.domain ?? "none")) code=\(error.code)"
             )
         }
 
-        for issue in issues() {
+        for issue in issues().sorted(by: Self.issueSort) {
             lines.append(
                 "issue[\(issue.level),\(issue.scope.rawValue)]=\(Self.singleLine(issue.title)): " +
                 "\(Self.singleLine(issue.detail)) recommendation=\(Self.singleLine(issue.recommendation ?? "none"))"
             )
         }
 
-        for event in recentHealthEvents {
+        for event in recentHealthEvents.sorted(by: Self.healthEventSort) {
             lines.append(
                 "event=\(Self.iso8601(event.occurredAt)) " +
                 "signal=\(event.signalKind.rawValue) media=\(event.mediaType.rawValue) " +
                 "confidence=\(event.confidence.rawValue) position=\(Self.decimal(event.mediaTime)) " +
-                "domain=\(event.errorDomain ?? "none") code=\(Self.integer(event.errorCode)) " +
+                "domain=\(Self.singleLine(event.errorDomain ?? "none")) code=\(Self.integer(event.errorCode)) " +
                 "recovered=\(event.didRecover.map(String.init) ?? "unknown") " +
-                "track_id=\(event.selectedAudioTrack?.identifier ?? "unknown") " +
-                "track_language=\(event.selectedAudioTrack?.languageCode ?? "unknown")"
+                "track_id=\(Self.singleLine(event.selectedAudioTrack?.identifier ?? "unknown")) " +
+                "track_language=\(Self.singleLine(event.selectedAudioTrack?.languageCode ?? "unknown"))"
             )
         }
 
-        for incident in incidents {
+        for sample in storyboard.samples.sorted(by: Self.sampleSort) {
             lines.append(
-                "incident=\(Self.iso8601(incident.capturedAt)) id=\(incident.id.uuidString) " +
-                "position=\(Self.decimal(incident.mediaTime)) item=\(incident.itemStatus) " +
-                "time_control=\(incident.timeControlStatus) " +
-                "waiting_reason=\(Self.singleLine(incident.waitingReason ?? "none")) " +
-                "buffer_headroom=\(Self.decimal(incident.bufferHeadroom)) " +
-                "likely_to_keep_up=\(incident.isPlaybackLikelyToKeepUp) " +
-                "buffer_empty=\(incident.isPlaybackBufferEmpty) " +
-                "resolution=\(incident.resolution ?? "unknown") " +
-                "frame_rate=\(Self.decimal(incident.frameRate)) " +
-                "observed_bitrate_bps=\(Self.decimal(incident.observedBitRate)) " +
-                "indicated_bitrate_bps=\(Self.decimal(incident.indicatedBitRate)) " +
-                "access_log_stalls=\(Self.integer(incident.accessLogStallCount)) " +
-                "hls_requests=\(incident.observedHLSRequestCount) " +
-                "failed_hls_requests=\(incident.failedHLSRequestCount) " +
-                "metric_stalls=\(incident.metricStallCount) " +
-                "post_start_waits=\(incident.postStartWaitCount) " +
-                "seek_waits=\(incident.seekWaitCount) " +
-                "error_log_entries=\(incident.errorLogEventCount) " +
-                "retained_candidates=\(incident.retainedHealthEventCount) " +
-                "track_id=\(incident.selectedAudioTrack?.identifier ?? "unknown") " +
-                "track_language=\(incident.selectedAudioTrack?.languageCode ?? "unknown")"
+                "storyboard_sample=\(Self.iso8601(sample.capturedAt)) " +
+                "id=\(sample.id.uuidString) " +
+                "elapsed=\(Self.decimal(sample.sessionElapsed)) " +
+                "position=\(Self.decimal(sample.mediaTime)) state=\(sample.state.rawValue) " +
+                "waiting_reason=\(Self.singleLine(sample.waitingReason ?? "none")) " +
+                "rate=\(Self.decimal(sample.playbackRate)) " +
+                "likely_to_keep_up=\(sample.isPlaybackLikelyToKeepUp.map(String.init) ?? "unknown") " +
+                "buffer_empty=\(sample.isPlaybackBufferEmpty.map(String.init) ?? "unknown") " +
+                "buffer_full=\(sample.isPlaybackBufferFull.map(String.init) ?? "unknown") " +
+                "buffer_headroom=\(Self.decimal(sample.bufferHeadroom)) " +
+                "observed_bitrate_bps=\(Self.decimal(sample.observedBitRate)) " +
+                "indicated_bitrate_bps=\(Self.decimal(sample.indicatedBitRate)) " +
+                "resolution=\(Self.singleLine(sample.resolution ?? "unknown")) " +
+                "frame_rate=\(Self.decimal(sample.frameRate)) " +
+                "dropped_video_frames=\(Self.integer(sample.droppedVideoFrameCount)) " +
+                "dropped_video_frame_delta=\(Self.integer(sample.droppedVideoFrameDelta)) " +
+                "rendition_peak_bps=\(Self.decimal(sample.renditionPeakBitRate)) " +
+                "rendition_average_bps=\(Self.decimal(sample.renditionAverageBitRate)) " +
+                "rendition_resolution=\(Self.singleLine(sample.renditionResolution ?? "unknown")) " +
+                "rendition_fps=\(Self.decimal(sample.renditionFrameRate)) " +
+                "session_id=\(sample.sessionID?.uuidString ?? "unknown") " +
+                "asset_id=\(Self.singleLine(sample.assetIdentifier ?? "unknown")) " +
+                "availability=\(sample.availability.rawValue)"
+            )
+        }
+
+        for evidence in storyboard.evidence.sorted(by: Self.evidenceSort) {
+            lines.append(
+                "storyboard_evidence=\(Self.iso8601(evidence.occurredAt)) " +
+                "id=\(evidence.id.uuidString) kind=\(evidence.kind.rawValue) " +
+                "level=\(String(describing: evidence.level)) " +
+                "position=\(Self.decimal(evidence.mediaTime)) " +
+                "title=\(Self.singleLine(evidence.title)) " +
+                "measurement=\(Self.singleLine(evidence.measurement ?? "unknown"))"
+            )
+        }
+
+        lines.append("[inferred]")
+        for incident in storyboard.incidents.sorted(by: Self.incidentSort) {
+            lines.append(
+                "automatic_incident=\(Self.iso8601(incident.startedAt)) " +
+                "id=\(incident.id.uuidString) kind=\(incident.kind.rawValue) " +
+                "severity=\(String(describing: incident.severity)) state=\(incident.state.rawValue) " +
+                "last_observed_at=\(Self.iso8601(incident.lastObservedAt)) " +
+                "ended_at=\(Self.optionalISO8601(incident.endedAt)) " +
+                "impact=\(Self.singleLine(incident.impact)) " +
+                "likely_cause=\(Self.singleLine(incident.likelyCause)) " +
+                "confidence=\(Self.singleLine(incident.evidenceStrength.rawValue)) " +
+                "evidence_ids=\(incident.evidenceIDs.map(\.uuidString).sorted().joined(separator: ",")) " +
+                "measured_values=\(Self.singleLine(incident.measuredValues.sorted().joined(separator: " | "))) " +
+                "next_action=\(Self.singleLine(incident.nextAction))"
+            )
+        }
+
+        lines.append("[operator_context]")
+        for bookmark in storyboard.bookmarks.sorted(by: Self.bookmarkSort) {
+            lines.append(
+                "bookmark=\(Self.iso8601(bookmark.capturedAt)) id=\(bookmark.id.uuidString) " +
+                "elapsed=\(Self.decimal(bookmark.sessionElapsed)) " +
+                "position=\(Self.decimal(bookmark.mediaTime)) item=\(Self.singleLine(bookmark.itemStatus)) " +
+                "time_control=\(Self.singleLine(bookmark.timeControlStatus)) " +
+                "waiting_reason=\(Self.singleLine(bookmark.waitingReason ?? "none")) " +
+                "buffer_headroom=\(Self.decimal(bookmark.bufferHeadroom)) " +
+                "resolution=\(Self.singleLine(bookmark.resolution ?? "unknown")) " +
+                "frame_rate=\(Self.decimal(bookmark.frameRate)) " +
+                "observed_bitrate_bps=\(Self.decimal(bookmark.observedBitRate)) " +
+                "indicated_bitrate_bps=\(Self.decimal(bookmark.indicatedBitRate)) " +
+                "access_log_stalls=\(Self.integer(bookmark.accessLogStallCount)) " +
+                "metric_stalls=\(Self.integer(bookmark.metricStallCount)) " +
+                "hls_requests=\(Self.integer(bookmark.observedHLSRequestCount)) " +
+                "failed_hls_requests=\(Self.integer(bookmark.failedHLSRequestCount)) " +
+                "post_start_waits=\(Self.integer(bookmark.postStartWaitCount)) " +
+                "seek_waits=\(Self.integer(bookmark.seekWaitCount)) " +
+                "error_log_entries=\(bookmark.errorLogEventCount) " +
+                "nearby_sample_ids=\(bookmark.nearbySampleIDs.map(\.uuidString).sorted().joined(separator: ",")) " +
+                "nearby_evidence_ids=\(bookmark.nearbyEvidenceIDs.map(\.uuidString).sorted().joined(separator: ",")) " +
+                "track_id=\(Self.singleLine(bookmark.selectedAudioTrack?.identifier ?? "unknown")) " +
+                "track_language=\(Self.singleLine(bookmark.selectedAudioTrack?.languageCode ?? "unknown"))"
             )
         }
 
@@ -1748,16 +1926,37 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
 
     private static func decimal(_ value: Double?) -> String {
         guard let value, value.isFinite else { return "unknown" }
-        return String(format: "%.3f", value)
+        return String(
+            format: "%.3f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            value == 0 ? 0 : value
+        )
     }
 
     private static func integer(_ value: Int?) -> String {
         value.map(String.init) ?? "unknown"
     }
 
+    private static func available<T>(_ value: T, when isAvailable: Bool) -> String {
+        isAvailable ? String(describing: value) : "unknown"
+    }
+
+    private static func interval(from start: Date?, to end: Date?) -> String {
+        guard let start,
+              let end,
+              start.timeIntervalSinceReferenceDate.isFinite,
+              end.timeIntervalSinceReferenceDate.isFinite else {
+            return "unknown"
+        }
+        let value = end.timeIntervalSince(start)
+        return value >= 0 ? decimal(value) : "unknown"
+    }
+
     private static func iso8601(_ date: Date) -> String {
+        guard date.timeIntervalSinceReferenceDate.isFinite else { return "unknown" }
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter.string(from: date)
     }
 
@@ -1766,11 +1965,201 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
     }
 
     private static func singleLine(_ value: String) -> String {
-        value
+        let normalized = value
             .unicodeScalars
             .filter { !CharacterSet.newlines.contains($0) && !CharacterSet.controlCharacters.contains($0) }
             .map(String.init)
             .joined()
+        let lowercase = normalized.lowercased()
+        let privacyMarkers = [
+            "://",
+            "authorization",
+            "bearer ",
+            "cookie=",
+            "password=",
+            "secret=",
+            "signature=",
+            "token=",
+            "x-api-key",
+        ]
+        guard !privacyMarkers.contains(where: lowercase.contains),
+              !normalized.contains("@") else {
+            return "[redacted]"
+        }
+        // ponytail: report fields are intentionally compact; add structured
+        // attachments instead of raising this ceiling if richer exports are needed.
+        return String(normalized.prefix(512))
+    }
+
+    private static func trackSort(
+        _ lhs: PlaybackDiagnosticsTrack,
+        _ rhs: PlaybackDiagnosticsTrack
+    ) -> Bool {
+        sortKey([
+            lhs.identifier ?? "",
+            lhs.languageCode ?? "",
+            String(lhs.isSelected),
+        ]) < sortKey([
+            rhs.identifier ?? "",
+            rhs.languageCode ?? "",
+            String(rhs.isSelected),
+        ])
+    }
+
+    private static func errorSort(
+        _ lhs: PlaybackDiagnosticsError,
+        _ rhs: PlaybackDiagnosticsError
+    ) -> Bool {
+        sortKey([
+            optionalISO8601(lhs.occurredAt),
+            lhs.domain ?? "",
+            String(lhs.code),
+        ]) < sortKey([
+            optionalISO8601(rhs.occurredAt),
+            rhs.domain ?? "",
+            String(rhs.code),
+        ])
+    }
+
+    private static func errorRecencySort(
+        _ lhs: PlaybackDiagnosticsError,
+        _ rhs: PlaybackDiagnosticsError
+    ) -> Bool {
+        let lhsDate = lhs.occurredAt ?? .distantPast
+        let rhsDate = rhs.occurredAt ?? .distantPast
+        if lhsDate != rhsDate {
+            return lhsDate < rhsDate
+        }
+        return sortKey([lhs.domain ?? "", String(lhs.code)])
+            < sortKey([rhs.domain ?? "", String(rhs.code)])
+    }
+
+    private static func issueSort(
+        _ lhs: PlaybackDiagnosticsIssue,
+        _ rhs: PlaybackDiagnosticsIssue
+    ) -> Bool {
+        if lhs.level != rhs.level {
+            return lhs.level > rhs.level
+        }
+        return sortKey([lhs.title, lhs.id]) < sortKey([rhs.title, rhs.id])
+    }
+
+    private static func healthEventSort(
+        _ lhs: PlaybackHealthEvent,
+        _ rhs: PlaybackHealthEvent
+    ) -> Bool {
+        healthEventSortKey(lhs) < healthEventSortKey(rhs)
+    }
+
+    private static func healthEventSortKey(_ event: PlaybackHealthEvent) -> String {
+        sortKey([
+            iso8601(event.occurredAt),
+            event.healthSessionID.uuidString,
+            event.signalKind.rawValue,
+            event.mediaType.rawValue,
+            event.confidence.rawValue,
+            decimal(event.mediaTime),
+            event.errorDomain ?? "",
+            integer(event.errorCode),
+            event.didRecover.map(String.init) ?? "",
+            event.selectedAudioTrack?.identifier ?? "",
+            event.selectedAudioTrack?.languageCode ?? "",
+        ])
+    }
+
+    private static func requestTraceSort(
+        _ lhs: PlaybackHealthRequestTraceEntry,
+        _ rhs: PlaybackHealthRequestTraceEntry
+    ) -> Bool {
+        requestTraceSortKey(lhs) < requestTraceSortKey(rhs)
+    }
+
+    private static func requestTraceSortKey(_ entry: PlaybackHealthRequestTraceEntry) -> String {
+        sortKey([
+            iso8601(entry.occurredAt),
+            entry.kind.rawValue,
+            entry.mediaType.rawValue,
+            String(entry.didFail),
+            entry.didRecover.map(String.init) ?? "",
+            decimal(entry.requestDuration),
+            decimal(entry.timeToFirstByte),
+            decimal(entry.transferDuration),
+            entry.httpStatusCode.map(String.init) ?? "",
+            entry.mimeCategory?.rawValue ?? "",
+            entry.wasReadFromCache.map(String.init) ?? "",
+            entry.redirectCount.map(String.init) ?? "",
+            entry.networkProtocol ?? "",
+            entry.responseBodyBytes.map(String.init) ?? "",
+            entry.decodedBodyBytes.map(String.init) ?? "",
+            entry.reusedConnection.map(String.init) ?? "",
+            entry.proxyConnection.map(String.init) ?? "",
+            entry.constrainedNetwork.map(String.init) ?? "",
+            entry.expensiveNetwork.map(String.init) ?? "",
+            entry.cellularNetwork.map(String.init) ?? "",
+            entry.multipathConnection.map(String.init) ?? "",
+            entry.fetchType?.rawValue ?? "",
+            decimal(entry.segmentDeliveryRatio),
+        ])
+    }
+
+    private static func variantTransitionSort(
+        _ lhs: PlaybackHealthVariantTransition,
+        _ rhs: PlaybackHealthVariantTransition
+    ) -> Bool {
+        variantTransitionSortKey(lhs) < variantTransitionSortKey(rhs)
+    }
+
+    private static func variantTransitionSortKey(
+        _ transition: PlaybackHealthVariantTransition
+    ) -> String {
+        sortKey([
+            iso8601(transition.occurredAt),
+            String(transition.succeeded),
+            decimal(transition.from?.peakBitRate),
+            decimal(transition.from?.averageBitRate),
+            transition.from?.resolution ?? "",
+            decimal(transition.from?.frameRate),
+            decimal(transition.to.peakBitRate),
+            decimal(transition.to.averageBitRate),
+            transition.to.resolution ?? "",
+            decimal(transition.to.frameRate),
+        ])
+    }
+
+    private static func sampleSort(
+        _ lhs: PlaybackDiagnosticsSample,
+        _ rhs: PlaybackDiagnosticsSample
+    ) -> Bool {
+        sortKey([iso8601(lhs.capturedAt), lhs.id.uuidString])
+            < sortKey([iso8601(rhs.capturedAt), rhs.id.uuidString])
+    }
+
+    private static func evidenceSort(
+        _ lhs: PlaybackDiagnosticsEvidence,
+        _ rhs: PlaybackDiagnosticsEvidence
+    ) -> Bool {
+        sortKey([iso8601(lhs.occurredAt), lhs.id.uuidString])
+            < sortKey([iso8601(rhs.occurredAt), rhs.id.uuidString])
+    }
+
+    private static func incidentSort(
+        _ lhs: PlaybackDiagnosticsAutomaticIncident,
+        _ rhs: PlaybackDiagnosticsAutomaticIncident
+    ) -> Bool {
+        sortKey([iso8601(lhs.startedAt), lhs.id.uuidString])
+            < sortKey([iso8601(rhs.startedAt), rhs.id.uuidString])
+    }
+
+    private static func bookmarkSort(
+        _ lhs: PlaybackDiagnosticsBookmark,
+        _ rhs: PlaybackDiagnosticsBookmark
+    ) -> Bool {
+        sortKey([iso8601(lhs.capturedAt), lhs.id.uuidString])
+            < sortKey([iso8601(rhs.capturedAt), rhs.id.uuidString])
+    }
+
+    private static func sortKey(_ fields: [String]) -> String {
+        fields.joined(separator: "\u{1F}")
     }
 }
 

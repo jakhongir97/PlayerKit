@@ -20,6 +20,69 @@ func playbackHealthCallbackBelongsToCurrentSession(
     return currentItem == nil
 }
 
+struct PlaybackDiagnosticsBufferState: Equatable, Sendable {
+    let bufferedUntil: Double?
+    let headroom: Double?
+
+    static let unknown = Self(bufferedUntil: nil, headroom: nil)
+    static let empty = Self(bufferedUntil: nil, headroom: 0)
+}
+
+func playbackDiagnosticsBufferState(
+    currentTime: Double?,
+    loadedTimeRanges: [CMTimeRange]
+) -> PlaybackDiagnosticsBufferState {
+    guard let currentTime,
+          currentTime.isFinite,
+          currentTime >= 0 else {
+        return .unknown
+    }
+
+    let ranges = loadedTimeRanges.compactMap {
+        range -> (start: Double, end: Double)? in
+        let start = range.start.seconds
+        let duration = range.duration.seconds
+        let end = start + duration
+        guard start.isFinite,
+              start >= 0,
+              duration.isFinite,
+              duration > 0,
+              end.isFinite,
+              end >= start else {
+            return nil
+        }
+        return (start, end)
+    }
+    .sorted { $0.start < $1.start }
+
+    guard !ranges.isEmpty else {
+        return loadedTimeRanges.isEmpty ? .empty : .unknown
+    }
+    guard var active = ranges.first(where: {
+        currentTime >= $0.start - 0.25 && currentTime <= $0.end + 0.25
+    }) else {
+        return .empty
+    }
+
+    // ponytail: Merge only sub-250ms range gaps; expose discontinuities if
+    // calibration shows this AVFoundation boundary tolerance is too generous.
+    for range in ranges where range.start > active.start {
+        guard range.start <= active.end + 0.25 else { break }
+        active.end = max(active.end, range.end)
+    }
+
+    return PlaybackDiagnosticsBufferState(
+        bufferedUntil: active.end,
+        headroom: max(active.end - currentTime, 0)
+    )
+}
+
+private struct PlaybackDiagnosticsItemContext {
+    let sessionID: UUID
+    let startedAt: Date
+    let assetIdentifier: String?
+}
+
 struct PlaybackDiagnosticsLogCacheSnapshot: Equatable, Sendable {
     let network: PlaybackDiagnosticsSnapshot.Network
     let playbackType: String?
@@ -184,6 +247,9 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private let playbackDiagnosticsLogCache = PlaybackDiagnosticsLogCache()
     private var playbackDiagnosticsAccessLogObserver: NSObjectProtocol?
     private var playbackDiagnosticsErrorLogObserver: NSObjectProtocol?
+    private var playbackDiagnosticsItemContext: PlaybackDiagnosticsItemContext?
+    private var playbackDiagnosticsAudioTracks: [PlaybackDiagnosticsTrack] = []
+    private var playbackDiagnosticsSubtitleTracks: [PlaybackDiagnosticsTrack] = []
     var onPlaybackHealthEvent: ((PlaybackHealthEvent) -> Void)?
 
     var activePlaybackHealthSessionID: UUID? {
@@ -208,6 +274,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         invalidateInstalledItemObservation()
         #if os(macOS)
         stopPlaybackHealthMonitoring()
+        playbackDiagnosticsItemContext = nil
         #endif
         removeRuntimeTimeObserver()
         timeControlStatusObserver = nil
@@ -260,6 +327,7 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
         invalidateInstalledItemObservation()
         #if os(macOS)
         stopPlaybackHealthMonitoring()
+        playbackDiagnosticsItemContext = nil
         #endif
         removeRuntimeTimeObserver()
         timeControlStatusObserver = nil
@@ -389,6 +457,11 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
             return
         }
         player?.currentItem?.select(option, in: audioGroup)
+        #if os(macOS)
+        if let item = player?.currentItem {
+            refreshPlaybackDiagnosticsTrackCache(for: item)
+        }
+        #endif
     }
     
     public func selectSubtitle(withID id: String?) {
@@ -400,6 +473,11 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
         } else {
             player?.currentItem?.select(nil, in: subtitleGroup)
         }
+        #if os(macOS)
+        if let item = player?.currentItem {
+            refreshPlaybackDiagnosticsTrackCache(for: item)
+        }
+        #endif
     }
 }
 
@@ -439,8 +517,16 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         // Normalize at the trust boundary so public events and retained samples
         // never carry a caller-provided URL, token, or other opaque raw value.
         let healthAssetIdentifier = diagnosticsIdentifier(
-            normalizedPlaybackHealthAssetIdentifier
+            normalizedPlaybackHealthAssetIdentifier.flatMap {
+                $0.isEmpty ? nil : $0
+            } ?? url.absoluteString
         )
+        let diagnosticsContext = PlaybackDiagnosticsItemContext(
+            sessionID: UUID(),
+            startedAt: Date(),
+            assetIdentifier: healthAssetIdentifier
+        )
+        playbackDiagnosticsItemContext = diagnosticsContext
         if playbackHealthMonitoringEnabled,
            playbackHealthMonitoringEligible,
            !url.isFileURL {
@@ -452,6 +538,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
                 }
             let monitor = MacOSPlaybackHealthMonitor(
                 item: playerItem,
+                healthSessionID: diagnosticsContext.sessionID,
                 assetIdentifier: healthAssetIdentifier,
                 selectedAudioTrackProvider: selectedAudioTrackProvider,
                 eventHandler: { [weak self] event in
@@ -529,6 +616,9 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
                                     return
                                 }
                                 self.ensureAudibleTrackSelectedIfNeeded(item: item)
+                                #if os(macOS)
+                                self.refreshPlaybackDiagnosticsTrackCache(for: item)
+                                #endif
                                 self.debugLog(
                                     "Item ready. tracks audio=\(self.availableAudioTracks.count) " +
                                     "subtitle=\(self.availableSubtitles.count)"
@@ -543,6 +633,21 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
                 } else if item.status == .failed {
                     let description = item.error?.localizedDescription
                         ?? "Unknown AVPlayer item error"
+                    #if os(macOS)
+                    if let callbackHealthMonitor,
+                       playbackHealthCallbackBelongsToCurrentSession(
+                        capturedSessionID: callbackHealthSessionID,
+                        currentSessionID: self.playbackHealthMonitor?.healthSessionID,
+                        capturedItem: item,
+                        currentItem: self.player?.currentItem
+                       ),
+                       self.playbackHealthMonitor === callbackHealthMonitor {
+                        callbackHealthMonitor.recordTerminalPlaybackFailure(
+                            error: item.error,
+                            item: item
+                        )
+                    }
+                    #endif
                     self.debugLog("Item failed. \(self.failureDiagnostics(for: item))")
                     self.lifecycleReporter?.playerDidFail(
                         with: .mediaLoadFailed(description)
@@ -835,7 +940,7 @@ extension AVPlayerWrapper {
         monitoringEnabled: Bool,
         recentHealthEvents: [PlaybackHealthEvent],
         history: PlaybackDiagnosticsHistory = .empty,
-        incidents: [PlaybackDiagnosticsIncident] = []
+        storyboard: PlaybackDiagnosticsStoryboard = .empty
     ) -> PlaybackDiagnosticsSnapshot {
         guard let player, let item = player.currentItem else {
             return .unavailable(.noPlayerItem)
@@ -843,6 +948,8 @@ extension AVPlayerWrapper {
 
         let monitor = playbackHealthMonitor
         let monitorTelemetry = monitor?.telemetrySnapshot
+        let diagnosticsContext = playbackDiagnosticsItemContext
+        let capturedAt = Date()
         let availability: PlaybackDiagnosticsAvailability
         switch monitorTelemetry?.streamState {
         case .starting:
@@ -863,7 +970,10 @@ extension AVPlayerWrapper {
 
         let currentTime = diagnosticsNonnegative(item.currentTime().seconds)
         let duration = diagnosticsPositive(item.duration.seconds)
-        let buffer = diagnosticsBufferState(for: item, at: currentTime ?? 0)
+        let buffer = playbackDiagnosticsBufferState(
+            currentTime: currentTime,
+            loadedTimeRanges: item.loadedTimeRanges.map(\.timeRangeValue)
+        )
         let logSnapshot = playbackDiagnosticsLogCache.snapshot(for: item)
         let network = logSnapshot.network
         var errors = logSnapshot.recentErrors
@@ -877,8 +987,6 @@ extension AVPlayerWrapper {
             )
         }
 
-        let currentAudioID = currentAudioTrack?.id
-        let currentSubtitleID = currentSubtitleTrack?.id
         let presentationSize = item.presentationSize
         let maximumResolution = item.preferredMaximumResolution
         let playbackType = logSnapshot.playbackType
@@ -887,27 +995,28 @@ extension AVPlayerWrapper {
             ? true
             : nil
         let sessionEvents = recentHealthEvents.filter {
-            guard let sessionID = monitor?.healthSessionID else { return false }
+            guard let sessionID = diagnosticsContext?.sessionID else { return false }
             return $0.healthSessionID == sessionID
         }
 
         return PlaybackDiagnosticsSnapshot(
             session: PlaybackDiagnosticsSnapshot.Session(
-                capturedAt: Date(),
+                capturedAt: capturedAt,
+                startedAt: diagnosticsContext?.startedAt,
                 availability: availability,
                 backend: "AVPlayer",
                 monitorAttached: monitor != nil,
-                sessionID: monitor?.healthSessionID,
-                assetIdentifier: diagnosticsIdentifier(monitor?.assetIdentifier)
+                sessionID: diagnosticsContext?.sessionID,
+                assetIdentifier: diagnosticsContext?.assetIdentifier
             ),
             playback: PlaybackDiagnosticsSnapshot.Playback(
                 itemStatus: diagnosticsItemStatus(item.status),
                 timeControlStatus: timeControlStatusLabel(player.timeControlStatus),
                 waitingReason: diagnosticsWaitingReason(player.reasonForWaitingToPlay),
-                rate: Double(player.rate),
+                rate: sanitizedPlaybackDiagnosticsRate(Double(player.rate)),
                 currentTime: currentTime,
                 duration: duration,
-                bufferedUntil: buffer.end,
+                bufferedUntil: buffer.bufferedUntil,
                 bufferHeadroom: buffer.headroom,
                 loadedRangeCount: item.loadedTimeRanges.count,
                 seekableRangeCount: item.seekableTimeRanges.count,
@@ -919,72 +1028,31 @@ extension AVPlayerWrapper {
                 volume: Double(player.volume),
                 playbackType: playbackType,
                 isLikelyHLS: isLikelyHLS,
-                resolution: presentationSize.width > 0 && presentationSize.height > 0
-                    ? "\(Int(presentationSize.width))×\(Int(presentationSize.height))"
-                    : nil,
-                frameRate: item.tracks
+                resolution: sanitizedPlaybackDiagnosticsResolution(
+                    width: Double(presentationSize.width),
+                    height: Double(presentationSize.height)
+                ),
+                frameRate: sanitizedPlaybackDiagnosticsFrameRate(item.tracks
                     .map(\.currentVideoFrameRate)
                     .first(where: { $0 > 0 })
-                    .map(Double.init),
+                    .map(Double.init)),
                 preferredForwardBufferDuration: item.preferredForwardBufferDuration,
                 preferredPeakBitRate: item.preferredPeakBitRate,
-                preferredMaximumResolution: maximumResolution.width > 0 && maximumResolution.height > 0
-                    ? "\(Int(maximumResolution.width))×\(Int(maximumResolution.height))"
-                    : nil
+                preferredMaximumResolution: sanitizedPlaybackDiagnosticsResolution(
+                    width: Double(maximumResolution.width),
+                    height: Double(maximumResolution.height)
+                )
             ),
             network: network,
-            audioTracks: availableAudioTracks.map {
-                PlaybackDiagnosticsTrack(
-                    identifier: diagnosticsTrackIdentifier($0.id),
-                    name: sanitizedPlaybackHealthDisplayName($0.name) ?? "Unnamed audio track",
-                    languageCode: sanitizedPlaybackHealthLanguage($0.languageCode),
-                    isSelected: $0.id == currentAudioID
-                )
-            },
-            subtitleTracks: availableSubtitles.map {
-                PlaybackDiagnosticsTrack(
-                    identifier: diagnosticsTrackIdentifier($0.id),
-                    name: sanitizedPlaybackHealthDisplayName($0.name) ?? "Unnamed subtitle track",
-                    languageCode: sanitizedPlaybackHealthLanguage($0.languageCode),
-                    isSelected: $0.id == currentSubtitleID
-                )
-            },
+            audioTracks: playbackDiagnosticsAudioTracks,
+            subtitleTracks: playbackDiagnosticsSubtitleTracks,
             errorLogEventCount: logSnapshot.errorLogEventCount,
             recentErrors: errors,
             recentHealthEvents: sessionEvents,
             monitor: monitorTelemetry,
             history: history,
-            incidents: incidents
+            storyboard: storyboard
         )
-    }
-
-    private func diagnosticsBufferState(
-        for item: AVPlayerItem,
-        at currentTime: Double
-    ) -> (end: Double?, headroom: Double?) {
-        let ranges = item.loadedTimeRanges.compactMap { value -> ClosedRange<Double>? in
-            let range = value.timeRangeValue
-            let start = range.start.seconds
-            let duration = range.duration.seconds
-            guard start.isFinite, duration.isFinite, duration > 0 else { return nil }
-            return start ... (start + duration)
-        }
-        .sorted { $0.lowerBound < $1.lowerBound }
-
-        guard var active = ranges.first(where: {
-            currentTime >= $0.lowerBound - 0.25 && currentTime <= $0.upperBound + 0.25
-        }) else {
-            return (nil, 0)
-        }
-
-        // ponytail: merge only sub-250ms range gaps; expose the raw range list if
-        // discontinuity-level diagnostics become a real calibration requirement.
-        for range in ranges where range.lowerBound > active.lowerBound {
-            guard range.lowerBound <= active.upperBound + 0.25 else { break }
-            active = active.lowerBound ... max(active.upperBound, range.upperBound)
-        }
-
-        return (active.upperBound, max(active.upperBound - currentTime, 0))
     }
 
     private func diagnosticsItemStatus(_ status: AVPlayerItem.Status) -> String {
@@ -1091,7 +1159,11 @@ extension AVPlayerWrapper {
               let monitor = playbackHealthMonitor else {
             return nil
         }
-        monitor.recordSeekStarted(occurredAt: Date())
+        // ponytail: SmoothPlayer coalesces overlapping seeks and completes only
+        // the newest request; revisit if the fallback player stops coalescing.
+        if monitor.telemetrySnapshot.seeks.inProgressCount == 0 {
+            monitor.recordSeekStarted(occurredAt: Date())
+        }
         return PlaybackHealthFallbackSeekContext(
             monitor: monitor,
             sessionID: monitor.healthSessionID,
@@ -1495,6 +1567,8 @@ extension AVPlayerWrapper {
         removePlaybackEndedObserver()
         #if os(macOS)
         stopPlaybackDiagnosticsLogObservation()
+        playbackDiagnosticsAudioTracks.removeAll(keepingCapacity: true)
+        playbackDiagnosticsSubtitleTracks.removeAll(keepingCapacity: true)
         #endif
     }
     
@@ -1563,6 +1637,30 @@ extension AVPlayerWrapper {
             playbackDiagnosticsErrorLogObserver = nil
         }
         playbackDiagnosticsLogCache.invalidate()
+    }
+
+    private func refreshPlaybackDiagnosticsTrackCache(for item: AVPlayerItem) {
+        guard player?.currentItem === item else { return }
+        let currentAudioID = currentAudioTrack?.id
+        let currentSubtitleID = currentSubtitleTrack?.id
+        playbackDiagnosticsAudioTracks = availableAudioTracks.map {
+            PlaybackDiagnosticsTrack(
+                identifier: diagnosticsTrackIdentifier($0.id),
+                name: sanitizedPlaybackHealthDisplayName($0.name)
+                    ?? "Unnamed audio track",
+                languageCode: sanitizedPlaybackHealthLanguage($0.languageCode),
+                isSelected: $0.id == currentAudioID
+            )
+        }
+        playbackDiagnosticsSubtitleTracks = availableSubtitles.map {
+            PlaybackDiagnosticsTrack(
+                identifier: diagnosticsTrackIdentifier($0.id),
+                name: sanitizedPlaybackHealthDisplayName($0.name)
+                    ?? "Unnamed subtitle track",
+                languageCode: sanitizedPlaybackHealthLanguage($0.languageCode),
+                isSelected: $0.id == currentSubtitleID
+            )
+        }
     }
     #endif
 

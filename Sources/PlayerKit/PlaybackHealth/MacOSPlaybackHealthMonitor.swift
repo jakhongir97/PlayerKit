@@ -296,6 +296,13 @@ actor MacOSPlaybackHealthClassifier {
 
 final class MacOSPlaybackHealthMonitor {
     private static let naturalEndResumeThreshold: TimeInterval = 1
+    private static let stallDuplicateWindow: TimeInterval = 2
+    private static let stallFingerprintCapacity = 8
+
+    private struct StallFingerprint {
+        let occurredAt: Date
+        let mediaTime: Double?
+    }
 
     let healthSessionID: UUID
     let assetIdentifier: String?
@@ -320,18 +327,19 @@ final class MacOSPlaybackHealthMonitor {
     private var waitStartedUptime: TimeInterval?
     private var completedWaitDuration: TimeInterval = 0
     private var hasReachedPlaying = false
+    private var stallFingerprints: [StallFingerprint] = []
     // ponytail: a 20-entry, two-second SHA-256 identity window bridges AVMetrics
     // to the error log; replace it with a platform correlation ID if Apple exposes one.
     private var typedMetricFailureFingerprints = PlaybackHealthFailureFingerprintWindow()
 
     init(
         item: AVPlayerItem,
+        healthSessionID: UUID = UUID(),
         assetIdentifier: String?,
         selectedAudioTrackProvider:
             @escaping @MainActor @Sendable () async -> PlaybackHealthAudioTrack?,
         eventHandler: @escaping @MainActor (PlaybackHealthEvent) -> Void
     ) {
-        let healthSessionID = UUID()
         let initialStreamState: PlaybackHealthMonitorStreamState
         if #available(macOS 15, *) {
             initialStreamState = .starting
@@ -541,16 +549,19 @@ final class MacOSPlaybackHealthMonitor {
                     } else if let summary = event as? AVMetricPlayerItemPlaybackSummaryEvent {
                         recordPlaybackSummary(summary)
                     } else if let stall = event as? AVMetricPlayerItemStallEvent {
-                        updateTelemetry {
-                            $0.stallCount += 1
-                            $0.latestStallAt = stall.date
+                        let mediaTime = stall.mediaTime.seconds
+                        guard recordPlaybackStallIfNew(
+                            mediaTime: mediaTime,
+                            occurredAt: stall.date
+                        ) else {
+                            continue
                         }
                         await consume(
                             PlaybackHealthSignalSnapshot(
                                 healthSessionID: healthSessionID,
                                 signalKind: .playbackStall,
                                 mediaType: .unknown,
-                                mediaTime: stall.mediaTime.seconds,
+                                mediaTime: mediaTime,
                                 selectedAudioTrack: await selectedAudioTrackProvider(),
                                 errorDomain: nil,
                                 errorCode: nil,
@@ -945,11 +956,14 @@ final class MacOSPlaybackHealthMonitor {
             peakBitRate: sanitizedPositiveInterval(variant.peakBitRate),
             averageBitRate: sanitizedPositiveInterval(variant.averageBitRate),
             resolution: size.flatMap {
-                $0.width > 0 && $0.height > 0
-                    ? "\(Int($0.width))×\(Int($0.height))"
-                    : nil
+                sanitizedPlaybackDiagnosticsResolution(
+                    width: Double($0.width),
+                    height: Double($0.height)
+                )
             },
-            frameRate: sanitizedPositiveInterval(variant.videoAttributes?.nominalFrameRate)
+            frameRate: sanitizedPlaybackDiagnosticsFrameRate(
+                variant.videoAttributes?.nominalFrameRate
+            )
         )
     }
 
@@ -1033,18 +1047,13 @@ final class MacOSPlaybackHealthMonitor {
 
     func recordPlaybackStall(for item: AVPlayerItem, occurredAt: Date = Date()) {
         guard item === monitoredItem else { return }
-        if #available(macOS 15, *) {
-            let streamState = telemetrySnapshot.streamState
-            guard streamState != .observing, streamState != .starting else {
-                return
-            }
-        }
-
-        updateTelemetry {
-            $0.stallCount += 1
-            $0.latestStallAt = occurredAt
-        }
         let mediaTime = item.currentTime().seconds
+        guard recordPlaybackStallIfNew(
+            mediaTime: mediaTime,
+            occurredAt: occurredAt
+        ) else {
+            return
+        }
 
         Task { [weak self] in
             guard let self else { return }
@@ -1063,6 +1072,46 @@ final class MacOSPlaybackHealthMonitor {
         }
     }
 
+    private func recordPlaybackStallIfNew(
+        mediaTime: Double?,
+        occurredAt: Date
+    ) -> Bool {
+        let safeMediaTime = mediaTime.flatMap {
+            $0.isFinite && $0 >= 0 ? $0 : nil
+        }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard !_isStopped else { return false }
+
+        let isDuplicate = stallFingerprints.contains { fingerprint in
+            guard abs(occurredAt.timeIntervalSince(fingerprint.occurredAt))
+                    <= Self.stallDuplicateWindow else {
+                return false
+            }
+            guard let lhs = safeMediaTime,
+                  let rhs = fingerprint.mediaTime else {
+                return true
+            }
+            return abs(lhs - rhs) <= 0.5
+        }
+        guard !isDuplicate else { return false }
+
+        stallFingerprints.append(
+            StallFingerprint(
+                occurredAt: occurredAt,
+                mediaTime: safeMediaTime
+            )
+        )
+        if stallFingerprints.count > Self.stallFingerprintCapacity {
+            stallFingerprints.removeFirst(
+                stallFingerprints.count - Self.stallFingerprintCapacity
+            )
+        }
+        _telemetry.stallCount += 1
+        _telemetry.latestStallAt = occurredAt
+        return true
+    }
+
     func recordTerminalPlaybackFailure(
         error: Error?,
         item: AVPlayerItem,
@@ -1072,6 +1121,7 @@ final class MacOSPlaybackHealthMonitor {
         let nsError = error as NSError? ?? item.error as NSError?
         let mediaTime = item.currentTime().seconds
         updateTelemetry { telemetry in
+            guard telemetry.terminalFailure == nil else { return }
             telemetry.terminalFailure = PlaybackHealthTerminalFailure(
                 occurredAt: occurredAt,
                 mediaTime: mediaTime.isFinite && mediaTime >= 0 ? mediaTime : nil,
@@ -1403,6 +1453,10 @@ final class MacOSPlaybackHealthMonitor {
         _ update: (inout PlaybackHealthMonitorTelemetry) -> Void
     ) {
         stateLock.lock()
+        guard !_isStopped else {
+            stateLock.unlock()
+            return
+        }
         update(&_telemetry)
         stateLock.unlock()
     }

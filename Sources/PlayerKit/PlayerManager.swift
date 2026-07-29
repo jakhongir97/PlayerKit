@@ -1,5 +1,13 @@
 import Foundation
 import Combine
+#if os(macOS)
+import OSLog
+
+private let playbackDiagnosticsLifecycleLogger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "com.netco.itv",
+    category: "PlaybackHealth"
+)
+#endif
 
 enum DubSwitchPolicy {
     private static let preparationLeadSeconds = 6.0
@@ -212,10 +220,16 @@ public class PlayerManager: ObservableObject {
     public var isPlaybackHealthMonitoringEnabled = false
     public var onPlaybackHealthEvent: ((PlaybackHealthEvent) -> Void)?
     @Published private(set) var recentPlaybackHealthEvents: [PlaybackHealthEvent] = []
-    @Published private(set) var playbackDiagnosticsIncidents: [PlaybackDiagnosticsIncident] = []
+    private var playbackDiagnosticsSession = PlaybackDiagnosticsSessionReducer()
+    private var playbackDiagnosticsSampleCancellable: AnyCancellable?
+    private var playbackDiagnosticsLastSnapshot: PlaybackDiagnosticsSnapshot?
     private var playbackHealthEventsReceivedCount = 0
     private var playbackHealthEventsDroppedCount = 0
     private var playbackHealthEventsClearedCount = 0
+
+    var hasActivePlaybackDiagnosticsItem: Bool {
+        playbackDiagnosticsSampleCancellable != nil
+    }
     #endif
     
     // State management
@@ -275,6 +289,13 @@ public class PlayerManager: ObservableObject {
     @Published public private(set) var isExternalEpisodeNavigationInProgress: Bool = false
     @Published var shouldDismiss: Bool = false {
         didSet {
+            guard shouldDismiss else {
+                refreshPlaybackWakeLock()
+                return
+            }
+            #if os(macOS)
+            endPlaybackDiagnosticsSampling(reason: "player dismissed")
+            #endif
             playbackManager?.stop()
             refreshPlaybackWakeLock()
         }
@@ -831,6 +852,7 @@ public class PlayerManager: ObservableObject {
         playbackResumeProgressReferenceTime = currentTime
         #if os(macOS)
         if let avPlayer = currentPlayer as? AVPlayerWrapper {
+            endPlaybackDiagnosticsSampling(reason: "player item replaced")
             resetPlaybackDiagnosticsHistory()
             avPlayer.load(
                 url: url,
@@ -839,6 +861,7 @@ public class PlayerManager: ObservableObject {
                 playbackHealthMonitoringEnabled: isPlaybackHealthMonitoringEnabled,
                 playbackHealthMonitoringEligible: itemContext.playbackHealthMonitoringEligible
             )
+            startPlaybackDiagnosticsSampling()
         } else {
             currentPlayer?.load(url: url, lastPosition: lastPosition)
         }
@@ -1124,6 +1147,9 @@ extension PlayerManager {
         )
         cancelPendingPlaybackResume()
         cancelDubWorkflow(reason: "Playback stopped.")
+        #if os(macOS)
+        endPlaybackDiagnosticsSampling(reason: "playback stopped")
+        #endif
         playbackManager?.stop()
         isPlaying = false
         isBuffering = false
@@ -1224,6 +1250,28 @@ extension PlayerManager {
         }
     }
 }
+
+#if os(macOS)
+private extension PlaybackDiagnosticsSnapshot {
+    func replacingStoryboard(
+        _ storyboard: PlaybackDiagnosticsStoryboard
+    ) -> PlaybackDiagnosticsSnapshot {
+        PlaybackDiagnosticsSnapshot(
+            session: session,
+            playback: playback,
+            network: network,
+            audioTracks: audioTracks,
+            subtitleTracks: subtitleTracks,
+            errorLogEventCount: errorLogEventCount,
+            recentErrors: recentErrors,
+            recentHealthEvents: recentHealthEvents,
+            monitor: monitor,
+            history: history,
+            storyboard: storyboard
+        )
+    }
+}
+#endif
 
 // MARK: - Track Management
 extension PlayerManager {
@@ -3164,6 +3212,10 @@ extension PlayerManager {
 
     #if os(macOS)
     func fetchPlaybackDiagnostics() -> PlaybackDiagnosticsSnapshot {
+        if playbackDiagnosticsSampleCancellable == nil,
+           let playbackDiagnosticsLastSnapshot {
+            return playbackDiagnosticsLastSnapshot
+        }
         guard let currentPlayer else {
             return .unavailable(.noPlayerItem)
         }
@@ -3174,58 +3226,37 @@ extension PlayerManager {
             monitoringEnabled: isPlaybackHealthMonitoringEnabled,
             recentHealthEvents: recentPlaybackHealthEvents,
             history: playbackDiagnosticsHistory,
-            incidents: playbackDiagnosticsIncidents
+            storyboard: playbackDiagnosticsSession.storyboard
         )
     }
 
     @discardableResult
-    func capturePlaybackDiagnosticsIncident() -> PlaybackDiagnosticsIncident? {
-        guard currentPlayer is AVPlayerWrapper else { return nil }
-        let snapshot = fetchPlaybackDiagnostics()
-        guard snapshot.playback.itemStatus != "unavailable" else { return nil }
-
-        let incident = PlaybackDiagnosticsIncident(
-            id: UUID(),
-            capturedAt: Date(),
-            mediaTime: snapshot.playback.currentTime,
-            selectedAudioTrack: retainedPlaybackDiagnosticsAudioTrack(
-                snapshot.audioTracks.first(where: \.isSelected)
-            ),
-            itemStatus: snapshot.playback.itemStatus,
-            timeControlStatus: snapshot.playback.timeControlStatus,
-            waitingReason: snapshot.playback.waitingReason,
-            bufferHeadroom: snapshot.playback.bufferHeadroom,
-            isPlaybackLikelyToKeepUp: snapshot.playback.isPlaybackLikelyToKeepUp,
-            isPlaybackBufferEmpty: snapshot.playback.isPlaybackBufferEmpty,
-            resolution: snapshot.playback.resolution,
-            frameRate: snapshot.playback.frameRate,
-            observedBitRate: snapshot.network.observedBitRate,
-            indicatedBitRate: snapshot.network.indicatedBitRate,
-            accessLogStallCount: snapshot.network.numberOfStalls,
-            observedHLSRequestCount: snapshot.monitor?.observedHLSRequestCount ?? 0,
-            failedHLSRequestCount: (snapshot.monitor?.failedPlaylistRequestCount ?? 0)
-                + (snapshot.monitor?.failedSegmentRequestCount ?? 0),
-            metricStallCount: snapshot.monitor?.stallCount ?? 0,
-            postStartWaitCount: snapshot.monitor?.waiting.postStartWaitCount ?? 0,
-            seekWaitCount: snapshot.monitor?.waiting.seekWaitCount ?? 0,
-            errorLogEventCount: snapshot.errorLogEventCount,
-            retainedHealthEventCount: snapshot.history.retainedCount
-        )
-        playbackDiagnosticsIncidents.append(incident)
-        // ponytail: 20 manual markers bound one in-memory playback session;
-        // persist structured incidents only if the experiment proves that need.
-        if playbackDiagnosticsIncidents.count > 20 {
-            playbackDiagnosticsIncidents.removeFirst(
-                playbackDiagnosticsIncidents.count - 20
-            )
+    func capturePlaybackDiagnosticsBookmark() -> PlaybackDiagnosticsBookmark? {
+        guard hasActivePlaybackDiagnosticsItem,
+              currentPlayer is AVPlayerWrapper else {
+            return nil
         }
-        return incident
+        let snapshot = currentPlaybackDiagnosticsSnapshot()
+        guard let bookmark = playbackDiagnosticsSession.captureBookmark(
+            from: snapshot
+        ) else {
+            return nil
+        }
+        playbackDiagnosticsLastSnapshot = snapshot.replacingStoryboard(
+            playbackDiagnosticsSession.storyboard
+        )
+        playbackDiagnosticsLifecycleLogger.info(
+            "diagnostics bookmark created id=\(bookmark.id.uuidString, privacy: .private(mask: .hash))"
+        )
+        return bookmark
     }
 
     func clearPlaybackDiagnosticsEvents() {
         playbackHealthEventsClearedCount += recentPlaybackHealthEvents.count
         recentPlaybackHealthEvents.removeAll(keepingCapacity: true)
-        playbackDiagnosticsIncidents.removeAll(keepingCapacity: true)
+        playbackDiagnosticsSession.clearEvidence()
+        playbackDiagnosticsLastSnapshot = playbackDiagnosticsLastSnapshot?
+            .replacingStoryboard(playbackDiagnosticsSession.storyboard)
     }
 
     private func recordPlaybackHealthEvent(_ event: PlaybackHealthEvent) {
@@ -3233,6 +3264,12 @@ extension PlayerManager {
             DispatchQueue.main.async { [weak self] in
                 self?.recordPlaybackHealthEvent(event)
             }
+            return
+        }
+        guard hasActivePlaybackDiagnosticsItem else {
+            // Preserve the existing observer contract while keeping stopped
+            // sessions immutable; real monitor callbacks are already session-gated.
+            onPlaybackHealthEvent?(event)
             return
         }
 
@@ -3263,11 +3300,98 @@ extension PlayerManager {
     }
 
     private func resetPlaybackDiagnosticsHistory() {
+        let hadSession = playbackDiagnosticsLastSnapshot != nil
+            || !playbackDiagnosticsSession.storyboard.samples.isEmpty
         recentPlaybackHealthEvents.removeAll(keepingCapacity: true)
-        playbackDiagnosticsIncidents.removeAll(keepingCapacity: true)
+        playbackDiagnosticsSession.reset()
+        playbackDiagnosticsLastSnapshot = nil
         playbackHealthEventsReceivedCount = 0
         playbackHealthEventsDroppedCount = 0
         playbackHealthEventsClearedCount = 0
+        if hadSession {
+            playbackDiagnosticsLifecycleLogger.info("diagnostics session reset")
+        }
+    }
+
+    private func startPlaybackDiagnosticsSampling() {
+        playbackDiagnosticsSampleCancellable?.cancel()
+        playbackDiagnosticsSampleCancellable = nil
+        recordPlaybackDiagnosticsSample()
+        playbackDiagnosticsSampleCancellable = Timer.publish(
+            every: 1,
+            on: .main,
+            in: .common
+        )
+        .autoconnect()
+        .sink { [weak self] _ in
+            self?.recordPlaybackDiagnosticsSample()
+        }
+        playbackDiagnosticsLifecycleLogger.info(
+            "diagnostics session started session=\(self.playbackDiagnosticsLastSnapshot?.session.sessionID?.uuidString ?? "not-measured", privacy: .private(mask: .hash))"
+        )
+    }
+
+    private func recordPlaybackDiagnosticsSample() {
+        guard currentPlayer is AVPlayerWrapper else { return }
+        let snapshot = currentPlaybackDiagnosticsSnapshot()
+        let previousIncidents = playbackDiagnosticsSession.storyboard.incidents
+        playbackDiagnosticsSession.ingest(snapshot)
+        playbackDiagnosticsLastSnapshot = snapshot.replacingStoryboard(
+            playbackDiagnosticsSession.storyboard
+        )
+        logPlaybackDiagnosticsIncidentTransitions(
+            from: previousIncidents,
+            to: playbackDiagnosticsSession.storyboard.incidents
+        )
+    }
+
+    private func currentPlaybackDiagnosticsSnapshot() -> PlaybackDiagnosticsSnapshot {
+        guard let avPlayer = currentPlayer as? AVPlayerWrapper else {
+            return .unavailable(.unsupportedBackend)
+        }
+        return avPlayer.fetchPlaybackDiagnostics(
+            monitoringEnabled: isPlaybackHealthMonitoringEnabled,
+            recentHealthEvents: recentPlaybackHealthEvents,
+            history: playbackDiagnosticsHistory,
+            storyboard: playbackDiagnosticsSession.storyboard
+        )
+    }
+
+    private func endPlaybackDiagnosticsSampling(reason: String) {
+        guard playbackDiagnosticsSampleCancellable != nil else { return }
+        recordPlaybackDiagnosticsSample()
+        playbackDiagnosticsSession.end(at: Date())
+        playbackDiagnosticsLastSnapshot = playbackDiagnosticsLastSnapshot?
+            .replacingStoryboard(playbackDiagnosticsSession.storyboard)
+        playbackDiagnosticsSampleCancellable?.cancel()
+        playbackDiagnosticsSampleCancellable = nil
+        playbackDiagnosticsLifecycleLogger.info(
+            "diagnostics session ended reason=\(reason, privacy: .public)"
+        )
+    }
+
+    private func logPlaybackDiagnosticsIncidentTransitions(
+        from previous: [PlaybackDiagnosticsAutomaticIncident],
+        to current: [PlaybackDiagnosticsAutomaticIncident]
+    ) {
+        let priorByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+        for incident in current {
+            guard let prior = priorByID[incident.id] else {
+                playbackDiagnosticsLifecycleLogger.notice(
+                    "diagnostics incident opened kind=\(incident.kind.rawValue, privacy: .public) id=\(incident.id.uuidString, privacy: .private(mask: .hash))"
+                )
+                continue
+            }
+            if prior.state != incident.state {
+                playbackDiagnosticsLifecycleLogger.info(
+                    "diagnostics incident closed kind=\(incident.kind.rawValue, privacy: .public) id=\(incident.id.uuidString, privacy: .private(mask: .hash))"
+                )
+            } else if prior.evidenceIDs.count != incident.evidenceIDs.count {
+                playbackDiagnosticsLifecycleLogger.info(
+                    "diagnostics incident updated kind=\(incident.kind.rawValue, privacy: .public) id=\(incident.id.uuidString, privacy: .private(mask: .hash))"
+                )
+            }
+        }
     }
     #endif
 }
@@ -3308,6 +3432,10 @@ extension PlayerManager {
         clearDubWorkflow: Bool
     ) {
         cancelPendingPlaybackResume()
+        #if os(macOS)
+        endPlaybackDiagnosticsSampling(reason: "player reset")
+        resetPlaybackDiagnosticsHistory()
+        #endif
         if clearDubWorkflow {
             cancelDubWorkflow(reason: "Resetting player manager.")
         } else {
@@ -3631,6 +3759,9 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
         shouldResumePlaybackAfterStall = false
+        #if os(macOS)
+        endPlaybackDiagnosticsSampling(reason: "playback ended")
+        #endif
         videoDidEnd()
     }
 
@@ -3704,6 +3835,9 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
 
+        #if os(macOS)
+        endPlaybackDiagnosticsSampling(reason: "playback failed")
+        #endif
         reportError(error)
     }
 }
