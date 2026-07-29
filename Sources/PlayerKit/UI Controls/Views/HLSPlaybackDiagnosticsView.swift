@@ -19,11 +19,131 @@ private enum PlaybackDiagnosticsPage: CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .overview:
-            return "Status"
+            return "Overview"
         case .events:
-            return "History"
+            return "Timeline"
         case .technical:
-            return "Technical"
+            return "Details"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .overview:
+            return "Live playback health"
+        case .events:
+            return "Saved evidence and signals"
+        case .technical:
+            return "Session metrics"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            return "waveform.path.ecg"
+        case .events:
+            return "clock.arrow.circlepath"
+        case .technical:
+            return "slider.horizontal.3"
+        }
+    }
+}
+
+private enum PlaybackDiagnosticsHistoryFilter: CaseIterable, Identifiable {
+    case all
+    case moments
+    case signals
+    case errors
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .all:
+            return "All"
+        case .moments:
+            return "Saved"
+        case .signals:
+            return "Signals"
+        case .errors:
+            return "Errors"
+        }
+    }
+}
+
+private enum PlaybackDiagnosticsTechnicalSection: CaseIterable, Identifiable {
+    case monitoring
+    case playback
+    case startup
+    case rendition
+    case delivery
+    case requests
+    case tracks
+    case collection
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .monitoring:
+            return "Monitoring"
+        case .playback:
+            return "Playback & Buffer"
+        case .startup:
+            return "Startup & Seeking"
+        case .rendition:
+            return "Picture Quality"
+        case .delivery:
+            return "Network Delivery"
+        case .requests:
+            return "Recent Requests"
+        case .tracks:
+            return "Audio & Subtitles"
+        case .collection:
+            return "Data Collection"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .monitoring:
+            return "Observer and coverage"
+        case .playback:
+            return "Player state and runway"
+        case .startup:
+            return "Waits, starts, and seeks"
+        case .rendition:
+            return "Resolution and adaptation"
+        case .delivery:
+            return "Traffic and stalls"
+        case .requests:
+            return "Privacy-safe request trace"
+        case .tracks:
+            return "Selected media tracks"
+        case .collection:
+            return "Retention and classifier"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .monitoring:
+            return "point.3.connected.trianglepath.dotted"
+        case .playback:
+            return "play.rectangle"
+        case .startup:
+            return "timer"
+        case .rendition:
+            return "chart.line.uptrend.xyaxis"
+        case .delivery:
+            return "network"
+        case .requests:
+            return "list.bullet.rectangle"
+        case .tracks:
+            return "captions.bubble"
+        case .collection:
+            return "tray.full"
         }
     }
 }
@@ -123,64 +243,58 @@ private struct DiagnosticsTrackRow: Identifiable {
     let track: PlaybackDiagnosticsTrack
 }
 
-struct HLSPlaybackDiagnosticsView: View {
+public struct HLSPlaybackDiagnosticsView: View {
     @ObservedObject private var playerManager: PlayerManager
     @State private var snapshot: PlaybackDiagnosticsSnapshot
     @State private var sampledContentTitle: String
-    @State private var selectedPage: PlaybackDiagnosticsPage = .overview
+    @State private var selectedPage: PlaybackDiagnosticsPage? = .overview
+    @State private var selectedHistoryFilter: PlaybackDiagnosticsHistoryFilter = .all
+    @State private var selectedTechnicalSection: PlaybackDiagnosticsTechnicalSection? = .monitoring
     @State private var isLive = true
     @State private var displayTime = Date()
     @State private var didCopy = false
     @State private var captureFeedback: DiagnosticsCaptureFeedback?
     @State private var showsClearConfirmation = false
     @State private var showsCoverage = false
-    @State private var showsObserver = false
-    @State private var showsPlayback = false
-    @State private var showsStartup = false
-    @State private var showsRendition = false
-    @State private var showsDelivery = false
-    @State private var showsRequestTrace = false
-    @State private var showsTracks = false
-    @State private var showsClassifier = false
 
+    private let keepsPlayerControlsVisible: Bool
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    private var dashboardHeight: CGFloat {
-        min(max((NSScreen.main?.visibleFrame.height ?? 700) - 80, 520), 620)
-    }
-
-    init(playerManager: PlayerManager) {
+    public init(
+        playerManager: PlayerManager,
+        keepsPlayerControlsVisible: Bool = true
+    ) {
         self.playerManager = playerManager
+        self.keepsPlayerControlsVisible = keepsPlayerControlsVisible
         _snapshot = State(initialValue: playerManager.fetchPlaybackDiagnostics())
         _sampledContentTitle = State(initialValue: Self.contentTitle(from: playerManager))
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-                .padding(.horizontal, 18)
-                .padding(.vertical, 16)
+    public var body: some View {
+        NavigationSplitView {
+            sidebar
+                .navigationSplitViewColumnWidth(min: 184, ideal: 196, max: 210)
+        } detail: {
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
 
-            Divider()
+                Divider()
 
-            Picker("Diagnostics page", selection: $selectedPage) {
-                ForEach(PlaybackDiagnosticsPage.allCases) { page in
-                    Text(page.title).tag(page)
-                }
+                selectedPageContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 390)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .accessibilityIdentifier("player.diagnostics.page")
-
-            Divider()
-
-            selectedPageContent
         }
-        .frame(width: 760, height: dashboardHeight)
-        .preferredColorScheme(.dark)
+        .navigationSplitViewStyle(.balanced)
+        .frame(
+            minWidth: 760,
+            idealWidth: 980,
+            maxWidth: .infinity,
+            minHeight: 500,
+            idealHeight: 720,
+            maxHeight: .infinity
+        )
         .overlay(alignment: .bottom) {
             if let captureFeedback {
                 Label(
@@ -201,14 +315,18 @@ struct HLSPlaybackDiagnosticsView: View {
             }
         }
         .onAppear {
-            playerManager.userInteracting = true
-            playerManager.userInteracted()
+            if keepsPlayerControlsVisible {
+                playerManager.userInteracting = true
+                playerManager.userInteracted()
+            }
             playbackDiagnosticsLogger.info("diagnostics dashboard opened")
             refresh()
         }
         .onDisappear {
-            playerManager.userInteracting = false
-            playerManager.userInteracted()
+            if keepsPlayerControlsVisible {
+                playerManager.userInteracting = false
+                playerManager.userInteracted()
+            }
             playbackDiagnosticsLogger.info("diagnostics dashboard closed")
         }
         .onReceive(timer) { now in
@@ -232,6 +350,86 @@ struct HLSPlaybackDiagnosticsView: View {
                 "This removes saved moments and retained signal rows. Aggregate counters, AVFoundation logs, " +
                 "and observer totals remain for the current playback session."
             )
+        }
+    }
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    statusSymbol
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Playback Monitor")
+                            .font(.headline)
+
+                        Text(currentPresentationStatus.title)
+                            .font(.caption)
+                            .foregroundStyle(currentStatusColor)
+                            .lineLimit(2)
+                    }
+                }
+
+                Text(contentTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .help(contentTitle)
+            }
+            .padding(16)
+            .accessibilityElement(children: .combine)
+
+            Divider()
+
+            List(selection: $selectedPage) {
+                Section("Monitor") {
+                    ForEach(PlaybackDiagnosticsPage.allCases) { page in
+                        HStack(spacing: 10) {
+                            Image(systemName: page.systemImage)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(page.title)
+                                    .lineLimit(1)
+                                Text(page.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+
+                            Spacer(minLength: 4)
+
+                            if let count = pageBadgeCount(page), count > 0 {
+                                Text("\(count)")
+                                    .font(.caption2.monospacedDigit().weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .tag(page)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(page.title))
+                        .accessibilityValue(Text(pageAccessibilityValue(page)))
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .accessibilityIdentifier("player.diagnostics.page")
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 5) {
+                Label(monitoringStatusTitle, systemImage: monitoringStatusIcon)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(coverageStatusColor)
+
+                Text(sampleStateText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help(sampleStateAccessibilityText)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
         }
     }
 
@@ -263,51 +461,36 @@ struct HLSPlaybackDiagnosticsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                statusSymbol
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                HStack(spacing: 7) {
+                    Text((selectedPage ?? .overview).title)
+                        .font(.title2.weight(.semibold))
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        Text("Playback Status")
-                            .font(.title3.weight(.semibold))
-
-                        Text("EXPERIMENTAL")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.quaternary, in: Capsule())
-                    }
-
-                    Text(contentTitle)
-                        .font(.callout)
-                        .lineLimit(1)
-                        .help(contentTitle)
-
-                    Text(sampleStateText)
-                        .font(.caption)
+                    Text("EXPERIMENTAL")
+                        .font(.caption2.weight(.bold))
                         .foregroundStyle(.secondary)
-                        .help(sampleStateAccessibilityText)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.quaternary, in: Capsule())
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Playback status, experimental")
-                .accessibilityValue(
-                    "\(contentTitle). \(currentPresentationStatus.title). " +
-                    "\(sampleStateAccessibilityText)."
-                )
 
                 Spacer(minLength: 12)
 
-                Toggle("Auto-update", isOn: liveBinding)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .help(
-                        isLive
-                            ? "Pause automatic updates to inspect this sample"
-                            : "Resume one-second automatic updates"
+                Toggle(isOn: liveBinding) {
+                    Label(
+                        isLive ? "Live" : "Paused",
+                        systemImage: isLive ? "dot.radiowaves.left.and.right" : "pause.fill"
                     )
-                    .accessibilityIdentifier("player.diagnostics.live")
+                }
+                .toggleStyle(.button)
+                .controlSize(.small)
+                .help(
+                    isLive
+                        ? "Pause automatic updates to inspect this sample"
+                        : "Resume one-second automatic updates"
+                )
+                .accessibilityIdentifier("player.diagnostics.live")
 
                 Button {
                     refresh()
@@ -320,34 +503,34 @@ struct HLSPlaybackDiagnosticsView: View {
                 .accessibilityIdentifier("player.diagnostics.refresh")
             }
 
-            HStack(spacing: 10) {
-                Label("Privacy-safe support report", systemImage: "lock.shield")
-                    .font(.caption.weight(.semibold))
-
-                Text("Copied reports omit URLs, headers, and tokens")
+            HStack(alignment: .center, spacing: 10) {
+                Label("Privacy-safe report", systemImage: "lock.shield")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .help("Copied reports never include URLs, headers, or tokens")
 
-                Spacer(minLength: 12)
+                Spacer(minLength: 8)
 
                 Button {
                     captureIncident()
                 } label: {
-                    Label("Save This Moment", systemImage: "camera.metering.partial")
+                    Label("Save Moment", systemImage: "camera.metering.partial")
                 }
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .help("Save a private playback snapshot for this session (⇧⌘I)")
+                .disabled(!canCaptureIncident)
                 .accessibilityIdentifier("player.diagnostics.capture")
 
                 Button {
                     copyReport()
                 } label: {
                     Label(
-                        didCopy ? "Copied" : "Copy for Support",
+                        didCopy ? "Copied" : "Copy Report",
                         systemImage: didCopy ? "checkmark" : "doc.on.doc"
                     )
                 }
-                .frame(minWidth: 132)
+                .frame(minWidth: 112)
                 .keyboardShortcut("c", modifiers: [.command, .shift])
                 .help(
                     didCopy
@@ -361,7 +544,7 @@ struct HLSPlaybackDiagnosticsView: View {
 
     @ViewBuilder
     private var selectedPageContent: some View {
-        switch selectedPage {
+        switch selectedPage ?? .overview {
         case .overview:
             overviewPage
         case .events:
@@ -374,26 +557,31 @@ struct HLSPlaybackDiagnosticsView: View {
     private var overviewPage: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                playbackStatusSummary
-                quickMetrics
+                if snapshot.session.availability == .noPlayerItem {
+                    noPlaybackState
+                } else {
+                    playbackStatusSummary
+                    quickMetrics
+                    sessionActivity
 
-                if !activeIssues.isEmpty {
-                    diagnosticsSection("Needs Attention Now", systemImage: "waveform.path.ecg") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(activeIssues) { issue in
-                                issueCard(issue)
+                    if !activeIssues.isEmpty {
+                        diagnosticsSection("Needs Attention Now", systemImage: "waveform.path.ecg") {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(activeIssues) { issue in
+                                    issueCard(issue)
+                                }
                             }
                         }
                     }
-                }
 
-                diagnosticsSection("Earlier This Session", systemImage: "clock.arrow.circlepath") {
-                    if historicalIssues.isEmpty {
-                        emptyState("No earlier delivery finding is retained for this session.")
-                    } else {
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(historicalIssues) { issue in
-                                issueCard(issue)
+                    diagnosticsSection("Earlier This Session", systemImage: "clock.arrow.circlepath") {
+                        if historicalIssues.isEmpty {
+                            emptyState("No earlier delivery finding is retained for this session.")
+                        } else {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(historicalIssues) { issue in
+                                    issueCard(issue)
+                                }
                             }
                         }
                     }
@@ -430,13 +618,27 @@ struct HLSPlaybackDiagnosticsView: View {
         }
     }
 
+    private var noPlaybackState: some View {
+        ContentUnavailableView {
+            Label("Start a video to monitor playback", systemImage: "play.slash")
+        } description: {
+            Text("Live health, buffering, connection, and delivery details will appear here.")
+        }
+        .frame(maxWidth: .infinity, minHeight: 260)
+        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
     private var playbackStatusSummary: some View {
         HStack(alignment: .top, spacing: 14) {
             statusSymbol
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(currentPresentationStatus.title)
-                    .font(.title3.weight(.semibold))
+                    .font(.title2.weight(.semibold))
 
                 Text(currentStatusDetail)
                     .font(.callout)
@@ -450,12 +652,19 @@ struct HLSPlaybackDiagnosticsView: View {
 
             Spacer(minLength: 12)
 
-            Text(monitoringStatusTitle)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(coverageStatusColor)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(coverageStatusColor.opacity(0.10), in: Capsule())
+            HStack(spacing: 6) {
+                if snapshot.session.availability == .startingAVMetrics {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
+                Text(monitoringStatusTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(coverageStatusColor)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(coverageStatusColor.opacity(0.10), in: Capsule())
         }
         .padding(16)
         .background(currentStatusColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
@@ -467,7 +676,11 @@ struct HLSPlaybackDiagnosticsView: View {
     }
 
     private var quickMetrics: some View {
-        HStack(alignment: .top, spacing: 10) {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 150), spacing: 10)],
+            alignment: .leading,
+            spacing: 10
+        ) {
             metricCard(
                 "Playback",
                 value: friendlyPlaybackState,
@@ -496,6 +709,63 @@ struct HLSPlaybackDiagnosticsView: View {
         }
     }
 
+    private var sessionActivity: some View {
+        diagnosticsSection("Session Activity", systemImage: "chart.bar.xaxis") {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 120), spacing: 16)],
+                alignment: .leading,
+                spacing: 12
+            ) {
+                activityMetric(
+                    "Saved moments",
+                    value: snapshot.incidents.count,
+                    systemImage: "camera.viewfinder"
+                )
+                activityMetric(
+                    "Signals retained",
+                    value: snapshot.recentHealthEvents.count,
+                    systemImage: "waveform.badge.exclamationmark"
+                )
+                activityMetric(
+                    "Error entries",
+                    value: snapshot.recentErrors.count,
+                    systemImage: "exclamationmark.triangle"
+                )
+                activityMetric(
+                    "Requests observed",
+                    value: snapshot.monitor.map {
+                        $0.observedHLSRequestCount
+                    } ?? snapshot.network.mediaRequestCount ?? 0,
+                    systemImage: "arrow.left.arrow.right"
+                )
+            }
+        }
+    }
+
+    private func activityMetric(
+        _ title: String,
+        value: Int,
+        systemImage: String
+    ) -> some View {
+        HStack(spacing: 9) {
+            Image(systemName: systemImage)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value.formatted())
+                    .font(.headline.monospacedDigit())
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(value.formatted())
+    }
+
     private func metricCard(
         _ title: String,
         value: String,
@@ -509,22 +779,22 @@ struct HLSPlaybackDiagnosticsView: View {
                 .lineLimit(1)
 
             Text(value)
-                .font(.title3.weight(.semibold))
+                .font(.title2.weight(.semibold))
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
+                .minimumScaleFactor(0.72)
 
             Text(detail)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
         }
-        .frame(maxWidth: .infinity, minHeight: 82, alignment: .topLeading)
-        .padding(12)
-        .background(.quaternary.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
+        .padding(14)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.quaternary, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
@@ -534,42 +804,64 @@ struct HLSPlaybackDiagnosticsView: View {
     private var eventsPage: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Save the moment when playback looks or sounds wrong.")
-                            .font(.callout.weight(.semibold))
-                        Text(
-                            "The saved snapshot stays in this session and includes privacy-safe playback, " +
-                            "buffer, connection, and selected-audio state."
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Playback evidence")
+                                .font(.title3.weight(.semibold))
+                            Text("Review the current session or save the exact moment something feels wrong.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            captureIncident()
+                        } label: {
+                            Label("Save Current Moment", systemImage: "camera.metering.partial")
+                        }
+                        .disabled(!canCaptureIncident)
+                        .help("Save privacy-safe playback, buffer, connection, and selected-audio state")
+                        .accessibilityIdentifier("player.diagnostics.capture.events")
+                    }
+
+                    Picker("Timeline filter", selection: $selectedHistoryFilter) {
+                        ForEach(PlaybackDiagnosticsHistoryFilter.allCases) { filter in
+                            Text(filter.title).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 420)
+                    .accessibilityIdentifier("player.diagnostics.timeline.filter")
+
+                    HStack(spacing: 24) {
+                        activityMetric(
+                            "Saved",
+                            value: snapshot.incidents.count,
+                            systemImage: "camera.viewfinder"
                         )
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        activityMetric(
+                            "Signals",
+                            value: snapshot.recentHealthEvents.count,
+                            systemImage: "waveform.badge.exclamationmark"
+                        )
+                        activityMetric(
+                            "Errors",
+                            value: snapshot.recentErrors.count,
+                            systemImage: "exclamationmark.triangle"
+                        )
                     }
-
-                    Spacer()
-
-                    Button {
-                        captureIncident()
-                    } label: {
-                        Label("Save Current Moment", systemImage: "camera.metering.partial")
-                    }
-                    .help("Save privacy-safe playback, buffer, connection, and selected-audio state")
-                    .accessibilityIdentifier("player.diagnostics.capture.events")
                 }
-                .padding(14)
-                .background(.quaternary.opacity(0.72), in: RoundedRectangle(cornerRadius: 12))
-
-                if snapshot.monitor?.terminalFailure != nil {
-                    terminalFailureSection
+                .padding(16)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 14))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
                 }
 
-                if snapshot.monitor?.latestFailureContext != nil {
-                    latestFailedRequestSection
-                }
-
-                incidentsSection
-                healthEventsSection
-                errorsSection
+                filteredHistoryContent
 
                 HStack {
                     Text(
@@ -588,6 +880,34 @@ struct HLSPlaybackDiagnosticsView: View {
                 }
             }
             .padding(16)
+        }
+    }
+
+    @ViewBuilder
+    private var filteredHistoryContent: some View {
+        switch selectedHistoryFilter {
+        case .all:
+            if snapshot.monitor?.terminalFailure != nil {
+                terminalFailureSection
+            }
+            if snapshot.monitor?.latestFailureContext != nil {
+                latestFailedRequestSection
+            }
+            incidentsSection
+            healthEventsSection
+            errorsSection
+        case .moments:
+            incidentsSection
+        case .signals:
+            healthEventsSection
+        case .errors:
+            if snapshot.monitor?.terminalFailure != nil {
+                terminalFailureSection
+            }
+            if snapshot.monitor?.latestFailureContext != nil {
+                latestFailedRequestSection
+            }
+            errorsSection
         }
     }
 
@@ -854,73 +1174,77 @@ struct HLSPlaybackDiagnosticsView: View {
     }
 
     private var technicalPage: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
-                technicalDisclosure(
-                    "Monitoring",
-                    systemImage: "point.3.connected.trianglepath.dotted",
-                    isExpanded: $showsObserver
-                ) {
-                    observerDetails
-                }
+        let section = selectedTechnicalSection ?? .monitoring
+        return HStack(spacing: 0) {
+            List(selection: $selectedTechnicalSection) {
+                Section("Inspect") {
+                    ForEach(PlaybackDiagnosticsTechnicalSection.allCases) { section in
+                        HStack(spacing: 9) {
+                            Image(systemName: section.systemImage)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 16)
 
-                technicalDisclosure(
-                    "Playback & Buffering",
-                    systemImage: "play.rectangle",
-                    isExpanded: $showsPlayback
-                ) {
-                    playbackDetails
-                }
-
-                technicalDisclosure(
-                    "Startup & Seeking",
-                    systemImage: "timer",
-                    isExpanded: $showsStartup
-                ) {
-                    startupAndSeekDetails
-                }
-
-                technicalDisclosure(
-                    "Picture Quality & Adaptation",
-                    systemImage: "chart.line.uptrend.xyaxis",
-                    isExpanded: $showsRendition
-                ) {
-                    renditionDetails
-                }
-
-                technicalDisclosure(
-                    "Network Delivery",
-                    systemImage: "network",
-                    isExpanded: $showsDelivery
-                ) {
-                    deliveryDetails
-                }
-
-                technicalDisclosure(
-                    requestTraceTitle,
-                    systemImage: "list.bullet.rectangle",
-                    isExpanded: $showsRequestTrace
-                ) {
-                    requestTraceDetails
-                }
-
-                technicalDisclosure(
-                    "Audio & Subtitles",
-                    systemImage: "captions.bubble",
-                    isExpanded: $showsTracks
-                ) {
-                    tracksDetails
-                }
-
-                technicalDisclosure(
-                    "Data Collection",
-                    systemImage: "tray.full",
-                    isExpanded: $showsClassifier
-                ) {
-                    classifierDetails
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(section.title)
+                                    .lineLimit(1)
+                                Text(section.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        }
+                        .tag(section)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(section.title))
+                        .accessibilityValue(Text(section.subtitle))
+                    }
                 }
             }
-            .padding(16)
+            .listStyle(.sidebar)
+            .frame(width: 220)
+            .accessibilityIdentifier("player.diagnostics.details.section")
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading) {
+                    diagnosticsSection(
+                        section == .requests ? requestTraceTitle : section.title,
+                        systemImage: section.systemImage
+                    ) {
+                        Text(section.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 4)
+
+                        selectedTechnicalDetails
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var selectedTechnicalDetails: some View {
+        switch selectedTechnicalSection ?? .monitoring {
+        case .monitoring:
+            observerDetails
+        case .playback:
+            playbackDetails
+        case .startup:
+            startupAndSeekDetails
+        case .rendition:
+            renditionDetails
+        case .delivery:
+            deliveryDetails
+        case .requests:
+            requestTraceDetails
+        case .tracks:
+            tracksDetails
+        case .collection:
+            classifierDetails
         }
     }
 
@@ -1374,36 +1698,10 @@ struct HLSPlaybackDiagnosticsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
-        .background(.quaternary.opacity(0.54), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
         .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.quaternary, lineWidth: 1)
-        }
-    }
-
-    private func technicalDisclosure<Content: View>(
-        _ title: String,
-        systemImage: String,
-        isExpanded: Binding<Bool>,
-        @ViewBuilder content: @escaping () -> Content
-    ) -> some View {
-        DisclosureGroup(isExpanded: isExpanded) {
-            content()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 12)
-        } label: {
-            HStack {
-                Label(title, systemImage: systemImage)
-                    .font(.callout.weight(.semibold))
-
-                Spacer()
-            }
-        }
-        .padding(14)
-        .background(.quaternary.opacity(0.54), in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.quaternary, lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
     }
 
@@ -1533,6 +1831,41 @@ struct HLSPlaybackDiagnosticsView: View {
         Label(text, systemImage: "minus.circle")
             .font(.caption)
             .foregroundStyle(.secondary)
+    }
+
+    private func pageBadgeCount(_ page: PlaybackDiagnosticsPage) -> Int? {
+        switch page {
+        case .overview:
+            return activeIssues.count
+        case .events:
+            return snapshot.incidents.count
+                + snapshot.recentHealthEvents.count
+                + snapshot.recentErrors.count
+        case .technical:
+            return nil
+        }
+    }
+
+    private func pageAccessibilityValue(_ page: PlaybackDiagnosticsPage) -> String {
+        guard let count = pageBadgeCount(page), count > 0 else {
+            return page.subtitle
+        }
+        return "\(page.subtitle). \(count) item\(count == 1 ? "" : "s")."
+    }
+
+    private var canCaptureIncident: Bool {
+        switch snapshot.session.availability {
+        case .noPlayerItem, .unsupportedBackend:
+            return false
+        case .startingAVMetrics,
+             .activeAVMetrics,
+             .failedAVMetrics,
+             .endedAVMetrics,
+             .activeErrorLogFallback,
+             .monitoringDisabled,
+             .monitorNotAttached:
+            return true
+        }
     }
 
     private var allIssues: [PlaybackDiagnosticsIssue] {

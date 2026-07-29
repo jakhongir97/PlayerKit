@@ -4,6 +4,9 @@ struct InfoButtonView: View {
     private let playerManager: PlayerManager
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     @Environment(\.verticalSizeClass) var verticalSizeClass
+    #if os(macOS)
+    @Environment(\.openPlaybackDiagnostics) private var openPlaybackDiagnostics
+    #endif
 
     @State private var showPopover = false
     
@@ -53,7 +56,11 @@ struct InfoButtonView: View {
     private var infoButton: some View {
         Button(action: {
             #if os(macOS)
-            showPopover.toggle()
+            if openPlaybackDiagnostics.isAvailable {
+                openPlaybackDiagnostics()
+            } else {
+                showPopover.toggle()
+            }
             #else
             withAnimation(.spring()) {
                 showPopover.toggle()
