@@ -1,5 +1,15 @@
 # PlayerKit Integration (Dubber Instant Dub Polling)
 
+> **Status: the Dubber integration is currently disabled.**
+>
+> `PlayerKitFeatureFlags.isDubberEnabled` is `false`, so none of the UI below is
+> shown, no session is created, and no request is made. The public API remains
+> callable but inert. This document describes the behaviour for when the flag is
+> turned back on. See the README for what is guaranteed while it is off.
+>
+> Note also that `DubberConfiguration.baseURL` is now a **required** parameter —
+> it no longer defaults to a live third-party endpoint.
+
 This guide shows how to use PlayerKit with Dubber's updated backend flow:
 
 1. `POST /api/instant-dub/start`
@@ -15,7 +25,9 @@ import PlayerKit
 
 func playDubbedHLS(sourceURL: URL) {
     let player = PlayerKit.Player()
-    player.configureDubber(DubberConfiguration())
+    player.configureDubber(
+        DubberConfiguration(baseURL: URL(string: "https://your-dubber-host/api/instant-dub")!)
+    )
     player.load(url: sourceURL)
     player.play()
 
