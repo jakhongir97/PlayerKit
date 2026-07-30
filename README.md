@@ -5,17 +5,25 @@ PlayerKit is an iOS Swift Package for media playback with a ready-to-use SwiftUI
 It supports:
 - AVPlayer and VLCKit backends
 - SwiftUI full-screen player controls
-- Picture in Picture
-- AirPlay and Google Cast integration
+- Picture in Picture (requires the `audio` background mode and an active
+  `.playback` audio session in the host app)
+- Google Cast integration; AirPlay video routing is **opt-in** via
+  `PlayerManager.isExternalPlaybackEnabled` (off by default, because PlayerKit
+  configures `AVPlayer` for screen-capture protection)
 - Audio/subtitle track selection
 - Gesture-based seeking, brightness, and volume controls
-- Accessibility labels/hints on core playback controls
+- Accessibility labels, hints and an adjustable action on core playback controls
+
+Not yet supported: localization (all user-facing strings are English; see
+`HeuristicSkipButtonTitles` for the one injection seam), DRM/FairPlay, and
+Dynamic Type in the player chrome.
 
 ## Requirements
 
-- iOS 14.0+
+- iOS 15.0+
+- macOS 14.0+
 - Xcode 15+
-- Swift 5
+- Swift 5.10
 
 ## Installation (Swift Package Manager)
 
@@ -62,12 +70,17 @@ To enable in-player dubbing support:
 func setupDubber(player: PlayerKit.Player) {
     player.configureDubber(
         DubberConfiguration(
+            baseURL: URL(string: "https://your-dubber-host/api/instant-dub")!,
             defaultLanguage: "uz",
             defaultTranslateFrom: "auto"
         )
     )
 }
 ```
+
+> `baseURL` is required and has no default. Starting a dub session sends the
+> current media URL to that host, so the destination must be a deliberate choice
+> by the integrating app.
 
 Once configured, the player shows a dedicated dubbing card in the top controls with:
 
@@ -96,12 +109,25 @@ Public distribution is validated in CI with:
 Internal architecture hardening includes:
 - callback-based lifecycle/error propagation from player wrappers
 - event-driven runtime state updates (with compatibility fallback polling)
-- reduced singleton coupling in cast/audio/gesture/orientation managers
-- dependency injection support for player views and menu viewmodels
+- one manager instance threaded through the UI tree instead of views reaching
+  for `PlayerManager.shared` directly
+
+Known limitation: `PlayerManager` has a `private init`, so `.shared` is the only
+instance that can exist. The `playerManager:` parameters on the views and view
+models thread that one instance through the tree; they are not a seam for
+substituting a different manager, and two simultaneous players are not supported.
 
 Playback errors are surfaced through:
 - `PlayerManager.shared.lastError`
-- `Notification.Name.PlayerKitDidFail`
+- `Notification.Name.PlayerKitDidFail`, whose `object` is the `PlayerKitError`
+
+## Lifecycle
+
+Call `PlayerManager.tearDown()` when the player UI goes away. `PlayerView` does
+this from `onDisappear`; hosts driving `PlayerManager` directly must call it
+themselves. It stops playback and releases the resources PlayerKit acquires
+process-wide: the shared `AVAudioSession`, the idle-timer override, screen
+brightness, and `GCController` handlers.
 
 ## Release Management
 

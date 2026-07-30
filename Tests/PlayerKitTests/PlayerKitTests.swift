@@ -637,14 +637,14 @@ final class PlayerKitTests: XCTestCase {
         manager.configureDubber(nil)
         XCTAssertFalse(manager.isDubberEnabled)
 
-        manager.configureDubber(DubberConfiguration())
+        manager.configureDubber(DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!))
         XCTAssertTrue(manager.isDubberEnabled)
     }
 
     @MainActor
     func testConfigureDubberLoadsLanguageOptions() {
         let manager = PlayerManager.shared
-        let configuration = DubberConfiguration(
+        let configuration = DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!,
             defaultLanguage: "en",
             defaultTranslateFrom: "ru",
             supportedLanguages: [
@@ -668,7 +668,7 @@ final class PlayerKitTests: XCTestCase {
     @MainActor
     func testSetDubLanguageUpdatesOnlySupportedCodes() {
         let manager = PlayerManager.shared
-        let configuration = DubberConfiguration(
+        let configuration = DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!,
             supportedLanguages: [
                 DubberLanguageOption(code: "uz", name: "Uzbek"),
                 DubberLanguageOption(code: "en", name: "English"),
@@ -692,7 +692,7 @@ final class PlayerKitTests: XCTestCase {
     @MainActor
     func testConfigureDubberKeepsCurrentLanguageSelectionsWhenStillSupported() {
         let manager = PlayerManager.shared
-        let configuration = DubberConfiguration(
+        let configuration = DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!,
             supportedLanguages: [
                 DubberLanguageOption(code: "uz", name: "Uzbek"),
                 DubberLanguageOption(code: "en", name: "English"),
@@ -731,7 +731,7 @@ final class PlayerKitTests: XCTestCase {
         let manager = PlayerManager.shared
 
         manager.playerItem = nil
-        manager.configureDubber(DubberConfiguration())
+        manager.configureDubber(DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!))
 
         await manager.startDubbedPlayback()
 
@@ -871,12 +871,12 @@ final class PlayerKitTests: XCTestCase {
 
     func testDubberClientPollURLIncludesLatestStateCursor() {
         let client = DubberClient()
-        let configuration = DubberConfiguration()
+        let configuration = DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!)
 
         let url = client.pollURL(sessionID: "abc", configuration: configuration)
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
 
-        XCTAssertEqual(url.absoluteString, "https://dubbing.uz/api/instant-dub/abc/poll?after=-1")
+        XCTAssertEqual(url.absoluteString, "https://dubber.test/api/abc/poll?after=-1")
         XCTAssertEqual(
             components?.queryItems?.first(where: { $0.name == "after" })?.value,
             "-1"
@@ -1023,31 +1023,19 @@ final class PlayerKitTests: XCTestCase {
 
     func testDubSwitchPolicyAllowsSwitchAsSoonAsDubBecomesPlayable() {
         XCTAssertTrue(
-            DubSwitchPolicy.shouldSwitchToDubbedMaster(
-                isDubPlayable: true,
-                isFinalized: false,
-                allowProgressiveSwitching: false
-            )
+            DubSwitchPolicy.shouldSwitchToDubbedMaster(isDubPlayable: true)
         )
     }
 
     func testDubSwitchPolicyStillBlocksSwitchWhenDubIsNotPlayable() {
         XCTAssertFalse(
-            DubSwitchPolicy.shouldSwitchToDubbedMaster(
-                isDubPlayable: false,
-                isFinalized: true,
-                allowProgressiveSwitching: false
-            )
+            DubSwitchPolicy.shouldSwitchToDubbedMaster(isDubPlayable: false)
         )
     }
 
     func testDubSwitchPolicyAllowsSwitchWhenDubIsFinalizedInStableMode() {
         XCTAssertTrue(
-            DubSwitchPolicy.shouldSwitchToDubbedMaster(
-                isDubPlayable: true,
-                isFinalized: true,
-                allowProgressiveSwitching: false
-            )
+            DubSwitchPolicy.shouldSwitchToDubbedMaster(isDubPlayable: true)
         )
     }
 

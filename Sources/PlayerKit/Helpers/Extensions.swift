@@ -18,23 +18,14 @@ extension Collection {
     }
 }
 
-extension Double {
-    func asTimeString(style: DateComponentsFormatter.UnitsStyle) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.minute, .second]
-        formatter.unitsStyle = style
-        formatter.zeroFormattingBehavior = .pad
-        return formatter.string(from: self) ?? ""
-    }
-}
-
 extension BinaryFloatingPoint {
+    /// Formats a number of seconds as a playback timestamp.
+    ///
+    /// Delegates to `PlayerKitTimeFormatter` so hour-long content renders as
+    /// `2:02:05` rather than `122:05`, and so the underlying
+    /// `DateComponentsFormatter` is not reallocated on every call.
     func asTimeString(style: DateComponentsFormatter.UnitsStyle) -> String {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.minute, .second]
-        formatter.unitsStyle = style
-        formatter.zeroFormattingBehavior = .pad
-        return formatter.string(from: TimeInterval(self)) ?? "" //formatter.string(from: self) ?? ""
+        PlayerKitTimeFormatter.string(from: Double(self), style: style)
     }
 }
 

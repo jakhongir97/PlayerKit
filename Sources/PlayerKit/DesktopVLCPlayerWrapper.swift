@@ -136,8 +136,51 @@ private final class DesktopVLCLibrary {
 
         setenv("VLC_PLUGIN_PATH", DesktopVLCPaths.pluginsDirectory, 1)
 
-        let coreHandle = dlopen(DesktopVLCPaths.libvlcCorePath, RTLD_NOW | RTLD_GLOBAL)
-        let vlcHandle = dlopen(DesktopVLCPaths.libvlcPath, RTLD_NOW | RTLD_GLOBAL)
+        // RTLD_LOCAL, not RTLD_GLOBAL: libvlc bundles its own copies of common
+        // codec libraries, and exporting those into the global namespace can
+        // collide with symbols the host app already loaded.
+        let coreHandle = dlopen(DesktopVLCPaths.libvlcCorePath, RTLD_NOW | RTLD_LOCAL)
+        let vlcHandle = dlopen(DesktopVLCPaths.libvlcPath, RTLD_NOW | RTLD_LOCAL)
+
+        // The signatures below are hand-written against the libvlc 3.x ABI, and
+        // 4.x changed several of them — `libvlc_media_player_new_from_media`
+        // gained an instance parameter, for one. `dlsym` still resolves those
+        // names, so without a version gate the wrapper would call them with the
+        // wrong argument list: undefined behaviour rather than a clean failure.
+        guard Self.isSupportedRuntimeVersion(vlcHandle) else {
+            self.coreHandle = nil
+            self.vlcHandle = nil
+            if let vlcHandle { dlclose(vlcHandle) }
+            if let coreHandle { dlclose(coreHandle) }
+            available = false
+            newInstanceFn = nil
+            releaseInstanceFn = nil
+            newMediaFn = nil
+            releaseMediaFn = nil
+            newPlayerFn = nil
+            releasePlayerFn = nil
+            setNSObjectFn = nil
+            playFn = nil
+            pauseFn = nil
+            stopFn = nil
+            getTimeFn = nil
+            setTimeFn = nil
+            getLengthFn = nil
+            getPositionFn = nil
+            isPlayingFn = nil
+            getStateFn = nil
+            getRateFn = nil
+            setRateFn = nil
+            audioSetMuteFn = nil
+            audioGetTrackFn = nil
+            audioSetTrackFn = nil
+            audioGetTrackDescriptionFn = nil
+            videoGetSPUFn = nil
+            videoSetSPUFn = nil
+            videoGetSPUDescriptionFn = nil
+            releaseTrackDescriptionFn = nil
+            return
+        }
 
         self.coreHandle = coreHandle
         self.vlcHandle = vlcHandle
@@ -200,6 +243,38 @@ private final class DesktopVLCLibrary {
         if let coreHandle {
             dlclose(coreHandle)
         }
+    }
+
+    /// The libvlc major versions whose C ABI matches the signatures declared above.
+    private static let supportedMajorVersions: Set<Int> = [3]
+
+    /// Reads `libvlc_get_version()` and checks it against `supportedMajorVersions`.
+    ///
+    /// Returns `false` when the symbol is missing or the version is
+    /// unparseable — refusing to bind is the safe outcome, since guessing wrong
+    /// means calling C functions with mismatched argument lists.
+    private static func isSupportedRuntimeVersion(_ handle: UnsafeMutableRawPointer?) -> Bool {
+        typealias LibVLCGetVersion = @convention(c) () -> UnsafePointer<CChar>?
+        guard let getVersion = loadSymbol(handle, "libvlc_get_version", as: LibVLCGetVersion.self),
+              let versionPointer = getVersion() else {
+            return false
+        }
+
+        // e.g. "3.0.20 Vetinari" -> major 3
+        let version = String(cString: versionPointer)
+        guard let majorText = version.split(separator: ".").first,
+              let major = Int(majorText) else {
+            return false
+        }
+
+        let isSupported = supportedMajorVersions.contains(major)
+        if !isSupported {
+            PlayerKitLog.debug(
+                "DesktopVLC",
+                "Refusing to bind libvlc \(version): only major versions \(supportedMajorVersions.sorted()) match the declared ABI."
+            )
+        }
+        return isSupported
     }
 
     private static func loadSymbol<T>(_ handle: UnsafeMutableRawPointer?, _ name: String, as type: T.Type) -> T? {
@@ -493,6 +568,11 @@ extension DesktopVLCPlayerWrapper: PlaybackControlProtocol {
 
     public func stop() {
         runtime.stop(mediaPlayer)
+        // stop() previously left the 0.5s poll timer running and the libvlc
+        // player allocated, so a dismissed player kept waking the main run loop
+        // twice a second for the lifetime of the process.
+        stopPolling()
+        releasePlayer()
         emitRuntimeState()
     }
 

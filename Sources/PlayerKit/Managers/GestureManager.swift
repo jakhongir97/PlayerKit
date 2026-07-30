@@ -35,9 +35,13 @@ public class GestureManager: ObservableObject {
     #if os(iOS)
     private var initialBrightness: CGFloat = UIScreen.main.brightness
     private var initialVolume: Float = AVAudioSession.sharedInstance().outputVolume
+    /// The device's brightness before PlayerKit first changed it, so it can be
+    /// handed back on teardown. `nil` means we have never touched brightness.
+    private var brightnessBeforePlayback: CGFloat?
     #else
     private var initialBrightness: CGFloat = 0.5
     private var initialVolume: Float = 0.5
+    private var brightnessBeforePlayback: CGFloat?
     #endif
     private var volumeSensitivity: CGFloat = 0.01
     private var brightnessSensitivity: CGFloat = 0.01
@@ -98,12 +102,32 @@ public class GestureManager: ObservableObject {
     // Adjust brightness based on vertical drag gesture
     private func adjustBrightness(translation: CGFloat) {
         #if os(iOS)
+        // Remember the device's own brightness the first time we touch it so
+        // restoreSystemBrightness() can hand it back. Screen brightness is a
+        // system-wide setting: without this, dimming the player left the user's
+        // whole device dim after they closed it.
+        if brightnessBeforePlayback == nil {
+            brightnessBeforePlayback = UIScreen.main.brightness
+        }
         let brightnessDelta = -translation * brightnessSensitivity
         UIScreen.main.brightness = max(0.0, min(1.0, initialBrightness + brightnessDelta))
         #endif
     }
-    
-    // Reset volume/brightness to initial states when swipe ends
+
+    /// Restores the screen brightness PlayerKit found before it first adjusted it.
+    ///
+    /// Called from `PlayerManager.tearDown()`; safe to call when the gesture was
+    /// never used, in which case it does nothing.
+    func restoreSystemBrightness() {
+        #if os(iOS)
+        guard let brightnessBeforePlayback else { return }
+        UIScreen.main.brightness = brightnessBeforePlayback
+        self.brightnessBeforePlayback = nil
+        #endif
+    }
+
+    // Re-read the current volume/brightness so the next swipe starts from where
+    // the system actually is, rather than from a baseline captured at init.
     func resetInitialStates() {
         #if os(iOS)
         initialVolume = AVAudioSession.sharedInstance().outputVolume

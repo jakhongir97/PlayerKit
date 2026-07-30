@@ -13,14 +13,14 @@ enum DubSwitchPolicy {
     private static let preparationLeadSeconds = 6.0
     private static let activationHeadroomSeconds = 8.0
 
-    static func shouldSwitchToDubbedMaster(
-        isDubPlayable: Bool,
-        isFinalized: Bool,
-        allowProgressiveSwitching: Bool
-    ) -> Bool {
-        _ = isFinalized
-        _ = allowProgressiveSwitching
-        return isDubPlayable
+    /// The stable path switches as soon as the dubbed master is playable.
+    ///
+    /// This used to take `isFinalized` and `allowProgressiveSwitching` and
+    /// discard both with `_ =`, which made call sites look as though those
+    /// inputs mattered. They do not; the parameters are gone rather than
+    /// silently ignored.
+    static func shouldSwitchToDubbedMaster(isDubPlayable: Bool) -> Bool {
+        isDubPlayable
     }
 
     static func hasPlayableDubData(
@@ -826,8 +826,16 @@ public class PlayerManager: ObservableObject {
     public func loadEpisodes(playerItems: [PlayerItem], currentIndex: Int = 0 ) {
         self.playerItems = playerItems
         contentType = .episode
-        currentPlayerItemIndex = currentIndex
-        guard let playerItem = playerItems[safe: currentIndex] else { return }
+        // Clamp rather than store the caller's index verbatim: an out-of-range
+        // index used to survive here (the safe subscript below only guarded the
+        // *load*), and then playNext()/playPrevious() would step it into a
+        // hard array subscript in loadPlayerItem(at:) and trap.
+        guard !playerItems.isEmpty else {
+            currentPlayerItemIndex = 0
+            return
+        }
+        currentPlayerItemIndex = min(max(currentIndex, 0), playerItems.count - 1)
+        guard let playerItem = playerItems[safe: currentPlayerItemIndex] else { return }
         load(playerItem: playerItem)
     }
     
@@ -1045,7 +1053,12 @@ public class PlayerManager: ObservableObject {
     }
     
     private func loadPlayerItem(at index: Int) {
-        let playerItem = playerItems[index]
+        // Defence in depth: every caller now clamps, but this used to be the
+        // single unguarded subscript reachable from public API.
+        guard let playerItem = playerItems[safe: index] else {
+            debugLog("Ignoring episode load for out-of-range index=\(index) count=\(playerItems.count)")
+            return
+        }
         load(playerItem: playerItem)
     }
 
@@ -1157,13 +1170,33 @@ extension PlayerManager {
         userInteracted()
     }
     
+    /// The range `seek(to:)` will clamp into.
+    ///
+    /// `duration` is 0 for live/DVR HLS (AVFoundation reports an indefinite
+    /// duration), which used to make every seek on a live stream a silent
+    /// no-op. Fall back to the backend's seekable window, which is exactly the
+    /// DVR buffer the user can actually move within.
+    var seekableRange: ClosedRange<Double>? {
+        if duration > 0 {
+            return 0 ... duration
+        }
+        guard let window = seekWindowReporter?.seekableTimeWindow,
+              window.upperBound > window.lowerBound else {
+            return nil
+        }
+        return window
+    }
+
     public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
-        guard duration != 0 else {
-            debugLog("Seek ignored because duration is zero. target=\(debugInterval(time))")
+        guard let seekableRange else {
+            debugLog(
+                "Seek ignored: no finite duration and no seekable window. " +
+                "target=\(debugInterval(time))"
+            )
             completion?(false)
             return
         }
-        let targetTime = min(max(time, 0), duration)
+        let targetTime = min(max(time, seekableRange.lowerBound), seekableRange.upperBound)
         debugLog(
             "Seek requested target=\(debugInterval(targetTime)) " +
             "current=\(debugInterval(currentTime)) shouldResume=\(shouldResumePlaybackAfterStall) " +
@@ -1197,37 +1230,67 @@ extension PlayerManager {
             }
         }
 
-        seekAction { [weak self] success in
-            guard let self else {
-                completion?(false)
-                return
-            }
-
-            if success {
-                self.currentTime = targetTime
-                if self.isLocalDubFallbackActive {
-                    self.dubFallbackPlayer.seek(to: targetTime)
+        seekAction { success in
+            // AVPlayer delivers seek completions on its own queue. Everything
+            // below writes @Published state and touches AVPlayerItem media
+            // selection, both of which must happen on the main thread — the
+            // rest of this class hops explicitly for exactly this reason, but
+            // this callback did not.
+            PlayerManager.onMain { [weak self] in
+                guard let self else {
+                    completion?(false)
+                    return
                 }
-                if self.dubSessionID != nil, self.hasLoadedDubbedMaster {
-                    self.refreshTrackInfo()
-                    self.reconcileDubTrackSelection(at: targetTime)
-                }
-                if shouldResumeAfterSeek {
-                    self.debugLog(
-                        "Seek succeeded and playback should resume. target=\(debugInterval(targetTime))"
-                    )
-                    self.playbackResumeProgressReferenceTime = targetTime
-                    self.schedulePlaybackResumeIfNeeded(trigger: "seek")
-                }
-            } else {
-                self.debugLog(
-                    "Seek failed. target=\(debugInterval(targetTime)) current=\(debugInterval(self.currentTime))"
+                self.finishSeek(
+                    success: success,
+                    targetTime: targetTime,
+                    shouldResumeAfterSeek: shouldResumeAfterSeek,
+                    completion: completion
                 )
             }
-            completion?(success)
         }
     }
-    
+
+    /// Applies post-seek state. Always invoked on the main thread.
+    private func finishSeek(
+        success: Bool,
+        targetTime: Double,
+        shouldResumeAfterSeek: Bool,
+        completion: ((Bool) -> Void)?
+    ) {
+        if success {
+            currentTime = targetTime
+            if isLocalDubFallbackActive {
+                dubFallbackPlayer.seek(to: targetTime)
+            }
+            if dubSessionID != nil, hasLoadedDubbedMaster {
+                refreshTrackInfo()
+                reconcileDubTrackSelection(at: targetTime)
+            }
+            if shouldResumeAfterSeek {
+                debugLog(
+                    "Seek succeeded and playback should resume. target=\(debugInterval(targetTime))"
+                )
+                playbackResumeProgressReferenceTime = targetTime
+                schedulePlaybackResumeIfNeeded(trigger: "seek")
+            }
+        } else {
+            debugLog(
+                "Seek failed. target=\(debugInterval(targetTime)) current=\(debugInterval(currentTime))"
+            )
+        }
+        completion?(success)
+    }
+
+    /// Runs `work` on the main thread, synchronously if already there.
+    static func onMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
     public func scrubForward(by seconds: TimeInterval) {
         playbackManager?.scrubForward(by: seconds)
     }
@@ -1465,11 +1528,7 @@ extension PlayerManager {
             )
         }
 
-        if DubSwitchPolicy.shouldSwitchToDubbedMaster(
-            isDubPlayable: poll.playable,
-            isFinalized: isCompletionStatus,
-            allowProgressiveSwitching: allowProgressiveDubSwitching
-        ),
+        if DubSwitchPolicy.shouldSwitchToDubbedMaster(isDubPlayable: poll.playable),
            !hasLoadedDubbedMaster,
            dubSwitchAttemptCount < 3,
            (!hasDubSwitchFailed || canRetryFailedDubSwitch) {
@@ -3103,6 +3162,23 @@ extension PlayerManager {
     }
 }
 
+// MARK: - External Playback (AirPlay)
+extension PlayerManager {
+    /// Enables AirPlay video routing.
+    ///
+    /// Off by default: PlayerKit configures `AVPlayer` for capture protection,
+    /// and external playback is part of that posture. Hosts that want AirPlay
+    /// must opt in explicitly. When this is `false` the AirPlay affordance is
+    /// hidden rather than presented as a control that silently does nothing.
+    public var isExternalPlaybackEnabled: Bool {
+        get { (currentPlayer as? AVPlayerWrapper)?.allowsExternalPlayback ?? false }
+        set {
+            (currentPlayer as? AVPlayerWrapper)?.allowsExternalPlayback = newValue
+            objectWillChange.send()
+        }
+    }
+}
+
 // MARK: - PiP Controls
 extension PlayerManager {
     public var isPiPSupported: Bool {
@@ -3525,6 +3601,7 @@ extension PlayerManager {
         configureAudioSessionCallbacks()
         configureCastCallbacks()
         AudioSessionManager.shared.configureAudioSession()
+        GameControllerManager.shared.attachControllerHandlers()
         subscribeToCastState()
         subscribeToGameControllerEvents()
         integrationsConfigured = true
@@ -3556,10 +3633,51 @@ extension PlayerManager {
         AudioSessionManager.shared.onPauseRequested = { [weak self] in
             self?.pause()
         }
-        
+
         AudioSessionManager.shared.onResumeRequested = { [weak self] in
             self?.play()
         }
+
+        AudioSessionManager.shared.isPlayingProvider = { [weak self] in
+            self?.isPlaybackRequested ?? false
+        }
+    }
+
+    /// Releases every app-global resource PlayerKit acquired, and stops playback.
+    ///
+    /// PlayerKit reaches outside its own object graph in several places — the
+    /// shared `AVAudioSession`, screen brightness, the idle-timer override, and
+    /// process-wide `GCController` handlers. `PlayerManager` is a singleton and
+    /// therefore never deinits, so without an explicit teardown all of those
+    /// stayed acquired for the remaining lifetime of the host process once the
+    /// player had been shown even once.
+    ///
+    /// Call this when the player UI goes away. `PlayerView` does it from
+    /// `onDisappear`; hosts driving `PlayerManager` directly should call it
+    /// themselves. It is idempotent.
+    public func tearDown() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.tearDown()
+            }
+            return
+        }
+
+        debugLog("Tearing down player manager.")
+
+        resetPlayer(clearMediaContext: true, clearDubWorkflow: true)
+
+        gestureManager.restoreSystemBrightness()
+        GameControllerManager.shared.releaseControllerHandlers()
+        isPlaybackWakeLockHeld = false
+        Task { @MainActor in
+            PlaybackWakeLockCoordinator.shared.setPlaybackActive(false)
+        }
+        AudioSessionManager.shared.deactivateAudioSession()
+
+        // Let the integrations rebuild on the next play so a torn-down manager
+        // can be reused rather than being permanently inert.
+        integrationsConfigured = false
     }
     
     private func configureOrientationCallbacks() {

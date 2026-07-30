@@ -66,17 +66,14 @@ struct BottomControlsView: View {
                     .glassEffect(.clear, in: .capsule)
             }
             .transaction { $0.animation = nil }
-        } else if #available(iOS 15.0, macOS 12.0, *) {
+        } else {
+            // The former `iOS 15.0 / macOS 12.0` tier was always true at this
+            // deployment target, so the plain-colour fallback below it could
+            // never run.
             trailingActionsContent
                 .padding(pillInsets)
                 .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
-                .contentShape(Capsule())
-        } else {
-            trailingActionsContent
-                .padding(pillInsets)
-                .background(Color.white.opacity(0.10))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
                 .contentShape(Capsule())
         }
     }

@@ -147,19 +147,11 @@ enum DubAudioFallbackBuilder {
     }
 
     private static func loadAudioTracks(from asset: AVAsset) async throws -> [AVAssetTrack] {
-        if #available(iOS 15, tvOS 15, macOS 12, *) {
-            return try await asset.loadTracks(withMediaType: .audio)
-        } else {
-            return asset.tracks(withMediaType: .audio)
-        }
+        try await asset.loadTracks(withMediaType: .audio)
     }
 
     private static func loadDuration(from asset: AVAsset) async throws -> CMTime {
-        if #available(iOS 15, tvOS 15, macOS 12, *) {
-            return try await asset.load(.duration)
-        } else {
-            return asset.duration
-        }
+        try await asset.load(.duration)
     }
 }
 
@@ -268,24 +260,14 @@ final class DubAudioFallbackPlayer {
             return
         }
 
-        if #available(iOS 10.0, macOS 10.15, *) {
-            player.playImmediately(atRate: max(playbackSpeed, 0.1))
-        } else {
-            player.play()
-            player.rate = max(playbackSpeed, 0.1)
-        }
+        player.playImmediately(atRate: max(playbackSpeed, 0.1))
     }
 
     func play(rate: Float) {
         guard let player else { return }
         isActive = true
         debugLog("Play local fallback audio. rate=\(rate)")
-        if #available(iOS 10.0, macOS 10.15, *) {
-            player.playImmediately(atRate: max(rate, 0.1))
-        } else {
-            player.play()
-            player.rate = max(rate, 0.1)
-        }
+        player.playImmediately(atRate: max(rate, 0.1))
     }
 
     func pause() {

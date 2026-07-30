@@ -9,18 +9,16 @@ import AppKit
 /// MARK: - Glass background for the capsule container
 struct GlassCapsuleBackground: ViewModifier {
     func body(content: Content) -> some View {
+        // The former middle tier tested `iOS 15.0 / macOS 12.0`, which is at or
+        // below the package's deployment target and therefore always true —
+        // making the `else` branch unreachable. Collapsing it also clears the
+        // "ViewBuilder does not implement buildLimitedAvailability; this code
+        // may crash on earlier versions of the OS" warning the ladder produced.
         if #available(iOS 26.0, macOS 26.0, *) {
             content.glassEffect(.clear, in: .capsule)
-        } else if #available(iOS 15.0, macOS 12.0, *) {
-            content
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12)))
         } else {
             content
-                .background(
-                    BlurView()
-                        .clipShape(Capsule())
-                )
+                .background(.ultraThinMaterial, in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.12)))
         }
     }

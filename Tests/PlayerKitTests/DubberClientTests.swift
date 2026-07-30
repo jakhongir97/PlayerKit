@@ -14,7 +14,7 @@ final class DubberClientTests: XCTestCase {
             defer { requestExpectation.fulfill() }
 
             XCTAssertEqual(request.httpMethod, "POST")
-            XCTAssertEqual(request.url?.absoluteString, "https://dubbing.uz/api/instant-dub/start")
+            XCTAssertEqual(request.url?.absoluteString, "https://dubber.test/api/start")
 
             let bodyData = try XCTUnwrap(self.requestBody(from: request))
             let payload = try XCTUnwrap(
@@ -40,7 +40,7 @@ final class DubberClientTests: XCTestCase {
         let sessionID = try await client.startSession(
             sourceURL: URL(string: "https://cdn.example.com/master.m3u8")!,
             title: "Breaking Bad - Pilot - Season 1, Episode 1",
-            configuration: DubberConfiguration(),
+            configuration: DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!),
             language: nil,
             translateFrom: nil
         )

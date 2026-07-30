@@ -4,6 +4,10 @@ import AVKit
 import GoogleCast
 
 struct CastButton: UIViewRepresentable {
+    /// Chromecast handoff is independent of `AVPlayer.allowsExternalPlayback`,
+    /// so only the AirPlay entry is gated on it.
+    var isAirPlayEnabled: Bool = false
+
     func makeUIView(context: Context) -> UIButton {
         let button = UIButton(type: .system)
 
@@ -13,13 +17,17 @@ struct CastButton: UIViewRepresentable {
 
         button.tintColor = .white
         button.accessibilityLabel = "Cast options"
-        button.accessibilityHint = "Shows AirPlay and Chromecast options"
+        button.accessibilityHint = isAirPlayEnabled
+            ? "Shows AirPlay and Chromecast options"
+            : "Shows Chromecast options"
         button.accessibilityIdentifier = "player.cast"
         setupCastButton(for: button)
         return button
     }
 
-    func updateUIView(_ uiView: UIButton, context: Context) {}
+    func updateUIView(_ uiView: UIButton, context: Context) {
+        setupCastButton(for: uiView)
+    }
 
     private func setupCastButton(for button: UIButton) {
         let airplayButton = AVRoutePickerView()
@@ -41,24 +49,31 @@ struct CastButton: UIViewRepresentable {
             }
         }
 
-        let castMenu = UIMenu(title: "Cast Options", children: [googleCastAction, airPlayAction])
-        if #available(iOS 14.0, *) {
-            button.menu = castMenu
-            button.showsMenuAsPrimaryAction = true
-        }
+        let actions = isAirPlayEnabled ? [googleCastAction, airPlayAction] : [googleCastAction]
+        let castMenu = UIMenu(title: "Cast Options", children: actions)
+        button.menu = castMenu
+        button.showsMenuAsPrimaryAction = true
     }
 }
 #elseif os(macOS)
 struct CastButton: View {
+    var isAirPlayEnabled: Bool = false
+
     var body: some View {
-        AirPlayButton()
-            .accessibilityLabel("AirPlay")
-            .accessibilityHint("Opens the AirPlay device picker")
-            .accessibilityIdentifier("player.cast")
+        // On macOS this button *is* the AirPlay picker, so with external
+        // playback disabled there is nothing to show.
+        if isAirPlayEnabled {
+            AirPlayButton()
+                .accessibilityLabel("AirPlay")
+                .accessibilityHint("Opens the AirPlay device picker")
+                .accessibilityIdentifier("player.cast")
+        }
     }
 }
 #else
 struct CastButton: View {
+    var isAirPlayEnabled: Bool = false
+
     var body: some View {
         Image(systemName: "airplayvideo")
             .font(.system(size: 20, weight: .semibold))

@@ -1,76 +1,146 @@
 import AVFoundation
 
-/// A custom AVPlayer subclass that optimizes seek handling for HLS streaming.
-/// Instead of performing every seek call (which can be expensive for HLS),
-/// it only executes the final requested seek when multiple seek requests come in quickly.
-class SmoothPlayer: AVPlayer {
-    /// Indicates whether a seek operation is currently in progress.
+/// An `AVPlayer` subclass that coalesces bursts of seek requests.
+///
+/// Scrubbing an HLS stream can produce a seek per frame of drag, and issuing
+/// each one is expensive. This collapses a burst so only the newest target is
+/// actually seeked to.
+///
+/// Three things this deliberately gets right, none of which the previous
+/// implementation did:
+///
+/// - **No completion handler is dropped.** Superseded requests used to have
+///   their handler silently overwritten, so callers waiting on a seek were
+///   never called back at all. Every handler is now retained and invoked once
+///   the coalesced seek settles.
+/// - **Tolerances belong to their request.** The queued seek used to be
+///   replayed with the *previous* request's tolerances, quietly discarding the
+///   zero tolerance that `seekExactly(to:)` depends on.
+/// - **State is synchronized.** `AVPlayer` delivers seek completions on an
+///   internal queue, so the coalescing state is touched from at least two
+///   threads.
+final class SmoothPlayer: AVPlayer {
+    private struct PendingSeek {
+        let time: CMTime
+        let toleranceBefore: CMTime
+        let toleranceAfter: CMTime
+    }
+
+    private let stateLock = NSLock()
     private var isSeeking = false
-    /// Holds the most recent (pending) seek time if a new request arrives while already seeking.
-    private var pendingSeekTime: CMTime?
-    /// Holds the completion handler for the pending seek.
-    private var pendingCompletionHandler: ((Bool) -> Void)?
-    
-    /// Tolerance values tuned for HLS (adjust these as needed).
+    private var pendingSeek: PendingSeek?
+    /// Handlers for every request folded into the in-flight seek.
+    private var pendingCompletionHandlers: [(Bool) -> Void] = []
+
+    /// Tolerances tuned for HLS; used when a caller does not specify its own.
     private let hlsToleranceBefore = CMTime(seconds: 0.5, preferredTimescale: 600)
-    private let hlsToleranceAfter  = CMTime(seconds: 0.5, preferredTimescale: 600)
-    
+    private let hlsToleranceAfter = CMTime(seconds: 0.5, preferredTimescale: 600)
+
     // MARK: - Overridden Seek Methods
 
-    /// A convenience override that calls our custom implementation.
     override func seek(to time: CMTime) {
         seek(to: time, completionHandler: { _ in })
     }
 
-    /// Override the basic seek call to use HLS-friendly tolerances.
     override func seek(to time: CMTime, completionHandler: @escaping (Bool) -> Void) {
-        seek(to: time, toleranceBefore: hlsToleranceBefore, toleranceAfter: hlsToleranceAfter, completionHandler: completionHandler)
+        seek(
+            to: time,
+            toleranceBefore: hlsToleranceBefore,
+            toleranceAfter: hlsToleranceAfter,
+            completionHandler: completionHandler
+        )
     }
-    
-    /// The core implementation: if a seek is already in progress, simply update the pending target time.
-    /// Once the current seek completes, if a pending time exists, perform that seek.
-    override func seek(to time: CMTime,
-                       toleranceBefore: CMTime,
-                       toleranceAfter: CMTime,
-                       completionHandler: @escaping (Bool) -> Void) {
-        // If a seek is in progress, update the pending target.
+
+    /// Overridden so this variant is coalesced too; previously it bypassed the
+    /// coalescing entirely and could race a tracked seek.
+    override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime) {
+        seek(
+            to: time,
+            toleranceBefore: toleranceBefore,
+            toleranceAfter: toleranceAfter,
+            completionHandler: { _ in }
+        )
+    }
+
+    override func seek(
+        to time: CMTime,
+        toleranceBefore: CMTime,
+        toleranceAfter: CMTime,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        let request = PendingSeek(
+            time: time,
+            toleranceBefore: toleranceBefore,
+            toleranceAfter: toleranceAfter
+        )
+
+        stateLock.lock()
+        pendingCompletionHandlers.append(completionHandler)
         if isSeeking {
+            // Fold into the in-flight seek. The handler stays queued, so this
+            // caller is still notified once the burst settles.
+            pendingSeek = request
+            stateLock.unlock()
             debugLog("Queueing follow-up seek to \(debugTime(time)) while another seek is active.")
-            pendingSeekTime = time
-            pendingCompletionHandler = completionHandler
             return
         }
-        
-        // No seek in progress—start one.
         isSeeking = true
-        pendingCompletionHandler = completionHandler
+        stateLock.unlock()
+
         debugLog("Starting seek to \(debugTime(time)).")
-        super.seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { [weak self] finished in
-            guard let self = self else { return }
-            self.handleSeekCompletion(finished, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter)
+        perform(request)
+    }
+
+    private func perform(_ request: PendingSeek) {
+        super.seek(
+            to: request.time,
+            toleranceBefore: request.toleranceBefore,
+            toleranceAfter: request.toleranceAfter
+        ) { [weak self] finished in
+            self?.handleSeekCompletion(finished)
         }
     }
-    
-    /// Handles the completion of a seek. If a new seek request has come in while the current seek was in progress,
-    /// immediately execute that (latest) request. Otherwise, finish up by resetting our flags and calling any pending completion.
-    private func handleSeekCompletion(_ finished: Bool,
-                                      toleranceBefore: CMTime,
-                                      toleranceAfter: CMTime) {
-        if let newTime = pendingSeekTime {
-            // A new seek was requested during the previous seek.
-            debugLog("Seek completed with a queued follow-up target at \(debugTime(newTime)). finished=\(finished)")
-            pendingSeekTime = nil
-            super.seek(to: newTime, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { [weak self] newFinished in
-                guard let self = self else { return }
-                self.handleSeekCompletion(newFinished, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter)
-            }
-        } else {
-            // No more pending seeks; mark seeking as finished.
-            isSeeking = false
-            debugLog("Seek finished=\(finished) current=\(debugTime(currentTime()))")
-            // Call the last completion handler if one was provided.
-            pendingCompletionHandler?(finished)
-            pendingCompletionHandler = nil
+
+    /// Runs the newest queued request if one arrived mid-seek; otherwise drains
+    /// every accumulated completion handler exactly once.
+    private func handleSeekCompletion(_ finished: Bool) {
+        stateLock.lock()
+        if let next = pendingSeek {
+            pendingSeek = nil
+            stateLock.unlock()
+            debugLog(
+                "Seek completed with a queued follow-up target at \(debugTime(next.time)). " +
+                "finished=\(finished)"
+            )
+            perform(next)
+            return
+        }
+
+        let handlers = pendingCompletionHandlers
+        pendingCompletionHandlers.removeAll()
+        isSeeking = false
+        stateLock.unlock()
+
+        debugLog("Seek finished=\(finished) handlers=\(handlers.count)")
+        for handler in handlers {
+            handler(finished)
+        }
+    }
+
+    /// Drops queued work and reports failure to everyone still waiting.
+    ///
+    /// Called when the item is replaced or the player is torn down, so callers
+    /// are not left holding a completion that can never fire.
+    func cancelCoalescedSeeks() {
+        stateLock.lock()
+        let handlers = pendingCompletionHandlers
+        pendingCompletionHandlers.removeAll()
+        pendingSeek = nil
+        isSeeking = false
+        stateLock.unlock()
+
+        for handler in handlers {
+            handler(false)
         }
     }
 

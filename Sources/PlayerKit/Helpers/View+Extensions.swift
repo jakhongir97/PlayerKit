@@ -67,11 +67,8 @@ extension View {
 extension View {
     @ViewBuilder
     func hierarchicalSymbolRendering() -> some View {
-        if #available(iOS 15.0, macOS 12.0, *) {
-            self.symbolRenderingMode(.hierarchical)
-        } else {
-            self
-        }
+        // iOS 15 / macOS 12 is at or below the deployment target.
+        self.symbolRenderingMode(.hierarchical)
     }
 }
 
@@ -91,11 +88,9 @@ extension View {
 extension View {
     @ViewBuilder
     func compatTint(_ color: Color) -> some View {
-        if #available(iOS 15.0, macOS 12.0, *) {
-            self.tint(color)
-        } else {
-            self.accentColor(color)
-        }
+        // `tint` is available on every supported OS; the accentColor fallback
+        // was unreachable (and is itself deprecated).
+        self.tint(color)
     }
 }
 
@@ -106,7 +101,7 @@ public extension View {
             self
                 .padding(12)
                 .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius, style: .continuous))
-        } else if #available(iOS 15.0, macOS 12.0, *) {
+        } else {
             #if os(macOS)
             self
                 .padding(12)
@@ -134,11 +129,6 @@ public extension View {
                         .stroke(.white.opacity(0.12), lineWidth: 1)
                 )
             #endif
-        } else {
-            self
-                .padding(12)
-                .background(Color.black.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
     }
 }
@@ -146,11 +136,7 @@ public extension View {
 public extension View {
     @ViewBuilder
     func monospacedDigitsCompat() -> some View {
-        if #available(iOS 15.0, macOS 12.0, *) {
-            self.monospacedDigit()
-        } else {
-            self.font(.system(.caption, design: .monospaced))
-        }
+        self.monospacedDigit()
     }
 }
 

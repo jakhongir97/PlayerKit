@@ -45,6 +45,38 @@ final class GameControllerManager: ObservableObject {
         }
         isAnyControllerConnected = !controllers.isEmpty
     }
+
+    /// Detaches every handler PlayerKit installed.
+    ///
+    /// `GCController` instances are shared process-wide, so assigning these
+    /// handlers overwrites whatever the host app had bound to the same buttons.
+    /// Without this, dismissing the player left PlayerKit owning the host's
+    /// controller input for the remaining lifetime of the process.
+    func releaseControllerHandlers() {
+        for controller in controllers {
+            guard let gamepad = controller.extendedGamepad else { continue }
+            gamepad.buttonA.pressedChangedHandler = nil
+            gamepad.buttonB.pressedChangedHandler = nil
+            gamepad.leftShoulder.pressedChangedHandler = nil
+            gamepad.rightShoulder.pressedChangedHandler = nil
+            gamepad.leftTrigger.valueChangedHandler = nil
+            gamepad.rightTrigger.valueChangedHandler = nil
+            gamepad.dpad.left.pressedChangedHandler = nil
+            gamepad.dpad.right.pressedChangedHandler = nil
+        }
+        stopScrubbing()
+        leftBumperScrubEndWorkItem?.cancel()
+        leftBumperScrubEndWorkItem = nil
+        rightBumperScrubEndWorkItem?.cancel()
+        rightBumperScrubEndWorkItem = nil
+    }
+
+    /// Re-attaches handlers for every currently connected controller.
+    func attachControllerHandlers() {
+        for controller in GCController.controllers() {
+            configureController(controller)
+        }
+    }
     
     private func configureController(_ controller: GCController) {
         if !controllers.contains(controller) {

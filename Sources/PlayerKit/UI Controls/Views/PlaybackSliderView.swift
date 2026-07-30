@@ -89,10 +89,18 @@ struct PlaybackSliderView: View {
                 .padding(.vertical)
                 .padding(.horizontal, horizontalInset)
                 .contentShape(Rectangle())
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Playback position")
                 .accessibilityValue(accessibilityValueText)
                 .accessibilityHint(PlayerKitPlatform.isDesktop ? "Click or drag to seek through the media" : "Drag to seek through the media")
                 .accessibilityIdentifier("player.timeline")
+                // The slider previously exposed a label and a value but no way
+                // to change them, so VoiceOver users could read the playhead
+                // but could not seek at all. Attaching an adjustable action is
+                // what makes swipe-up/swipe-down scrub.
+                .accessibilityAdjustableAction { direction in
+                    adjustPlaybackPosition(direction)
+                }
             }
             .frame(height: PlayerKitPlatform.isDesktop ? 42 : 50)
         }
@@ -107,6 +115,33 @@ struct PlaybackSliderView: View {
                 }
             }
         }
+    }
+
+    /// Seeks by a fixed step in response to a VoiceOver adjust gesture.
+    ///
+    /// The step scales with duration so a swipe is useful on both a 30-second
+    /// clip and a three-hour film, with a 15-second floor to match the
+    /// scrub-button convention.
+    private func adjustPlaybackPosition(_ direction: AccessibilityAdjustmentDirection) {
+        let duration = playerManager.duration
+        guard duration > 0 else { return }
+
+        let step = max(duration / 20, 15)
+        let delta: Double
+        switch direction {
+        case .increment:
+            delta = step
+        case .decrement:
+            delta = -step
+        @unknown default:
+            return
+        }
+
+        let target = min(max(effectiveSliderValue + delta, 0), duration)
+        sliderValue = target
+        pendingSeekValue = target
+        playerManager.userInteracted()
+        playerManager.seek(to: target) { _ in }
     }
 
     private func formatTime(_ value: Double) -> String {

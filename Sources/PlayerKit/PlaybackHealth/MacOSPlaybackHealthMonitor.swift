@@ -395,7 +395,12 @@ final class MacOSPlaybackHealthMonitor {
             self.errorLogObserver = nil
         }
 
-        Task {
+        // Capture the actor, not `self`. Reading `self.classifier` inside the
+        // Task retains a strong reference to the monitor, and `stop()` is also
+        // reachable from `deinit` — resurrecting a deallocating object, which
+        // traps with "deallocated with non-zero retain count".
+        let classifier = self.classifier
+        Task.detached {
             await classifier.invalidate()
         }
     }

@@ -1952,12 +1952,19 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
         return value >= 0 ? decimal(value) : "unknown"
     }
 
-    private static func iso8601(_ date: Date) -> String {
-        guard date.timeIntervalSinceReferenceDate.isFinite else { return "unknown" }
+    /// Shared because `report()` formats timestamps inside sort comparators and
+    /// per-row loops. Allocating one of these per call cost thousands of
+    /// formatter constructions per report and ran on the main thread.
+    private static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter.string(from: date)
+        return formatter
+    }()
+
+    private static func iso8601(_ date: Date) -> String {
+        guard date.timeIntervalSinceReferenceDate.isFinite else { return "unknown" }
+        return iso8601Formatter.string(from: date)
     }
 
     private static func optionalISO8601(_ date: Date?) -> String {
@@ -2126,36 +2133,50 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
         ])
     }
 
+    /// Chronological, with the identifier as a deterministic tiebreak.
+    ///
+    /// These compare `Date` values directly rather than their ISO-8601
+    /// renderings: formatting inside a comparator is both far more expensive
+    /// and needlessly indirect, since string ordering here only happened to
+    /// agree with time ordering because the format is fixed-width.
+    private static func chronological(
+        _ lhs: Date,
+        _ rhs: Date,
+        _ lhsID: UUID,
+        _ rhsID: UUID
+    ) -> Bool {
+        if lhs != rhs {
+            return lhs < rhs
+        }
+        return lhsID.uuidString < rhsID.uuidString
+    }
+
     private static func sampleSort(
         _ lhs: PlaybackDiagnosticsSample,
         _ rhs: PlaybackDiagnosticsSample
     ) -> Bool {
-        sortKey([iso8601(lhs.capturedAt), lhs.id.uuidString])
-            < sortKey([iso8601(rhs.capturedAt), rhs.id.uuidString])
+        chronological(lhs.capturedAt, rhs.capturedAt, lhs.id, rhs.id)
     }
 
     private static func evidenceSort(
         _ lhs: PlaybackDiagnosticsEvidence,
         _ rhs: PlaybackDiagnosticsEvidence
     ) -> Bool {
-        sortKey([iso8601(lhs.occurredAt), lhs.id.uuidString])
-            < sortKey([iso8601(rhs.occurredAt), rhs.id.uuidString])
+        chronological(lhs.occurredAt, rhs.occurredAt, lhs.id, rhs.id)
     }
 
     private static func incidentSort(
         _ lhs: PlaybackDiagnosticsAutomaticIncident,
         _ rhs: PlaybackDiagnosticsAutomaticIncident
     ) -> Bool {
-        sortKey([iso8601(lhs.startedAt), lhs.id.uuidString])
-            < sortKey([iso8601(rhs.startedAt), rhs.id.uuidString])
+        chronological(lhs.startedAt, rhs.startedAt, lhs.id, rhs.id)
     }
 
     private static func bookmarkSort(
         _ lhs: PlaybackDiagnosticsBookmark,
         _ rhs: PlaybackDiagnosticsBookmark
     ) -> Bool {
-        sortKey([iso8601(lhs.capturedAt), lhs.id.uuidString])
-            < sortKey([iso8601(rhs.capturedAt), rhs.id.uuidString])
+        chronological(lhs.capturedAt, rhs.capturedAt, lhs.id, rhs.id)
     }
 
     private static func sortKey(_ fields: [String]) -> String {

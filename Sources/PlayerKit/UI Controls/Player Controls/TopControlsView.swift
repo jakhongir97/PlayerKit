@@ -26,7 +26,7 @@ struct TopControlsView: View {
             .padding(.horizontal)
             Spacer()
 
-            SharingMenuView()
+            SharingMenuView(isAirPlayEnabled: playerManager.isExternalPlaybackEnabled)
             if playerManager.isDubberEnabled {
                 dubbingSheetButton
             }

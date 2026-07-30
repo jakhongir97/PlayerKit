@@ -61,6 +61,12 @@ public struct PlayerView: View {
                 "Player view onDisappear loadMode=\(loadMode.debugName) " +
                 "isPlaying=\(playerManager.isPlaying) current=\(playerManager.currentTime)"
             )
+            // Dismissing the player used to leave playback running, the
+            // periodic time observer firing, the diagnostics sampler ticking,
+            // and the idle timer / audio session / brightness / controller
+            // handlers all still held.
+            playerManager.tearDown()
+            didBootstrapPlayer = false
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
     }

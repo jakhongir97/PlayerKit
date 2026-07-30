@@ -16,6 +16,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The HLS diagnostics subsystem (~9.7k lines across Sources/PlayerKit/PlaybackHealth,
+  # the HLSPlayback* views, and 5 of the 7 test files) is `#if os(macOS)`. The iOS
+  # job below compiles none of it and runs none of its ~86 tests, so without this
+  # job a change that breaks that half of the package merges green.
+  macos:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build (macOS)
+        run: swift build
+
+      - name: Test (macOS)
+        run: swift test
+
   validate:
     runs-on: macos-15
 

@@ -10,8 +10,16 @@ public struct DubberConfiguration: Equatable {
     public let eventStreamReconnectDelay: TimeInterval
     public let eventStreamMaxReconnectAttempts: Int
 
+    /// - Parameter baseURL: The Dubber service endpoint.
+    ///
+    ///   This is deliberately **required**. It previously defaulted to a live
+    ///   third-party host, so any integrator following the README's quick-start
+    ///   snippet silently shipped an app that POSTed the user's media URL —
+    ///   typically a signed, entitlement-bearing CDN URL — to a service they
+    ///   may never have evaluated. Choosing where playback data is sent has to
+    ///   be an explicit decision by the host app.
     public init(
-        baseURL: URL = URL(string: "https://dubbing.uz/api/instant-dub")!,
+        baseURL: URL,
         defaultLanguage: String = "uz",
         defaultTranslateFrom: String = "auto",
         supportedLanguages: [DubberLanguageOption] = DubberConfiguration.defaultTargetLanguages,

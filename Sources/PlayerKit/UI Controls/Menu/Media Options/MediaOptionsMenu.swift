@@ -32,7 +32,10 @@ struct MediaOptionsMenu: View {
             .clipShape(Capsule())
             .buttonStyle(.plain)
             .transaction { $0.animation = nil }
-        } else if #available(iOS 15.0, macOS 12.0, *) {
+        } else {
+            // The `iOS 15.0 / macOS 12.0` tier this replaces was always true at
+            // the package's deployment target, making the plain-colour fallback
+            // that followed it unreachable.
             HStack {
                 PlaybackSpeedMenu(playerManager: playerManager)
 
@@ -43,20 +46,6 @@ struct MediaOptionsMenu: View {
             .background(.ultraThinMaterial, in: Capsule())
             .overlay(
                 Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1)
-            )
-            .contentShape(Capsule())
-            .buttonStyle(.plain)
-        } else {
-            HStack {
-                PlaybackSpeedMenu(playerManager: playerManager)
-
-                if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
-                if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
-            }
-            .padding(insets)
-            .background(Color.white.opacity(0.10))
-            .overlay(
-                Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
             )
             .contentShape(Capsule())
             .buttonStyle(.plain)

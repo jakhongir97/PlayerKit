@@ -39,7 +39,9 @@ fi
 
 missing=0
 for target in "${BINARY_TARGETS[@]}"; do
-  if ! rg -q "^## ${target}$" "$NOTICES"; then
+  # grep, not rg: the dependency check above only verifies awk, and ripgrep is
+  # not guaranteed to be installed on a CI runner.
+  if ! grep -qx "## ${target}" "$NOTICES"; then
     echo "error: THIRD_PARTY_NOTICES.md is missing a section for binary target '${target}'" >&2
     missing=1
   fi

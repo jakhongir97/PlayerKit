@@ -206,8 +206,15 @@ private final class PlayerKitWindowCaptureProtectionRegistry {
     private var states: [ObjectIdentifier: State] = [:]
 
     func retain(_ window: NSWindow) {
+        pruneDeallocatedWindows()
+
         let identifier = ObjectIdentifier(window)
-        if var state = states[identifier] {
+        // Only reuse an entry that still refers to *this* window. ObjectIdentifier
+        // is derived from the address, so a deallocated window's identifier can
+        // be handed to a new one — which would otherwise inherit a stale
+        // originalSharingType and a non-zero retain count, permanently pinning
+        // the new window to .none.
+        if var state = states[identifier], state.window === window {
             state.retainCount += 1
             states[identifier] = state
         } else {
@@ -219,6 +226,12 @@ private final class PlayerKitWindowCaptureProtectionRegistry {
         }
 
         window.sharingType = .none
+    }
+
+    /// Drops entries whose window has gone away, so their identifiers cannot be
+    /// matched against a later window that happens to reuse the address.
+    private func pruneDeallocatedWindows() {
+        states = states.filter { $0.value.window != nil }
     }
 
     func release(_ window: NSWindow) {

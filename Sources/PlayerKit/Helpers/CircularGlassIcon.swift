@@ -28,16 +28,17 @@ private struct CircularGlassIcon: ViewModifier {
 
     private struct GlassCircle: ViewModifier {
         func body(content: Content) -> some View {
+            // `iOS 15.0 / macOS 12.0` is at or below the deployment target, so
+            // the old middle tier was always true and the bare `content`
+            // fallback was unreachable.
             if #available(iOS 26.0, macOS 26.0, *) {
                 content.glassEffect(.clear, in: .circle)
-            } else if #available(iOS 15.0, macOS 12.0, *) {
+            } else {
                 content
                     .background(.ultraThinMaterial, in: Circle())
                     .overlay(
                         Circle().strokeBorder(.white.opacity(0.12), lineWidth: 1)
                     )
-            } else {
-                content
             }
         }
     }

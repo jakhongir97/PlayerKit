@@ -237,6 +237,23 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private weak var timeObserverPlayer: AVPlayer?
     private var timeControlStatusObserver: NSKeyValueObservation?
     private var shouldEmitRuntimeState = false
+    /// Survives pause/resume and item replacement, unlike `AVPlayer.rate`.
+    private var desiredPlaybackRate: Float = 1.0
+
+    /// Whether AVPlayer may route video to an external destination (AirPlay).
+    ///
+    /// Defaults to `false` to preserve the capture-protection posture this
+    /// wrapper was built with. It is settable rather than hard-coded so the
+    /// AirPlay affordance in the UI and the player's actual capability cannot
+    /// disagree — previously the route picker was presented while external
+    /// playback was unconditionally disabled, so choosing a device did nothing
+    /// for video.
+    var allowsExternalPlayback: Bool = false {
+        didSet {
+            guard let player else { return }
+            applyExternalPlaybackPolicy(to: player)
+        }
+    }
 
     #if os(macOS)
     private var playbackHealthMonitor: MacOSPlaybackHealthMonitor?
@@ -279,6 +296,9 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         removeRuntimeTimeObserver()
         timeControlStatusObserver = nil
         let activePlayer = player
+        // Fail any coalesced seeks so their callers are not left waiting on a
+        // completion that can never arrive.
+        activePlayer?.cancelCoalescedSeeks()
         activePlayer?.pause()
         playerView.player = nil
         activePlayer?.replaceCurrentItem(with: nil)
@@ -292,23 +312,38 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
         return player?.timeControlStatus == .playing
     }
     
+    /// The user's selected rate, held separately from `AVPlayer.rate`.
+    ///
+    /// `AVPlayer.rate` is 0 while paused, so reading the speed back from it
+    /// meant the selection was silently discarded on every pause and reset to
+    /// 1× on the next `play()`.
     public var playbackSpeed: Float {
-        get { return player?.rate ?? 1.0 }
-        set { player?.rate = newValue }
+        get { desiredPlaybackRate }
+        set {
+            let sanitized = (newValue.isFinite && newValue > 0) ? newValue : 1.0
+            desiredPlaybackRate = sanitized
+            // Only push the rate down while already playing: assigning a
+            // non-zero rate to a paused player would resume playback as a
+            // side effect of changing the speed setting.
+            if let player, player.timeControlStatus != .paused {
+                player.rate = sanitized
+            }
+        }
     }
-    
+
     public func play() {
         guard let player else { return }
-        let targetRate = playbackSpeed > 0 ? playbackSpeed : 1.0
+        let targetRate = desiredPlaybackRate
         debugLog(
             "Play requested itemStatus=\(player.currentItem?.status.rawValue ?? -1) " +
             "timeControl=\(timeControlStatusLabel(player.timeControlStatus)) rate=\(player.rate)"
         )
-        if player.currentItem?.status == .readyToPlay {
-            player.playImmediately(atRate: targetRate)
-        } else {
-            player.play()
-        }
+        // Assign `rate` rather than calling playImmediately(atRate:). The load
+        // path documents that automaticallyWaitsToMinimizeStalling must stay
+        // enabled so HLS underruns produce a clean rebuffer instead of audible
+        // crackle — but playImmediately(atRate:) is specified to force that
+        // flag to false, which silently undid it on every play.
+        player.rate = targetRate
         emitRuntimeState()
     }
     
@@ -332,6 +367,9 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
         removeRuntimeTimeObserver()
         timeControlStatusObserver = nil
         let activePlayer = player
+        // Fail any coalesced seeks so their callers are not left waiting on a
+        // completion that can never arrive.
+        activePlayer?.cancelCoalescedSeeks()
         activePlayer?.pause()
         playerView.player = nil
         activePlayer?.replaceCurrentItem(with: nil)
@@ -751,10 +789,45 @@ extension AVPlayerWrapper: ViewRenderingProtocol {
         return playerView
     }
     
+    /// Builds the Picture in Picture controller over the layer this wrapper
+    /// already renders into.
+    ///
+    /// This previously assigned `nil`, which — combined with
+    /// `isPictureInPictureSupported` returning a hard-coded `false` — meant the
+    /// fully-implemented `AVPictureInPictureControllerDelegate` conformance
+    /// below could never fire and `startPiP()` always bailed at its `guard let`.
+    ///
+    /// Note for hosts: PiP additionally requires the `audio` UIBackgroundMode
+    /// and an active `.playback` audio session. Without those, AVKit reports
+    /// failure through `failedToStartPictureInPictureWithError`.
     public func setupPiP() {
-        pipController = nil
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            pipController = nil
+            return
+        }
+
+        let layer = playerView.playerLayer
+        guard layer.player != nil else {
+            debugLog("PiP setup deferred: no player is attached to the layer yet.")
+            pipController = nil
+            return
+        }
+
+        if let pipController, pipController.playerLayer === layer {
+            return
+        }
+
+        guard let controller = AVPictureInPictureController(playerLayer: layer) else {
+            debugLog("PiP setup failed: AVKit declined to build a controller for the layer.")
+            pipController = nil
+            return
+        }
+        controller.delegate = self
+        pipController = controller
+        debugLog("PiP controller configured.")
     }
-    
+
+
     public func startPiP() {
         guard AVPictureInPictureController.isPictureInPictureSupported() else {
             debugLog("PiP start ignored because the platform does not support Picture in Picture.")
@@ -839,11 +912,16 @@ extension AVPlayerWrapper: PlayerMuteControlling, PlayerPreciseSeeking, PlayerSe
 
 extension AVPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool {
-        false
+        AVPictureInPictureController.isPictureInPictureSupported()
     }
 
     var isPictureInPicturePossible: Bool {
-        pipController?.isPictureInPicturePossible ?? false
+        // Build the controller on demand so the capability can be reported
+        // before anything has called startPiP().
+        if pipController == nil {
+            setupPiP()
+        }
+        return pipController?.isPictureInPicturePossible ?? false
     }
 }
 
@@ -1330,11 +1408,15 @@ extension AVPlayerWrapper {
     }
     #endif
 
-    private func configureContentProtection(for player: AVPlayer) {
-        player.allowsExternalPlayback = false
+    private func applyExternalPlaybackPolicy(to player: AVPlayer) {
+        player.allowsExternalPlayback = allowsExternalPlayback
         #if os(iOS)
-        player.usesExternalPlaybackWhileExternalScreenIsActive = false
+        player.usesExternalPlaybackWhileExternalScreenIsActive = allowsExternalPlayback
         #endif
+    }
+
+    private func configureContentProtection(for player: AVPlayer) {
+        applyExternalPlaybackPolicy(to: player)
         if #available(iOS 15.0, tvOS 15.0, macOS 12.0, *) {
             player.audiovisualBackgroundPlaybackPolicy = .pauses
         }

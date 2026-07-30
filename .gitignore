@@ -24,6 +24,12 @@ Frameworks/*.xcframework
 # Logs
 *.log
 
+# Local HLS-validator scratch data (not consumed by any target or script)
+validation_data.json
+
 # Ensure .gitignore is tracked
 !.gitignore
 
+
+# Alternate SwiftPM scratch paths
+.build-*/

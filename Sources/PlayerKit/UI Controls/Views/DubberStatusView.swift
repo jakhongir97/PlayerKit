@@ -151,9 +151,8 @@ struct DubberStatusView: View {
                     ) {
                         playerManager.userInteracted()
                         playerManager.pinDubberSheet()
-                        if let preferredLanguageCode {
-                            playerManager.setDubLanguage(code: preferredLanguageCode)
-                        }
+                        // Start with whatever language is currently selected.
+                        // Overriding it here defeated setDubLanguage(code:).
                         Task {
                             await playerManager.startDubbedPlayback()
                         }
@@ -523,15 +522,21 @@ struct DubberStatusView: View {
         String(message.lowercased().map { $0.isNumber ? "#" : $0 })
     }
 
-    private var preferredUzbekOption: DubberLanguageOption? {
-        playerManager.availableDubLanguages.first(where: { $0.code.lowercased() == "uz" })
-    }
-
-    private var preferredLanguageCode: String? {
-        preferredUzbekOption?.code
+    /// The language the dub will actually be produced in.
+    ///
+    /// This must follow `PlayerManager.selectedDubLanguageCode` — which is what
+    /// `Player.setDubLanguage(code:)` and the in-player picker both write to.
+    /// It previously resolved to whichever option happened to be Uzbek, so the
+    /// built-in Start button silently discarded the host's selection on every
+    /// press (and `uz` is in the default language list, so it fired by default).
+    private var selectedLanguageOption: DubberLanguageOption? {
+        playerManager.selectedDubLanguage
+            ?? playerManager.availableDubLanguages.first(where: {
+                $0.code.caseInsensitiveCompare(playerManager.selectedDubLanguageCode) == .orderedSame
+            })
     }
 
     private var outputLanguageLabel: String {
-        preferredUzbekOption?.name ?? playerManager.selectedDubLanguage?.name ?? "Uzbek"
+        selectedLanguageOption?.name ?? playerManager.selectedDubLanguageCode.uppercased()
     }
 }
