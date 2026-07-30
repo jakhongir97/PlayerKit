@@ -8,7 +8,9 @@ struct PlayerControlsView: View {
     }
 
     var body: some View {
-        let showsPinnedDubberSheet = playerManager.isDubberSheetPinned
+        // Folded through showsDubberControls so a disabled Dubber cannot keep
+        // the top controls pinned open while the chrome is otherwise hidden.
+        let showsPinnedDubberSheet = playerManager.showsDubberControls && playerManager.isDubberSheetPinned
         let showsTopControls = !playerManager.isLocked && (playerManager.areControlsVisible || showsPinnedDubberSheet)
 
         ZStack {

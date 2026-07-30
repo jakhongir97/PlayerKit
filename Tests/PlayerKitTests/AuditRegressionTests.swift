@@ -165,7 +165,11 @@ final class AuditRegressionTests: XCTestCase {
     /// The built-in Start button forced the target language to Uzbek, which
     /// silently defeated `setDubLanguage(code:)`.
     @MainActor
-    func testSetDubLanguageIsNotOverriddenByConfigurationDefault() {
+    func testSetDubLanguageIsNotOverriddenByConfigurationDefault() throws {
+        try XCTSkipUnless(
+            PlayerKitFeatureFlags.isDubberEnabled,
+            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
+        )
         let manager = PlayerManager.shared
         defer { manager.tearDown() }
 

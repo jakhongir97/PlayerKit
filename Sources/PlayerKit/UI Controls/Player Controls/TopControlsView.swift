@@ -27,7 +27,7 @@ struct TopControlsView: View {
             Spacer()
 
             SharingMenuView(isAirPlayEnabled: playerManager.isExternalPlaybackEnabled)
-            if playerManager.isDubberEnabled {
+            if playerManager.showsDubberControls {
                 dubbingSheetButton
             }
             SettingsMenu(playerManager: playerManager)
@@ -49,7 +49,7 @@ struct TopControlsView: View {
             }
         }
         .compatOnChange(of: playerManager.isDubLoading) { isDubLoading in
-            guard playerManager.isDubberEnabled else { return }
+            guard playerManager.showsDubberControls else { return }
             if isDubLoading {
                 presentDubberSheet()
                 isDubberButtonPulsing.toggle()
@@ -132,7 +132,7 @@ struct TopControlsView: View {
 
     @ViewBuilder
     private var dubberSheetOverlay: some View {
-        if isDubberSheetPresented && playerManager.isDubberEnabled {
+        if isDubberSheetPresented && playerManager.showsDubberControls {
             VStack(spacing: 0) {
                 DubberStatusView(playerManager: playerManager)
                     .frame(maxWidth: PlayerKitPlatform.isPhone ? 280 : 312, alignment: .leading)

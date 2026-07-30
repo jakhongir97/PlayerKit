@@ -6,6 +6,14 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ## [Unreleased]
 
+### Changed
+- The Dubber live-dubbing integration is disabled behind
+  `PlayerKitFeatureFlags.isDubberEnabled` (currently `false`). No Dubber UI is
+  constructed, no session is created, and no polling or SSE task is started.
+  The public API remains present and callable but inert, and reports no error,
+  so hosts need no source changes. The implementation is retained; re-enabling
+  is a one-line change to the flag.
+
 ### Fixed (codebase audit)
 - Playback time display dropped the hour component, rendering a 2h02m film as
   `122:05`. The UI now uses the hour-aware `PlayerKitTimeFormatter`, which also

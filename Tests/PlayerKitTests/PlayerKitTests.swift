@@ -631,7 +631,11 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
-    func testConfigureDubberTogglesFeatureState() {
+    func testConfigureDubberTogglesFeatureState() throws {
+        try XCTSkipUnless(
+            PlayerKitFeatureFlags.isDubberEnabled,
+            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
+        )
         let manager = PlayerManager.shared
 
         manager.configureDubber(nil)
@@ -642,7 +646,11 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
-    func testConfigureDubberLoadsLanguageOptions() {
+    func testConfigureDubberLoadsLanguageOptions() throws {
+        try XCTSkipUnless(
+            PlayerKitFeatureFlags.isDubberEnabled,
+            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
+        )
         let manager = PlayerManager.shared
         let configuration = DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!,
             defaultLanguage: "en",
@@ -666,7 +674,11 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
-    func testSetDubLanguageUpdatesOnlySupportedCodes() {
+    func testSetDubLanguageUpdatesOnlySupportedCodes() throws {
+        try XCTSkipUnless(
+            PlayerKitFeatureFlags.isDubberEnabled,
+            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
+        )
         let manager = PlayerManager.shared
         let configuration = DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!,
             supportedLanguages: [
@@ -690,7 +702,11 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
-    func testConfigureDubberKeepsCurrentLanguageSelectionsWhenStillSupported() {
+    func testConfigureDubberKeepsCurrentLanguageSelectionsWhenStillSupported() throws {
+        try XCTSkipUnless(
+            PlayerKitFeatureFlags.isDubberEnabled,
+            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
+        )
         let manager = PlayerManager.shared
         let configuration = DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!,
             supportedLanguages: [
@@ -713,7 +729,11 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
-    func testStartDubbedPlaybackWithoutConfigurationReportsError() async {
+    func testStartDubbedPlaybackWithoutConfigurationReportsError() async throws {
+        try XCTSkipUnless(
+            PlayerKitFeatureFlags.isDubberEnabled,
+            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
+        )
         let manager = PlayerManager.shared
         let movie = PlayerItem(title: "Movie", url: URL(string: "https://example.com/movie.m3u8")!)
 
@@ -727,7 +747,11 @@ final class PlayerKitTests: XCTestCase {
     }
 
     @MainActor
-    func testStartDubbedPlaybackWithoutSourceReportsError() async {
+    func testStartDubbedPlaybackWithoutSourceReportsError() async throws {
+        try XCTSkipUnless(
+            PlayerKitFeatureFlags.isDubberEnabled,
+            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
+        )
         let manager = PlayerManager.shared
 
         manager.playerItem = nil

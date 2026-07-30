@@ -315,6 +315,14 @@ public class PlayerManager: ObservableObject {
     @Published public private(set) var selectedDubSourceLanguageCode: String = "auto"
     @Published private(set) var dubActivityLog: [DubberActivityLogEntry] = []
     @Published var isDubberEnabled: Bool = false
+
+    /// Whether any Dubber affordance should be built into the player chrome.
+    ///
+    /// The feature flag is folded in here so the UI cannot resurrect the Dubber
+    /// controls even if `isDubberEnabled` were set some other way in future.
+    var showsDubberControls: Bool {
+        PlayerKitFeatureFlags.isDubberEnabled && isDubberEnabled
+    }
     @Published var isDubberSheetPinned: Bool = false
     @Published public var isMediaReady: Bool = false {
         didSet {
@@ -650,6 +658,15 @@ public class PlayerManager: ObservableObject {
 
     @MainActor
     public func configureDubber(_ configuration: DubberConfiguration?) {
+        // Dubber is switched off for this build; see PlayerKitFeatureFlags.
+        // Returning before storing the configuration is what keeps every other
+        // dub entry point inert, since they all gate on `dubberConfiguration`
+        // or `isDubberEnabled`.
+        guard PlayerKitFeatureFlags.isDubberEnabled else {
+            debugLog("Ignoring configureDubber: the Dubber integration is disabled in this build.")
+            return
+        }
+
         dubberConfiguration = configuration
         isDubberEnabled = configuration != nil
         if let configuration {
@@ -683,6 +700,7 @@ public class PlayerManager: ObservableObject {
 
     @MainActor
     public func setDubLanguage(code: String) {
+        guard PlayerKitFeatureFlags.isDubberEnabled else { return }
         guard availableDubLanguages.contains(where: { $0.code == code }) else { return }
         selectedDubLanguageCode = code
         userInteracted()
@@ -690,6 +708,7 @@ public class PlayerManager: ObservableObject {
 
     @MainActor
     public func setDubSourceLanguage(code: String) {
+        guard PlayerKitFeatureFlags.isDubberEnabled else { return }
         guard availableDubSourceLanguages.contains(where: { $0.code == code }) else { return }
         selectedDubSourceLanguageCode = code
         userInteracted()
@@ -697,12 +716,20 @@ public class PlayerManager: ObservableObject {
 
     @MainActor
     public func stopDubbingAndReturnToOriginalAudio() {
+        guard PlayerKitFeatureFlags.isDubberEnabled else { return }
         stopDubbingAndReturnToOriginalAudio(reason: "User requested to stop dubbing.")
         HapticsManager.shared.triggerImpactFeedback(style: .soft)
     }
 
     @MainActor
     public func startDubbedPlayback(language: String? = nil, translateFrom: String? = nil) async {
+        // Bail before any network work. This is the only entry point that
+        // creates a Dubber session or starts the polling / SSE tasks, so
+        // guarding it is what guarantees the integration makes no requests.
+        guard PlayerKitFeatureFlags.isDubberEnabled else {
+            debugLog("Ignoring startDubbedPlayback: the Dubber integration is disabled in this build.")
+            return
+        }
         guard !isDubLoading else {
             debugLog("Ignoring duplicate dubbed playback start while already loading.")
             return

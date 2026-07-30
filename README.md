@@ -58,41 +58,28 @@ struct ContentView: View {
 
 You can also use `PlayerView(playerItem:)` directly if you prefer a view-first API.
 
-## Dubber Integration
+## Dubber Integration (disabled)
 
-- Integration guide: [`docs/playerkit-integration.md`](docs/playerkit-integration.md)
-- Upstream reference: [dubber/docs/playerkit-integration.md](https://github.com/AzimjonNajmiddinov/dubber/blob/main/docs/playerkit-integration.md)
+The Dubber live-dubbing integration is **switched off in this build.**
 
-To enable in-player dubbing support:
+While `PlayerKitFeatureFlags.isDubberEnabled` is `false`:
 
-```swift
-@MainActor
-func setupDubber(player: PlayerKit.Player) {
-    player.configureDubber(
-        DubberConfiguration(
-            baseURL: URL(string: "https://your-dubber-host/api/instant-dub")!,
-            defaultLanguage: "uz",
-            defaultTranslateFrom: "auto"
-        )
-    )
-}
-```
+- no Dubber affordance is built into the player chrome — no button, no status
+  card, no floating pill;
+- `configureDubber(_:)` does not arm the feature;
+- `startDubbedPlayback(language:translateFrom:)` returns without contacting the
+  network, so no session is created and no polling or SSE task is started;
+- `setDubLanguage(code:)`, `setDubSourceLanguage(code:)` and
+  `stopDubbingAndReturnToOriginalAudio()` are inert.
 
-> `baseURL` is required and has no default. Starting a dub session sends the
-> current media URL to that host, so the destination must be a deliberate choice
-> by the integrating app.
+The API remains present and callable so hosts do not need source changes; the
+calls simply do nothing, and no error is reported. `DubberDisabledTests` covers
+this.
 
-Once configured, the player shows a dedicated dubbing card in the top controls with:
-
-- a clear `Start Dubbing` action
-- target/source language pickers before dubbing starts
-- animated live status while dubbing is in progress
-- ETA hints once enough translated segments are ready to estimate timing
-- segment-based progress and child-friendly step labels
-- `Stop Dubbing` or `Original Audio` quick actions during/after a dub
-- warning/error messaging plus recent Dubber activity logs
-
-While controls are hidden, PlayerKit also keeps a compact floating dubbing pill visible so users can still see progress at a glance.
+The implementation is retained rather than deleted. To re-enable, flip the flag
+in `Sources/PlayerKit/PlayerKitFeatureFlags.swift`; no other change is required.
+Integration details, for when it is switched back on:
+[`docs/playerkit-integration.md`](docs/playerkit-integration.md).
 
 ## Versioning and Stability
 
