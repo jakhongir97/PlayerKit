@@ -58,29 +58,6 @@ struct ContentView: View {
 
 You can also use `PlayerView(playerItem:)` directly if you prefer a view-first API.
 
-## Dubber Integration (disabled)
-
-The Dubber live-dubbing integration is **switched off in this build.**
-
-While `PlayerKitFeatureFlags.isDubberEnabled` is `false`:
-
-- no Dubber affordance is built into the player chrome — no button, no status
-  card, no floating pill;
-- `configureDubber(_:)` does not arm the feature;
-- `startDubbedPlayback(language:translateFrom:)` returns without contacting the
-  network, so no session is created and no polling or SSE task is started;
-- `setDubLanguage(code:)`, `setDubSourceLanguage(code:)` and
-  `stopDubbingAndReturnToOriginalAudio()` are inert.
-
-The API remains present and callable so hosts do not need source changes; the
-calls simply do nothing, and no error is reported. `DubberDisabledTests` covers
-this.
-
-The implementation is retained rather than deleted. To re-enable, flip the flag
-in `Sources/PlayerKit/PlayerKitFeatureFlags.swift`; no other change is required.
-Integration details, for when it is switched back on:
-[`docs/playerkit-integration.md`](docs/playerkit-integration.md).
-
 ## Versioning and Stability
 
 PlayerKit follows Semantic Versioning:

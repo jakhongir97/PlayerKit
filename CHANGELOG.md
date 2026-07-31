@@ -6,13 +6,29 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ## [Unreleased]
 
+### Removed
+- **Breaking:** the Dubber live-dubbing integration is removed. It had been
+  inert behind `PlayerKitFeatureFlags.isDubberEnabled = false`, and that flag
+  is removed with it. Gone from the public API: `Player`/`PlayerManager`'s
+  `configureDubber(_:)`, `startDubbedPlayback(language:translateFrom:)`,
+  `setDubLanguage(code:)`, `setDubSourceLanguage(code:)` and
+  `stopDubbingAndReturnToOriginalAudio()`; the twelve public `@Published` dub
+  properties; `PlayerKitError.dubberNotConfigured`, `.dubberSourceMissing` and
+  `.dubberRequestFailed`; `PlayerItem.dubTitle`, including the parameter in
+  both public initializers; and the `DubberConfiguration`,
+  `DubberLanguageOption` and `DubberClient` types.
+  No behaviour changes for hosts — every one of those was already a no-op with
+  the flag off — but a call that silently did nothing is now a compile error.
+  `PlayerManager` drops from 4,075 to 1,681 lines, 567 KB of bundled video
+  leaves the consumer bundle, and complete-concurrency diagnostics fall from
+  291 to 202.
+
 ### Changed
-- The Dubber live-dubbing integration is disabled behind
-  `PlayerKitFeatureFlags.isDubberEnabled` (currently `false`). No Dubber UI is
-  constructed, no session is created, and no polling or SSE task is started.
-  The public API remains present and callable but inert, and reports no error,
-  so hosts need no source changes. The implementation is retained; re-enabling
-  is a one-line change to the flag.
+- `seek(to:)` always uses the backend's ordinary tolerant seek. The
+  zero-tolerance precise path existed only for dubbed streams.
+- `playerDidFail(with:)` no longer swallows `.mediaLoadFailed` while a dubbed
+  master was loaded, so those failures now set `lastError` and post
+  `.PlayerKitDidFail` like every other failure.
 
 ### Fixed (codebase audit)
 - Playback time display dropped the hour component, rendering a 2h02m film as

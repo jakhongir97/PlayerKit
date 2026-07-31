@@ -78,7 +78,7 @@ live too and `accessibilityValue` announced every position as "… of 00:00".
 |---|---|
 | 213 strict-concurrency diagnostics | **291** unique across macOS *and* iOS — 230 + 242, deduplicated by `file:line:col`. The 213 was the macOS slice, which compiles no UIKit, no VLCKit-iOS, no GoogleCast, *and* was itself undercounted. See the note below. |
 | 3 skipped backend-switch tests | **4**, plus a 5th desktop-VLC skip ([PlayerKitTests.swift:51,80,107,142,230](../Tests/PlayerKitTests/PlayerKitTests.swift#L51)). |
-| "Live seeking fixed" | Fixed at the manager guard only. Three downstream layers still assume VOD. |
+| "Live seeking fixed" | Was fixed at the manager guard only; **four** downstream layers still assumed VOD, not three. All are fixed now — see (d). |
 | "One VLC backend" | **Two, on different major versions of VLC** — iOS links VLCKit 4; macOS hand-binds libvlc 3 and explicitly refuses other majors. |
 
 > **Counting the concurrency diagnostics.** An earlier figure of 417 appeared
@@ -164,8 +164,8 @@ two others will not survive.
 - **Artifact supply chain.** VLCKit and GoogleCast resolve from release assets on
   a personal GitHub account even when the package is consumed from GitLab.
 - **CI matrix** on whichever host becomes canonical; **repo hygiene**, including
-  the 572 KB of Dubber `.mp4` resources still shipping in every consumer bundle
-  for a feature that is switched off.
+  the Dubber `.mp4` resources that shipped in every consumer bundle for a
+  feature that was switched off — done, 567 KB reclaimed.
 
 **Exit:** one repository both iTV apps build from; CI builds and tests every
 supported platform *and both VLC configurations*; a clean `swift package resolve`
@@ -227,7 +227,8 @@ live-without-seek and short-form as first-class shapes.
 > **Do not add a `.liveChannel` case to `PlayerContentType` and branch on it.**
 > That enum is already consulted from six sites asking four different questions.
 > A third case makes the sixth site ask a fifth question. This is precisely how
-> the Dubber code grew to ~1,900 lines inside `PlayerManager`.
+> the Dubber code grew to 2,394 lines inside `PlayerManager` — 58% of the file
+> — before it was removed.
 
 **Exit:** every timeline consumer — slider, gestures, scrub, diagnostics — reads
 the model rather than `duration`; a live stream and a VOD asset drive the same
@@ -235,9 +236,10 @@ code paths with different timeline shapes.
 
 ### Phase 4 — Composable chrome and theming · ~10–12 weeks
 
-Smaller than it looks: of ~6,400 lines under `UI Controls/`, 2,244 are macOS-only
-diagnostics and 1,437 are disabled Dubber views. The chrome actually needing
-restructure is ~2,245 lines across 36 mostly-tiny files.
+Smaller than it looks, and smaller still now the Dubber views are deleted: of
+what remains under `UI Controls/`, 2,244 lines are macOS-only diagnostics. The
+chrome actually needing restructure is ~2,245 lines across 36 mostly-tiny
+files.
 
 Control-slot protocol, per-content-kind chrome profiles, a theme seam, inline
 (non-fullscreen) mode for trailers, and the observation rework that stops 18
@@ -317,11 +319,13 @@ Ordered by how much they move the plan.
    prerequisite for Phase 5 and permanently excludes VLC for live. If the streams
    are clear HLS behind signed URLs, DRM drops out entirely (~14 days saved) and
    the URL-refresh hook becomes the most valuable item in Phase 1.
-3. **Is Dubber coming back?** Deleting it is ~1 day and removes ~1,770 lines, 53
-   of `PlayerManager`'s 74 concurrency diagnostics, 12 of 23 public `@Published`
-   properties, and 572 KB of bundled video. Extracting it as a separate product
-   is ~5 days. It is currently switched off with its tests skipped. **This is the
-   cheapest large win available.**
+3. ~~**Is Dubber coming back?**~~ **Answered: no — removed.** The actual
+   figures were larger than estimated here: 4,458 lines deleted rather than
+   ~1,770, 80 of `PlayerManager`'s 121 concurrency diagnostics rather than 53 of
+   74, and 567 KB of bundled video. `PlayerManager` fell from 4,075 lines to
+   1,681 — Dubber was 58% of it, not the ~1,900 lines estimated in §3 below.
+   Combined complete-concurrency diagnostics fell from 291 to 202. This was the
+   cheapest large win available, and it is taken.
 4. **"TV player" — live channels, or tvOS?** This roadmap assumes live linear
    content. tvOS is a further ~6–8 weeks of focus-engine and UI work that would
    largely replace Phase 5's UI rather than extend it.
@@ -358,10 +362,10 @@ and 7 still need a human and are the critical path.
    Still outstanding — this repository's only remote is
    `github.com/jakhongir97/PlayerKit`, so the GitLab copy cannot be inspected
    from here at all.
-2. ☐ **Answer the Dubber question** (§6.3). One conversation; unlocks the single
-   largest cheap reduction in the codebase. Measured at Sprint 1: 14
-   Dubber-named files totalling 2,727 lines, 581 KB of bundled `.mp4` across two
-   files, 10 public `@Published` dub properties, 7 skipped tests.
+2. ☑ **Answer the Dubber question** (§6.3). Answered: not coming back. Removed
+   in full — see §6.3 for what it actually cost. Source-breaking for any host
+   still calling the dub API, though never behaviour-breaking, since the feature
+   flag already made every entry point a no-op.
 3. ☑ **Delete dead code.** `CustomSlider.swift` had zero references anywhere and
    is gone.
 4. ☑ **Fix live end-to-end** — slider range, `scrubForward`/`scrubBackward`,
