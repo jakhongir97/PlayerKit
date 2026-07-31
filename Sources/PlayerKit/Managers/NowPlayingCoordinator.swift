@@ -35,8 +35,10 @@ struct NowPlayingCommands {
     var skipBackward: (Double) -> Void
     var seek: (Double) -> Void
     var canSeek: () -> Bool
-    var next: (() -> Void)?
-    var previous: (() -> Void)?
+    var next: () -> Void
+    var canNext: () -> Bool
+    var previous: () -> Void
+    var canPrevious: () -> Bool
 }
 
 /// Owns the process-global now-playing info and remote command targets.
@@ -121,13 +123,11 @@ final class NowPlayingCoordinator {
         }
         commandTargets.append((center.changePlaybackPositionCommand, seekToken))
 
-        // Only offered when the host actually has a queue to move through.
-        if let next = commands.next {
-            add(center.nextTrackCommand, handler: next)
-        }
-        if let previous = commands.previous {
-            add(center.previousTrackCommand, handler: previous)
-        }
+        // Installed always, but enabled only while there is somewhere to go.
+        // Offering a dead next-track button on a single movie is the same
+        // failure as offering an AirPlay control that does nothing.
+        add(center.nextTrackCommand, enabled: commands.canNext(), handler: commands.next)
+        add(center.previousTrackCommand, enabled: commands.canPrevious(), handler: commands.previous)
     }
 
     func releaseCommands(for owner: AnyObject) {
@@ -199,10 +199,17 @@ final class NowPlayingCoordinator {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 
-    /// Updates whether the lock-screen scrubber is offered at all.
-    func setSeekingEnabled(_ isEnabled: Bool) {
+    /// Updates which transport controls the lock screen currently offers.
+    ///
+    /// Availability moves with playback — a queue can run out, and a stream can
+    /// lose its seekable window — so this is refreshed alongside the metadata
+    /// rather than fixed at install time.
+    func updateAvailability(canSeek: Bool, canNext: Bool, canPrevious: Bool) {
         guard areCommandsInstalled else { return }
-        MPRemoteCommandCenter.shared().changePlaybackPositionCommand.isEnabled = isEnabled
+        let center = MPRemoteCommandCenter.shared()
+        center.changePlaybackPositionCommand.isEnabled = canSeek
+        center.nextTrackCommand.isEnabled = canNext
+        center.previousTrackCommand.isEnabled = canPrevious
     }
 
     /// Clears the now-playing item without giving up ownership, for when

@@ -1039,7 +1039,9 @@ extension PlayerManager {
             seek: { [weak self] time in self?.seek(to: time) },
             canSeek: { [weak self] in self?.seekableRange != nil },
             next: { [weak self] in self?.playNext() },
-            previous: { [weak self] in self?.playPrevious() }
+            canNext: { [weak self] in self?.canPlayNextItem ?? false },
+            previous: { [weak self] in self?.playPrevious() },
+            canPrevious: { [weak self] in self?.canPlayPreviousItem ?? false }
         )
     }
 
@@ -1074,16 +1076,19 @@ extension PlayerManager {
         guard nowPlayingEnabledStorage else { return }
         let snapshot = makeNowPlayingSnapshot()
         let canSeek = seekableRange != nil
+        let canNext = canPlayNextItem
+        let canPrevious = canPlayPreviousItem
         let coordinator = NowPlayingCoordinator.shared
         Task { @MainActor in
-            if force {
-                coordinator.setSeekingEnabled(canSeek)
-            }
+            coordinator.updateAvailability(
+                canSeek: canSeek,
+                canNext: canNext,
+                canPrevious: canPrevious
+            )
             guard let snapshot else {
                 coordinator.clearNowPlayingItem()
                 return
             }
-            coordinator.setSeekingEnabled(canSeek)
             coordinator.publish(snapshot)
         }
     }

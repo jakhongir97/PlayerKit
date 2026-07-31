@@ -697,8 +697,10 @@ final class AuditRegressionTests: XCTestCase {
         skipBackward: { _ in },
         seek: { _ in },
         canSeek: { true },
-        next: nil,
-        previous: nil
+        next: {},
+        canNext: { false },
+        previous: {},
+        canPrevious: { false }
     )
 
     // MARK: - Ordinary playback
