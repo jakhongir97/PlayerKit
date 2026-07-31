@@ -1,6 +1,7 @@
 # PlayerKit Roadmap
 
-**Status:** draft for review · **Basis:** commit `1fe0a49` on branch `audit-fixes`
+**Status:** draft for review · **Basis:** commit `1fe0a49` on branch
+`audit-fixes`, updated after Sprint 1 (`f26cc55`…`7921d5b`)
 · **Method:** nine parallel code investigations against this repository, plus a
 prior full-codebase audit. Every factual claim below cites the code. Claims that
 could not be verified from this repository are marked **[unverified]**.
@@ -35,9 +36,12 @@ last-writer-wins semantics.
 
 **b. The thing actually blocking iOS adoption is probably the API, not the
 architecture.** A host application **cannot read whether the player is playing.**
-`isPlaying`, `duration`, `isBuffering` and `availableAudioTracks` are all
-`internal` ([PlayerManager.swift:236-268](../Sources/PlayerKit/PlayerManager.swift#L236)).
-There is no configuration type in the package at all. 305 declarations are
+`isPlaying`, `duration`, `isBuffering` and `availableAudioTracks` were all
+`internal` ([PlayerManager.swift:236-269](../Sources/PlayerKit/PlayerManager.swift#L236);
+note that range is not homogeneous — it also holds 5 already-public properties
+and 6 UI-chrome ones that must not be promoted). Sprint 1 promoted the
+read-only playback state; the rest of this finding stands. There is no
+configuration type in the package at all. 305 declarations are
 `public`, but the *deliberate* surface is perhaps 60 symbols and the rest is
 leakage. The `Player.playerManager` escape hatch exists precisely because the
 facade cannot do the job. A library you cannot ask "are you playing?" is not a
@@ -50,39 +54,90 @@ metadata, no lock-screen controls, no remote commands, no background transition
 handling. For a primary video player this is table stakes, and it is missing
 entirely.
 
-**d. Live TV is greenfield, and last week's live-seek fix is one layer of four.**
-There is no channel, EPG, programme or DVR concept anywhere. And the recent fix
-to `PlayerManager.seek` did not reach its callers: the slider still binds
-`0...max(duration, 0.01)`
-([PlaybackSliderView.swift:47](../Sources/PlayerKit/UI%20Controls/Views/PlaybackSliderView.swift#L47)),
-so on live the scrubber range is `0...0.01`; `scrubForward`/`scrubBackward`
-([PlayerManager.swift:1321](../Sources/PlayerKit/PlayerManager.swift#L1321))
-bypass the clamp entirely; and
-[GestureManager.swift:201](../Sources/PlayerKit/Managers/GestureManager.swift#L201)
-clamps with `min(duration, …)`, which on live clamps to zero — double-tap skip
-jumps to the start. **Live seeking does not work end-to-end today.**
+**d. Live TV is greenfield, and last week's live-seek fix was one layer of
+five.** There is no channel, EPG, programme or DVR concept anywhere. The fix to
+`PlayerManager.seek` did not reach its callers: the slider bound
+`0...max(duration, 0.01)`, so on live the scrubber range was `0...0.01`;
+`scrubForward`/`scrubBackward` bypassed the clamp entirely; `GestureManager`
+clamped with `min(duration, …)`, which on live clamps to zero, so double-tap
+skip jumped to the start; and — missed by the original survey — the VoiceOver
+adjustable action bailed on `guard duration > 0`, so swipe-to-scrub was dead on
+live too and `accessibilityValue` announced every position as "… of 00:00".
+
+> **Closed.** All four callers now route through `PlayerManager.seekableRange`,
+> with regression tests covering a live-shaped timeline (duration 0, non-nil
+> seekable window) at each entry point. `GestureManager.durationProvider` is
+> replaced by `seekableRangeProvider`. Where there is no seekable window the
+> scrubber keeps its geometry but is disabled, rather than accepting drags that
+> do nothing. The channel/EPG/DVR modelling in Phase 3 is untouched by this —
+> only the clamping is fixed.
 
 ### Corrections to previously reported figures
 
 | Claim | Corrected |
 |---|---|
-| 213 strict-concurrency diagnostics | **417** unique across macOS *and* iOS. The 213 was the macOS slice, which compiles no UIKit, no VLCKit-iOS, no GoogleCast. |
+| 213 strict-concurrency diagnostics | **291** unique across macOS *and* iOS — 230 + 242, deduplicated by `file:line:col`. The 213 was the macOS slice, which compiles no UIKit, no VLCKit-iOS, no GoogleCast, *and* was itself undercounted. See the note below. |
 | 3 skipped backend-switch tests | **4**, plus a 5th desktop-VLC skip ([PlayerKitTests.swift:51,80,107,142,230](../Tests/PlayerKitTests/PlayerKitTests.swift#L51)). |
 | "Live seeking fixed" | Fixed at the manager guard only. Three downstream layers still assume VOD. |
 | "One VLC backend" | **Two, on different major versions of VLC** — iOS links VLCKit 4; macOS hand-binds libvlc 3 and explicitly refuses other majors. |
 
+> **Counting the concurrency diagnostics.** An earlier figure of 417 appeared
+> here and is not reproducible by any recipe; treat 291 as the number. The
+> recipe that produced the low counts was
+> `grep -oE '^/[^ ]+:[0-9]+:[0-9]+: warning:'`, whose `[^ ]+` cannot match a
+> path containing a space — so it silently drops every diagnostic under
+> `UI Controls`, `Player Controls` and `Media Options`, the three directories
+> this repository is most known for. Use `'^/.+:[0-9]+:[0-9]+: warning:'`
+> instead, and on iOS exclude the one clang warning from the vendored
+> `VLCKit.framework` header, which is unfixable here and present regardless of
+> the concurrency setting. Both slices must be measured: `swift build` sees
+> only macOS.
+
 ### A defect in last week's fix
 
-`PlayerManager.tearDown()`
-([PlayerManager.swift:3685](../Sources/PlayerKit/PlayerManager.swift#L3685)),
-added during the audit pass and called from `PlayerView.onDisappear`,
-unconditionally calls `AudioSessionManager.shared.deactivateAudioSession()`,
-`PlaybackWakeLockCoordinator.shared.setPlaybackActive(false)` and
-`GameControllerManager.shared.releaseControllerHandlers()`. That is correct for
-one player and **actively wrong for two**: dismissing an inline trailer would
-deactivate the audio session out from under the main player. This must be
-refcounted before any multi-instance work ships. It is not a bug today, because
-multiple instances are impossible today.
+`PlayerManager.tearDown()`, added during the audit pass and called from
+`PlayerView.onDisappear`, unconditionally deactivated the shared audio session,
+dropped the wake lock and detached the process-wide `GCController` handlers.
+That is correct for one player and **actively wrong for two**: dismissing an
+inline trailer would deactivate the audio session out from under the main
+player.
+
+> **Closed.** All three are refcounted through `SharedResourceOwnership`, which
+> tracks holders by object identity rather than as an integer count — both
+> acquisition sites are deliberately idempotent (`configureIntegrationsIfNeeded`
+> re-runs after a teardown, `tearDown()` is documented as safe to call
+> repeatedly), so a counter would drift upwards on a repeated acquire and go
+> negative on a repeated release. Each resource releases when the owner set
+> empties *and* the resource is actually held, so a release by something that
+> never acquired still works — `GameControllerManager.init` attaches handlers
+> before anyone has acquired. `PlayerManager.init` remains private; making
+> multiple instances possible is still Phase 2b.
+
+### Defects found during Sprint 1 and deliberately not fixed
+
+Both are real and reproducible. Neither was introduced by the sprint; each is
+left here rather than fixed in passing, because fixing it belongs to a phase
+below.
+
+**Duplicate game-controller subscriptions — Phase 2b.**
+`subscribeToGameControllerEvents()` stores its sink into `longLivedCancellables`,
+which nothing ever clears, while `tearDown()` resets `integrationsConfigured` so
+`configureIntegrationsIfNeeded()` re-runs on the next play. After N open/dismiss
+cycles a single gamepad press is handled N times: with two subscribers, button A
+sends one `.playPause` that becomes play-then-pause, so the button appears dead;
+with three it works again by accident. Reproduced at `a39f25e`, so it predates
+the sprint. It belongs with the resource-arbitration work because it is the same
+class of bug — process-global state that is acquired per-session and never
+released.
+
+**`currentTime` and `isMediaReady` are public read-write — Phase 1, needs a
+deprecation cycle.** A host can desync the playhead by assigning `currentTime`,
+or assign `isMediaReady` and trigger its `didSet` (`refreshTrackInfo()` plus a
+`.PlayerKitMediaReady` post). Narrowing either to `internal(set)` is a source
+break for any host that writes them, so it needs the deprecation clock in
+"narrow the accidental API" rather than a quiet change. Every property promoted
+in Sprint 1 is already `internal(set)`; these two are the pre-existing
+exceptions.
 
 ## 3. Phases
 
@@ -121,15 +176,18 @@ produces the same graph on any machine.
 *This is the phase that lets iTV promote PlayerKit to primary on iOS. It is
 mostly API and platform integration, not architecture.*
 
-- **Expose playback state.** Promote `isPlaying`, `duration`, `isBuffering`,
-  track lists to public read-only. Add the missing `mute`, autoplay control, and
-  track enumeration.
+- **Expose playback state.** *Partly done in Sprint 1* — `isPlaying`,
+  `isBuffering`, `duration`, `bufferedDuration`, the track lists and selections,
+  `isPiPActive` and `isVideoEnded` are now public read-only. Still outstanding:
+  the missing `mute`, autoplay control, and track enumeration.
 - **Introduce `PlayerConfiguration`.** There is no configuration type today.
 - **Background, lock screen, remote commands.** `MPNowPlayingInfoCenter`,
   `MPRemoteCommandCenter`, background audio session handling, scene-phase
   transitions. Entirely absent today.
-- **Fix live end-to-end** — slider range, scrub paths, gesture clamping — so
-  finding (d) is closed at every layer.
+- ~~**Fix live end-to-end** — slider range, scrub paths, gesture clamping — so
+  finding (d) is closed at every layer.~~ *Done in Sprint 1.* Note this closes
+  the *clamping*, not live TV: the timeline model is still Phase 3 and channels
+  are still Phase 5.
 - **Error and recovery UX.** A signed-URL refresh hook, retry policy, and a
   user-visible error state. Today a mid-stream 403 has no recovery path.
 - **Narrow the accidental API** and start the deprecation clock on what has to go.
@@ -151,9 +209,11 @@ said so.*
    ~21 hand-written `Thread.isMainThread` prologues.
 2. **Instantiable `PlayerManager` + resource arbitration.** `public init` is one
    line. The work is a `PlayerKitSession` registry arbitrating the audio session,
-   the wake lock (currently a boolean, not a refcount), the broadcast game-
-   controller subject, cast callbacks and screen brightness — plus fixing
-   `tearDown()` per §2.
+   the wake lock, the broadcast game-controller subject, cast callbacks and
+   screen brightness. Sprint 1 already refcounted the first three via
+   `SharedResourceOwnership` and fixed `tearDown()` per §2, so what remains here
+   is cast callbacks, screen brightness, and the registry that owns them — plus
+   the duplicate controller-subscription defect noted in §2.
 
 **Exit:** `-strict-concurrency=complete` is clean or explicitly triaged; two
 players can run simultaneously without corrupting each other's audio session,
@@ -291,24 +351,39 @@ Ordered by how much they move the plan.
 
 ## 8. First two weeks
 
-Concrete, ordered, mostly unblocked.
+Concrete, ordered, mostly unblocked. Items 3–6 and 8 landed in Sprint 1; 1, 2
+and 7 still need a human and are the critical path.
 
-1. **Request the fork dossier** (§6.1). Everything waits on it; ask today.
-2. **Answer the Dubber question** (§6.3). One conversation; unlocks the single
-   largest cheap reduction in the codebase.
-3. **Delete dead code.** `CustomSlider.swift` has zero references anywhere.
-4. **Fix live end-to-end** — slider range, `scrubForward`/`scrubBackward`,
-   gesture clamping. Small, contained, and closes a defect that is live today.
-5. **Refcount the global resources** in `tearDown()` (§2), before anything makes
-   multiple instances possible.
-6. **Promote the read-only state API** — `isPlaying`, `duration`, `isBuffering`.
-   Additive, non-breaking, and probably unblocks iTV iOS immediately.
-7. **Ten minutes on a device**: confirm whether the volume/brightness swipe fires
-   at all. [GestureView.swift:12-14](../Sources/PlayerKit/UI%20Controls/Views/GestureView.swift#L12)
+1. ☐ **Request the fork dossier** (§6.1). Everything waits on it; ask today.
+   Still outstanding — this repository's only remote is
+   `github.com/jakhongir97/PlayerKit`, so the GitLab copy cannot be inspected
+   from here at all.
+2. ☐ **Answer the Dubber question** (§6.3). One conversation; unlocks the single
+   largest cheap reduction in the codebase. Measured at Sprint 1: 14
+   Dubber-named files totalling 2,727 lines, 581 KB of bundled `.mp4` across two
+   files, 10 public `@Published` dub properties, 7 skipped tests.
+3. ☑ **Delete dead code.** `CustomSlider.swift` had zero references anywhere and
+   is gone.
+4. ☑ **Fix live end-to-end** — slider range, `scrubForward`/`scrubBackward`,
+   gesture clamping, *and* the VoiceOver adjustable action, which the original
+   survey missed. See §2(d).
+5. ☑ **Refcount the global resources** in `tearDown()`. See §2.
+6. ☑ **Promote the read-only state API.** `isPlaying`, `isBuffering`,
+   `duration`, `bufferedDuration`, the four track properties, plus `isPiPActive`
+   and `isVideoEnded`, all as `public internal(set)`. `TrackInfo` gained
+   `Identifiable`/`Equatable`/`Hashable`/`Sendable`, without which the track
+   lists are visible but unusable from a host.
+7. ☐ **Ten minutes on a device**: confirm whether the volume/brightness swipe
+   fires at all. [GestureView.swift:12-14](../Sources/PlayerKit/UI%20Controls/Views/GestureView.swift#L12)
    chains three `.gesture()` modifiers on one view; this cannot be settled by
-   reading.
-8. **Turn on `-strict-concurrency` as warnings** in `Package.swift` to stop the
-   417 growing while Phase 2 is scheduled.
+   reading. The specific suspicion: `tapGesture` is a
+   `DragGesture(minimumDistance: 0)` attached last, and it recognises on
+   touch-down, so it plausibly pre-empts the `DragGesture()` that drives
+   volume and brightness.
+8. ☑ **Turn on `-strict-concurrency` as warnings** in `Package.swift` to stop
+   the 291 growing while Phase 2 is scheduled. Verified against a real consumer
+   package that `swiftSettings` do not inherit, so a host sees no new
+   diagnostics in its own code.
 
 ## 9. Effort summary
 
