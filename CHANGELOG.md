@@ -15,6 +15,10 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
   the host's prior state is snapshotted and restored, and each command is
   enabled only when it would do something. Live streams publish no duration and
   set `MPNowPlayingInfoPropertyIsLiveStream`.
+- `PlayerManager.isMuted` silences the backend without touching system volume.
+  Every backend could already do this and none of them exposed it.
+- `PlayerManager.autoplay` (default `true`, i.e. unchanged) controls whether
+  loading an item also starts playing it.
 - `PlayerManager.isBackgroundPlaybackEnabled` lets audio continue when the app
   is backgrounded. Off by default, because pausing in the background is part of
   PlayerKit's capture-protection posture. Requires `audio` in the host app's

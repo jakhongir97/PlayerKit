@@ -273,6 +273,19 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         }
     }
 
+    /// The desired mute state.
+    ///
+    /// Stored rather than written straight through, because `AVPlayer` does not
+    /// exist until an item is loaded — `setMuted` before that would silently do
+    /// nothing, and re-applying on every item install is what makes a host's
+    /// choice survive a reload.
+    private(set) var isMuted: Bool = false {
+        didSet {
+            guard let player else { return }
+            player.isMuted = isMuted
+        }
+    }
+
     #if os(macOS)
     private var playbackHealthMonitor: MacOSPlaybackHealthMonitor?
     private let playbackDiagnosticsLogQueue = DispatchQueue(
@@ -397,7 +410,7 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
     }
 
     public func setMuted(_ muted: Bool) {
-        player?.isMuted = muted
+        isMuted = muted
     }
 }
 
@@ -926,7 +939,7 @@ extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
 
 extension AVPlayerWrapper: PlayerEventSource {}
 
-extension AVPlayerWrapper: PlayerSeekWindowReporting {}
+extension AVPlayerWrapper: PlayerSeekWindowReporting, PlayerMuteControlling {}
 
 extension AVPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool {
@@ -1446,6 +1459,7 @@ extension AVPlayerWrapper {
         // this runs again on every item install and would otherwise stomp
         // whatever the host configured.
         applyBackgroundPlaybackPolicy(to: player)
+        player.isMuted = isMuted
     }
 
     var seekableTimeWindow: ClosedRange<Double>? {

@@ -184,10 +184,12 @@ produces the same graph on any machine.
 *This is the phase that lets iTV promote PlayerKit to primary on iOS. It is
 mostly API and platform integration, not architecture.*
 
-- **Expose playback state.** *Partly done in Sprint 1* — `isPlaying`,
+- ~~**Expose playback state.**~~ *Done.* Sprint 1 promoted `isPlaying`,
   `isBuffering`, `duration`, `bufferedDuration`, the track lists and selections,
-  `isPiPActive` and `isVideoEnded` are now public read-only. Still outstanding:
-  the missing `mute`, autoplay control, and track enumeration.
+  `isPiPActive` and `isVideoEnded` to public read-only; `isMuted` and `autoplay`
+  followed. Track *enumeration* was already public and this bullet was stale on
+  that point — `selectAudioTrack(track:)` and `selectSubtitle(track:)` have
+  always been public, and Sprint 1 made the lists they draw from public too.
 - **Introduce `PlayerConfiguration`.** There is no configuration type today.
 - ~~**Background, lock screen, remote commands.**~~ *Done* — now-playing
   metadata, the six remote commands, and an opt-in background-playback policy.

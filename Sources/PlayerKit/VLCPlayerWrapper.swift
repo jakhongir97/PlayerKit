@@ -182,6 +182,8 @@ extension VLCPlayerWrapper: TimeControlProtocol {
     }
 }
 
+extension VLCPlayerWrapper: PlayerMuteControlling {}
+
 // MARK: - TrackSelectionProtocol
 extension VLCPlayerWrapper: TrackSelectionProtocol {
     /// Track identity for the VLC backend.

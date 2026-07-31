@@ -703,6 +703,87 @@ final class AuditRegressionTests: XCTestCase {
         canPrevious: { false }
     )
 
+    // MARK: - Mute and autoplay
+
+    /// Every backend could already mute; nothing exposed it. Setting it before
+    /// any media exists must still take effect, which is why the preference is
+    /// stored rather than proxied through `currentPlayer`.
+    func testMutePreferenceReachesABackendCreatedAfterItWasSet() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        defer {
+            manager.isMuted = false
+            manager.tearDown()
+        }
+
+        XCTAssertFalse(manager.isMuted)
+        manager.isMuted = true
+        manager.setPlayer(type: .avPlayer)
+
+        XCTAssertTrue(manager.isMuted)
+        XCTAssertEqual((manager.currentPlayer as? AVPlayerWrapper)?.isMuted, true)
+    }
+
+    func testMuteAppliesToAnAlreadyRunningBackend() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        manager.setPlayer(type: .avPlayer)
+        defer {
+            manager.isMuted = false
+            manager.tearDown()
+        }
+
+        manager.isMuted = true
+        XCTAssertEqual((manager.currentPlayer as? AVPlayerWrapper)?.isMuted, true)
+
+        manager.isMuted = false
+        XCTAssertEqual((manager.currentPlayer as? AVPlayerWrapper)?.isMuted, false)
+    }
+
+    /// Autoplay defaults to on, which is what every existing host already gets.
+    func testAutoplayDefaultsToOnAndLoadRequestsPlayback() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        defer { manager.tearDown() }
+
+        XCTAssertTrue(manager.autoplay)
+        manager.setPlayer(type: .avPlayer)
+        manager.load(
+            playerItem: PlayerItem(
+                title: "Fixture",
+                url: URL(string: "https://example.com/movie.m3u8")!
+            )
+        )
+
+        // isPlaying is transient here — a real AVPlayerWrapper's runtime-state
+        // observer overwrites it once the fixture URL fails to load.
+        // isPlaybackRequested is the durable intent the resume ladder reads.
+        XCTAssertTrue(manager.isPlaybackRequested)
+    }
+
+    /// With autoplay off, `load` prepares the item without requesting playback.
+    /// `isPlaybackRequested` is what the resume ladder consults, so leaving it
+    /// true would have AVFoundation start on its own once the item was ready.
+    func testAutoplayOffLoadsWithoutRequestingPlayback() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        manager.autoplay = false
+        defer {
+            manager.autoplay = true
+            manager.tearDown()
+        }
+
+        manager.setPlayer(type: .avPlayer)
+        manager.load(
+            playerItem: PlayerItem(
+                title: "Fixture",
+                url: URL(string: "https://example.com/movie.m3u8")!
+            )
+        )
+
+        XCTAssertFalse(manager.isPlaybackRequested)
+    }
+
     // MARK: - Ordinary playback
 
     /// Kept from the deleted DubberDisabledTests, where it guarded ordinary

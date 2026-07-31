@@ -170,6 +170,8 @@ public class PlayerManager: ObservableObject {
     private var nowPlayingEnabledStorage = false
     private var nowPlayingArtworkStorage: PKImage?
     private var backgroundPlaybackEnabledStorage = false
+    private var isMutedStorage = false
+    private var autoplayStorage = true
     private var shouldResumePlaybackAfterStall: Bool {
         get { isPlaybackRequested }
         set { isPlaybackRequested = newValue }
@@ -416,9 +418,11 @@ public class PlayerManager: ObservableObject {
         isVideoEnded = false
         currentTime = max(lastPosition ?? 0, 0)
         bufferedDuration = 0
-        isPlaying = true
+        isPlaying = autoplayStorage
         isBuffering = true
-        shouldResumePlaybackAfterStall = true
+        // This is what the resume ladder consults, so gating it here is what
+        // stops AVFoundation starting on its own once the item becomes ready.
+        shouldResumePlaybackAfterStall = autoplayStorage
         playbackResumeProgressReferenceTime = currentTime
         #if os(macOS)
         if let avPlayer = currentPlayer as? AVPlayerWrapper {
@@ -438,6 +442,11 @@ public class PlayerManager: ObservableObject {
         #else
         currentPlayer?.load(url: url, lastPosition: lastPosition)
         #endif
+        if !autoplayStorage {
+            // Unlike AVFoundation, the iOS VLC backend calls play() inside its
+            // own load(), so gating the resume ladder is not enough for it.
+            playbackManager?.pause()
+        }
         userInteracted()
     }
     
@@ -1002,6 +1011,7 @@ extension PlayerManager {
     /// property proxying to `currentPlayer as? AVPlayerWrapper` would be inert
     /// at exactly the moment it is set.
     func applyPlaybackPolicies(to player: PlayerProtocol) {
+        (player as? PlayerMuteControlling)?.setMuted(isMutedStorage)
         guard let avPlayer = player as? AVPlayerWrapper else { return }
         avPlayer.allowsBackgroundPlayback = backgroundPlaybackEnabledStorage
     }
@@ -1090,6 +1100,41 @@ extension PlayerManager {
                 return
             }
             coordinator.publish(snapshot)
+        }
+    }
+}
+
+// MARK: - Mute and Autoplay
+extension PlayerManager {
+    /// Silences the backend without changing the system volume.
+    ///
+    /// Every backend can do this, and none of them exposed it — the capability
+    /// existed on all three wrappers with no way for a host to reach it.
+    ///
+    /// Stored rather than read back off the current backend, so setting it
+    /// before any media is loaded still takes effect: the value is pushed into
+    /// each player as it is created.
+    public var isMuted: Bool {
+        get { isMutedStorage }
+        set {
+            guard newValue != isMutedStorage else { return }
+            isMutedStorage = newValue
+            (currentPlayer as? PlayerMuteControlling)?.setMuted(newValue)
+            objectWillChange.send()
+        }
+    }
+
+    /// Whether loading an item also starts playing it. `true` by default,
+    /// which is the behaviour every existing host already gets.
+    ///
+    /// With this off, `load` prepares the item and leaves it paused; the host
+    /// starts it with `play()`.
+    public var autoplay: Bool {
+        get { autoplayStorage }
+        set {
+            guard newValue != autoplayStorage else { return }
+            autoplayStorage = newValue
+            objectWillChange.send()
         }
     }
 }
