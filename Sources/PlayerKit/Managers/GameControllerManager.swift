@@ -21,8 +21,12 @@ final class GameControllerManager: ObservableObject {
 
     let ownership = SharedResourceOwnership()
 
-    /// How many times the controller handlers have actually been detached,
-    /// i.e. how many times the last remaining owner let go.
+    /// Whether PlayerKit's handlers are currently installed on the shared
+    /// `GCController` instances. Tracked independently of ownership because
+    /// `init` installs them before anyone has acquired.
+    private(set) var areHandlersAttached = false
+
+    /// How many times the controller handlers have actually been detached.
     private(set) var resourceReleaseCount = 0
 
     private init() {
@@ -63,7 +67,15 @@ final class GameControllerManager: ObservableObject {
     /// unconditionally would take controller input away from a player that is
     /// still on screen as soon as any other player went away.
     func releaseControllerHandlers(for owner: AnyObject) {
-        guard ownership.removeOwner(owner) else { return }
+        ownership.removeOwner(owner)
+        // Detach whenever nobody holds the handlers, rather than only when the
+        // caller happened to be the last registered owner. init() attaches
+        // handlers to every already-connected controller without registering an
+        // owner, so keying the detach on "was I the last owner" would leave
+        // those attached forever on a teardown that never acquired.
+        guard !ownership.isHeld else { return }
+        guard areHandlersAttached else { return }
+        areHandlersAttached = false
         resourceReleaseCount += 1
 
         for controller in controllers {
@@ -100,6 +112,7 @@ final class GameControllerManager: ObservableObject {
         
         isAnyControllerConnected = !controllers.isEmpty
         guard let gamepad = controller.extendedGamepad else { return }
+        areHandlersAttached = true
 
         // A -> Play/Pause
         gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, pressed in

@@ -58,7 +58,8 @@ class AudioSessionManager: NSObject {
     /// lifetime of the host process. `.notifyOthersOnDeactivation` is what lets
     /// a backgrounded music app resume rather than staying silently stopped.
     func deactivateAudioSession(for owner: AnyObject) {
-        guard ownership.removeOwner(owner) else { return }
+        ownership.removeOwner(owner)
+        guard !ownership.isHeld else { return }
         guard isSessionActive else { return }
         isSessionActive = false
         resourceReleaseCount += 1
@@ -161,7 +162,8 @@ final class AudioSessionManager {
     }
 
     func deactivateAudioSession(for owner: AnyObject) {
-        guard ownership.removeOwner(owner) else { return }
+        ownership.removeOwner(owner)
+        guard !ownership.isHeld else { return }
         guard isSessionActive else { return }
         isSessionActive = false
         resourceReleaseCount += 1

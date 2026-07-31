@@ -442,16 +442,26 @@ final class AuditRegressionTests: XCTestCase {
         manager.attachControllerHandlers(for: second)
         XCTAssertEqual(manager.ownership.ownerCount, 2)
 
+        // There is only a detach to observe if a controller was connected to
+        // attach to in the first place; test machines generally have none.
+        let didAttach = manager.areHandlersAttached
+        let expectedReleases = releasesBefore + (didAttach ? 1 : 0)
+
         manager.releaseControllerHandlers(for: first)
+        XCTAssertTrue(
+            manager.ownership.isHeld,
+            "one of two owners going away must not detach the handlers"
+        )
         XCTAssertEqual(manager.resourceReleaseCount, releasesBefore)
-        XCTAssertTrue(manager.ownership.isHeld)
+        XCTAssertEqual(manager.areHandlersAttached, didAttach)
 
         manager.releaseControllerHandlers(for: second)
-        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore + 1)
         XCTAssertFalse(manager.ownership.isHeld)
+        XCTAssertFalse(manager.areHandlersAttached)
+        XCTAssertEqual(manager.resourceReleaseCount, expectedReleases)
 
         manager.releaseControllerHandlers(for: second)
-        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore + 1)
+        XCTAssertEqual(manager.resourceReleaseCount, expectedReleases)
     }
 
     @MainActor
@@ -479,6 +489,52 @@ final class AuditRegressionTests: XCTestCase {
         XCTAssertFalse(coordinator.ownership.isHeld)
 
         coordinator.setPlaybackActive(false, for: second)
+        XCTAssertEqual(coordinator.resourceReleaseCount, releasesBefore + 1)
+    }
+
+    /// Releasing must be driven by "nobody holds this any more", not by "the
+    /// caller was the last registered owner".
+    ///
+    /// `GameControllerManager.init` attaches handlers to every already-connected
+    /// controller without registering an owner, so a teardown that never
+    /// acquired still has real work to do. Keying the detach on the release
+    /// return value alone would skip it and leave PlayerKit's handlers on the
+    /// host's controllers.
+    func testControllerHandlersAreDetachedEvenIfTheReleaserNeverAcquired() {
+        let manager = GameControllerManager.shared
+        manager.ownership.removeAllOwners()
+
+        // Simulate what init() does: handlers attached, nobody owning them.
+        manager.attachControllerHandlers(for: NSObject())
+        manager.ownership.removeAllOwners()
+        guard manager.areHandlersAttached else {
+            // No controller is connected on this machine, so there is nothing
+            // to attach and nothing to assert.
+            return
+        }
+
+        let releasesBefore = manager.resourceReleaseCount
+        manager.releaseControllerHandlers(for: NSObject())
+
+        XCTAssertFalse(manager.areHandlersAttached)
+        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore + 1)
+    }
+
+    /// The same property for the wake lock: a holder that was never registered
+    /// must still be able to drop it.
+    @MainActor
+    func testWakeLockIsDroppedEvenIfTheReleaserNeverAcquired() {
+        let coordinator = PlaybackWakeLockCoordinator.shared
+        coordinator.ownership.removeAllOwners()
+
+        coordinator.setPlaybackActive(true, for: NSObject())
+        coordinator.ownership.removeAllOwners()
+        XCTAssertTrue(coordinator.isHoldingWakeLock)
+
+        let releasesBefore = coordinator.resourceReleaseCount
+        coordinator.setPlaybackActive(false, for: NSObject())
+
+        XCTAssertFalse(coordinator.isHoldingWakeLock)
         XCTAssertEqual(coordinator.resourceReleaseCount, releasesBefore + 1)
     }
 

@@ -20,8 +20,12 @@ final class PlaybackWakeLockCoordinator {
 
     let ownership = SharedResourceOwnership()
 
-    /// How many times the wake lock has actually been dropped, i.e. how many
-    /// times the last remaining owner let go.
+    /// Whether the platform override is currently held. Platform-independent,
+    /// unlike the two `#if`-guarded flags below, so the accounting is exact on
+    /// every platform including the `#else` no-op branch.
+    private(set) var isHoldingWakeLock = false
+
+    /// How many times the wake lock has actually been dropped.
     private(set) var resourceReleaseCount = 0
 
     private init() {}
@@ -34,9 +38,16 @@ final class PlaybackWakeLockCoordinator {
     /// under a first player that was still playing.
     func setPlaybackActive(_ isActive: Bool, for owner: AnyObject) {
         if isActive {
-            guard ownership.addOwner(owner) else { return }
+            ownership.addOwner(owner)
+            guard !isHoldingWakeLock else { return }
+            isHoldingWakeLock = true
         } else {
-            guard ownership.removeOwner(owner) else { return }
+            ownership.removeOwner(owner)
+            // Drop it when nobody wants it, not merely when the caller was the
+            // last registered owner — same reasoning as GameControllerManager.
+            guard !ownership.isHeld else { return }
+            guard isHoldingWakeLock else { return }
+            isHoldingWakeLock = false
             resourceReleaseCount += 1
         }
 
