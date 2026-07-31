@@ -1319,11 +1319,25 @@ extension PlayerManager {
     }
 
     public func scrubForward(by seconds: TimeInterval) {
-        playbackManager?.scrubForward(by: seconds)
+        seekRelative(by: seconds)
     }
-    
+
     public func scrubBackward(by seconds: TimeInterval) {
-        playbackManager?.scrubBackward(by: seconds)
+        seekRelative(by: -seconds)
+    }
+
+    /// Moves the playhead by `offset` seconds through `seek(to:)`.
+    ///
+    /// These used to call `playbackManager?.scrub…` straight through to the
+    /// backend, which reached `AVPlayerWrapper.seek` without passing any of
+    /// `seek(to:)`'s work: the clamp into `seekableRange`, the dub-window
+    /// reconciliation, the `currentTime` write and the resume-after-seek
+    /// scheduling. On live that meant a skip was clamped by the backend alone
+    /// and could land outside the DVR window; on a dubbed stream it could
+    /// silently desynchronise the dub. One clamping path is the point.
+    private func seekRelative(by offset: TimeInterval) {
+        let reference = currentPlayer?.currentTime ?? currentTime
+        seek(to: reference + offset)
     }
     
     public func setPlaybackSpeed(_ speed: Float) {
@@ -3267,8 +3281,8 @@ extension PlayerManager {
             self?.currentPlayer?.currentTime ?? self?.currentTime ?? 0
         }
         
-        gestureManager.durationProvider = { [weak self] in
-            self?.currentPlayer?.duration ?? self?.duration ?? 0
+        gestureManager.seekableRangeProvider = { [weak self] in
+            self?.seekableRange
         }
         
         gestureManager.onControlsVisibilityChange = { [weak self] isVisible in

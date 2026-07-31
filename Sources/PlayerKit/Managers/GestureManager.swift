@@ -18,7 +18,15 @@ public class GestureManager: ObservableObject {
     var onZoom: ((_ scale: CGFloat) -> Void)?
     var isLockedProvider: (() -> Bool)?
     var currentTimeProvider: (() -> Double)?
-    var durationProvider: (() -> Double)?
+    /// The window a double-tap skip may land in.
+    ///
+    /// This used to be a `durationProvider`, which made live streams jump to
+    /// the start: `duration` is 0 for live/DVR HLS, so clamping with
+    /// `min(duration, …)` clamped every skip to zero. The seekable range is
+    /// `0...duration` for VOD and the DVR window for live, so one provider
+    /// serves both. `nil` means there is nothing to seek within, and the skip
+    /// is dropped rather than sent to an arbitrary position.
+    var seekableRangeProvider: (() -> ClosedRange<Double>?)?
     var onControlsVisibilityChange: ((Bool) -> Void)?
     
     // MARK: - Private Properties
@@ -196,9 +204,13 @@ public class GestureManager: ObservableObject {
     
     private func performSeek() {
         guard let initialTime,
-              let duration = durationProvider?() else { return }
-        
-        let newTime = max(0, min(duration, initialTime + (seekDirection == .forward ? accumulatedInterval : -accumulatedInterval)))
+              let seekableRange = seekableRangeProvider?() else { return }
+
+        let offset = seekDirection == .forward ? accumulatedInterval : -accumulatedInterval
+        let newTime = min(
+            max(initialTime + offset, seekableRange.lowerBound),
+            seekableRange.upperBound
+        )
         onSeek?(newTime)
     }
     

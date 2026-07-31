@@ -16,7 +16,10 @@ struct PlaybackSliderView: View {
     
     private var accessibilityValueText: String {
         let current = effectiveSliderValue.asTimeString(style: .positional)
-        let total = playerManager.duration.asTimeString(style: .positional)
+        // The end of the seekable window, not `duration`, which is 0 on live
+        // and made VoiceOver announce every position as "… of 00:00".
+        let total = (seekableRange?.upperBound ?? playerManager.duration)
+            .asTimeString(style: .positional)
         return "\(current) of \(total)"
     }
 
@@ -28,6 +31,26 @@ struct PlaybackSliderView: View {
             return pendingSeekValue
         }
         return playerManager.currentTime
+    }
+
+    /// The window the scrubber may move within, or `nil` when there is none.
+    ///
+    /// This used to be `0...max(duration, 0.01)`. `duration` is 0 for live/DVR
+    /// HLS, so on a live stream the scrubber's range collapsed to `0...0.01`
+    /// and every drag resolved to the same position. `PlayerManager` already
+    /// clamps seeks into this range, so reading it here is what makes the
+    /// control agree with what a seek will actually do.
+    private var seekableRange: ClosedRange<Double>? {
+        playerManager.seekableRange
+    }
+
+    /// A range for the slider geometry even when nothing is seekable.
+    ///
+    /// Matches the old degenerate range so an unseekable timeline lays out
+    /// exactly as it did before, rather than the row appearing and
+    /// disappearing as `duration` resolves. Interaction is disabled instead.
+    private var sliderRange: ClosedRange<Double> {
+        seekableRange ?? 0...0.01
     }
 
     var body: some View {
@@ -44,7 +67,7 @@ struct PlaybackSliderView: View {
                         get: { playerManager.bufferedDuration },
                         set: { _ in } // No need to set this manually
                     ),
-                    inRange: 0...max(playerManager.duration, 0.01),
+                    inRange: sliderRange,
                     activeFillColor: .white,
                     fillColor: .white.opacity(0.5),
                     emptyColor: .white.opacity(0.3),
@@ -103,6 +126,10 @@ struct PlaybackSliderView: View {
                 }
             }
             .frame(height: PlayerKitPlatform.isDesktop ? 42 : 50)
+            // Nothing to scrub within: keep the row so the layout does not
+            // jump while `duration` resolves, but do not offer a control that
+            // cannot move the playhead.
+            .disabled(seekableRange == nil)
         }
         .onAppear {
             sliderValue = playerManager.currentTime
@@ -119,14 +146,17 @@ struct PlaybackSliderView: View {
 
     /// Seeks by a fixed step in response to a VoiceOver adjust gesture.
     ///
-    /// The step scales with duration so a swipe is useful on both a 30-second
-    /// clip and a three-hour film, with a 15-second floor to match the
-    /// scrub-button convention.
+    /// The step scales with the seekable window so a swipe is useful on both a
+    /// 30-second clip and a three-hour film, with a 15-second floor to match
+    /// the scrub-button convention. It used to scale with `duration` and bail
+    /// on `duration > 0`, which made VoiceOver scrubbing dead on live for the
+    /// same reason the visual scrubber was.
     private func adjustPlaybackPosition(_ direction: AccessibilityAdjustmentDirection) {
-        let duration = playerManager.duration
-        guard duration > 0 else { return }
+        guard let seekableRange else { return }
+        let span = seekableRange.upperBound - seekableRange.lowerBound
+        guard span > 0 else { return }
 
-        let step = max(duration / 20, 15)
+        let step = max(span / 20, 15)
         let delta: Double
         switch direction {
         case .increment:
@@ -137,7 +167,10 @@ struct PlaybackSliderView: View {
             return
         }
 
-        let target = min(max(effectiveSliderValue + delta, 0), duration)
+        let target = min(
+            max(effectiveSliderValue + delta, seekableRange.lowerBound),
+            seekableRange.upperBound
+        )
         sliderValue = target
         pendingSeekValue = target
         playerManager.userInteracted()
