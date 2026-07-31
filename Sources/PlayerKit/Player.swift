@@ -13,31 +13,6 @@ public final class Player {
         playerManager.ensurePlayerConfigured(type: playerType)
     }
 
-    @MainActor
-    public func configureDubber(_ configuration: DubberConfiguration?) {
-        playerManager.configureDubber(configuration)
-    }
-
-    @MainActor
-    public func startDubbedPlayback(language: String? = nil, translateFrom: String? = nil) async {
-        await playerManager.startDubbedPlayback(language: language, translateFrom: translateFrom)
-    }
-
-    @MainActor
-    public func setDubLanguage(code: String) {
-        playerManager.setDubLanguage(code: code)
-    }
-
-    @MainActor
-    public func setDubSourceLanguage(code: String) {
-        playerManager.setDubSourceLanguage(code: code)
-    }
-
-    @MainActor
-    public func stopDubbingAndReturnToOriginalAudio() {
-        playerManager.stopDubbingAndReturnToOriginalAudio()
-    }
-
     public func load(
         url: URL,
         title: String? = nil,

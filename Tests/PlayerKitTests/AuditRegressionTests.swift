@@ -564,25 +564,25 @@ final class AuditRegressionTests: XCTestCase {
         XCTAssertFalse(audio.isSessionActive)
     }
 
-    // MARK: - Dub language selection
+    // MARK: - Ordinary playback
 
-    /// The built-in Start button forced the target language to Uzbek, which
-    /// silently defeated `setDubLanguage(code:)`.
+    /// Kept from the deleted DubberDisabledTests, where it guarded ordinary
+    /// playback against the dormant dub machinery. It still earns its place:
+    /// `load(playerItem:)` used to run a dub-workflow cancellation before
+    /// storing the item, and that call site was removed with Dubber.
     @MainActor
-    func testSetDubLanguageIsNotOverriddenByConfigurationDefault() throws {
-        try XCTSkipUnless(
-            PlayerKitFeatureFlags.isDubberEnabled,
-            "Dubber is disabled in this build; see PlayerKitFeatureFlags."
-        )
+    func testLoadStoresTheItemAndReportsNoError() {
         let manager = PlayerManager.shared
         defer { manager.tearDown() }
 
-        manager.configureDubber(
-            DubberConfiguration(baseURL: URL(string: "https://dubber.test/api")!)
+        let item = PlayerItem(
+            title: "Fixture",
+            url: URL(string: "https://example.com/index.m3u8")!
         )
-        manager.setDubLanguage(code: "en")
+        manager.load(playerItem: item)
 
-        XCTAssertEqual(manager.selectedDubLanguageCode, "en")
+        XCTAssertEqual(manager.playerItem?.url, item.url)
+        XCTAssertNil(manager.lastError)
     }
 }
 

@@ -3,7 +3,6 @@ import SwiftUI
 public struct PlayerItem {
     public let title: String
     public let description: String?
-    public let dubTitle: String?
     public let url: URL
     public let posterUrl: URL?
     public let castVideoUrl: URL?
@@ -25,7 +24,6 @@ public struct PlayerItem {
     #if os(macOS)
     public init(title: String,
                 description: String? = nil,
-                dubTitle: String? = nil,
                 url: URL,
                 posterUrl: URL? = nil,
                 castVideoUrl: URL? = nil,
@@ -38,7 +36,6 @@ public struct PlayerItem {
                 playbackHealthMonitoringEligible: Bool = false) {
         self.title = title
         self.description = description
-        self.dubTitle = dubTitle
         self.url = url
         self.posterUrl = posterUrl
         self.castVideoUrl = castVideoUrl ?? externalPlaybackURL
@@ -53,7 +50,6 @@ public struct PlayerItem {
     #else
     public init(title: String,
                 description: String? = nil,
-                dubTitle: String? = nil,
                 url: URL,
                 posterUrl: URL? = nil,
                 castVideoUrl: URL? = nil,
@@ -64,7 +60,6 @@ public struct PlayerItem {
                 episodeIndex: Int? = nil) {
         self.title = title
         self.description = description
-        self.dubTitle = dubTitle
         self.url = url
         self.posterUrl = posterUrl
         self.castVideoUrl = castVideoUrl ?? externalPlaybackURL
@@ -78,10 +73,6 @@ public struct PlayerItem {
 }
 
 extension PlayerItem {
-    var preferredDubSessionTitle: String {
-        let trimmedDubTitle = dubTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return trimmedDubTitle.isEmpty ? title : trimmedDubTitle
-    }
 
     var preferredExternalPlaybackURL: URL? {
         externalPlaybackURL ?? castVideoUrl ?? (!url.isFileURL ? url : nil)

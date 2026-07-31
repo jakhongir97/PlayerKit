@@ -699,7 +699,6 @@ extension DesktopVLCPlayerWrapper: StreamingInfoProtocol {
 }
 
 extension DesktopVLCPlayerWrapper: PlayerEventSource {}
-extension DesktopVLCPlayerWrapper: PlayerMuteControlling {}
 
 extension DesktopVLCPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool { false }

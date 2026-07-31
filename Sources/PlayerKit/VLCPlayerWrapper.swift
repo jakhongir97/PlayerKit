@@ -449,7 +449,6 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
 
 extension VLCPlayerWrapper: PlayerEventSource {}
 
-extension VLCPlayerWrapper: PlayerMuteControlling {}
 
 extension VLCPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool {

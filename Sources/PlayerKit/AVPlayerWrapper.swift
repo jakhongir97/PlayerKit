@@ -908,7 +908,7 @@ extension AVPlayerWrapper: AVPictureInPictureControllerDelegate {
 
 extension AVPlayerWrapper: PlayerEventSource {}
 
-extension AVPlayerWrapper: PlayerMuteControlling, PlayerPreciseSeeking, PlayerSeekWindowReporting {}
+extension AVPlayerWrapper: PlayerSeekWindowReporting {}
 
 extension AVPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool {
