@@ -66,14 +66,6 @@ extension View {
 
 extension View {
     @ViewBuilder
-    func hierarchicalSymbolRendering() -> some View {
-        // iOS 15 / macOS 12 is at or below the deployment target.
-        self.symbolRenderingMode(.hierarchical)
-    }
-}
-
-extension View {
-    @ViewBuilder
     func glassStyleIfAvailable() -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             self
@@ -82,15 +74,6 @@ extension View {
         } else {
             self
         }
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func compatTint(_ color: Color) -> some View {
-        // `tint` is available on every supported OS; the accentColor fallback
-        // was unreachable (and is itself deprecated).
-        self.tint(color)
     }
 }
 

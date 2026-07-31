@@ -8,10 +8,7 @@ struct PlayerControlsView: View {
     }
 
     var body: some View {
-        // Folded through showsDubberControls so a disabled Dubber cannot keep
-        // the top controls pinned open while the chrome is otherwise hidden.
-        let showsPinnedDubberSheet = playerManager.showsDubberControls && playerManager.isDubberSheetPinned
-        let showsTopControls = !playerManager.isLocked && (playerManager.areControlsVisible || showsPinnedDubberSheet)
+        let showsTopControls = !playerManager.isLocked && playerManager.areControlsVisible
 
         ZStack {
             Color.black.opacity(0.5)
@@ -48,7 +45,7 @@ struct PlayerControlsView: View {
                 }
             }
             .padding(isIPhone ? 16 : 32)
-            .allowsHitTesting(playerManager.areControlsVisible || showsPinnedDubberSheet)
+            .allowsHitTesting(playerManager.areControlsVisible)
         }
     }
 }
