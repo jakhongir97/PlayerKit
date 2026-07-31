@@ -45,6 +45,24 @@ let package = Package(
             path: "Sources/PlayerKit",
             resources: [
                 .process("Resources")
+            ],
+            // Turns on complete concurrency checking as WARNINGS, to stop the
+            // diagnostic count growing while the @MainActor migration is
+            // scheduled. The package is in Swift 5 language mode — there is no
+            // swiftLanguageVersions setting and swift-tools-version is 5.10 —
+            // so these are warnings, not errors. Raising the tools version or
+            // adding .v6 to swiftLanguageVersions would turn all ~291 of them
+            // into build failures.
+            //
+            // swiftSettings apply to this target only and are not inherited by
+            // anything that depends on PlayerKit, so a consumer sees no new
+            // diagnostics of its own.
+            //
+            // Deliberately NOT .unsafeFlags: SwiftPM rejects a package that
+            // uses them from any consumer depending on it by version or URL,
+            // which would break iTV's build outright at graph-resolution time.
+            swiftSettings: [
+                .enableExperimentalFeature("StrictConcurrency")
             ]
         ),
         .testTarget(
