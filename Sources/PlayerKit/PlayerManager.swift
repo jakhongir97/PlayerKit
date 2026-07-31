@@ -56,11 +56,13 @@ public class PlayerManager: ObservableObject {
     @Published public internal(set) var isPlaying: Bool = false {
         didSet {
             refreshPlaybackWakeLock()
+            refreshNowPlayingInfo()
         }
     }
     @Published public internal(set) var isBuffering: Bool = false {
         didSet {
             refreshPlaybackWakeLock()
+            refreshNowPlayingInfo()
         }
     }
     @Published public private(set) var isPlaybackRequested: Bool = false
@@ -111,6 +113,8 @@ public class PlayerManager: ObservableObject {
         didSet {
             guard shouldDismiss else {
                 refreshPlaybackWakeLock()
+                refreshNowPlayingInfo()
+            refreshNowPlayingInfo()
                 return
             }
             #if os(macOS)
@@ -118,6 +122,7 @@ public class PlayerManager: ObservableObject {
             #endif
             playbackManager?.stop()
             refreshPlaybackWakeLock()
+            refreshNowPlayingInfo()
         }
     }
     @Published public private(set) var lastError: PlayerKitError?
@@ -132,6 +137,7 @@ public class PlayerManager: ObservableObject {
     @Published public internal(set) var isVideoEnded: Bool = false {
         didSet {
             refreshPlaybackWakeLock()
+            refreshNowPlayingInfo()
         }
     }
     
@@ -151,6 +157,7 @@ public class PlayerManager: ObservableObject {
     public weak var currentPlayer: PlayerProtocol? {
         didSet {
             refreshPlaybackWakeLock()
+            refreshNowPlayingInfo()
         }
     }
     private var lastPosition: Double = 0
@@ -160,6 +167,9 @@ public class PlayerManager: ObservableObject {
     private var stateCancellables = Set<AnyCancellable>()
     private var longLivedCancellables = Set<AnyCancellable>()
     private var isPlaybackWakeLockHeld = false
+    private var nowPlayingEnabledStorage = false
+    private var nowPlayingArtworkStorage: PKImage?
+    private var backgroundPlaybackEnabledStorage = false
     private var shouldResumePlaybackAfterStall: Bool {
         get { isPlaybackRequested }
         set { isPlaybackRequested = newValue }
@@ -235,6 +245,7 @@ public class PlayerManager: ObservableObject {
         let player = provider.createPlayer()
         debugLog("Created player instance type=\(String(reflecting: type(of: player)))")
         currentPlayer = player
+        applyPlaybackPolicies(to: player)
         bindPlayerCallbacks(player)
         #if os(macOS)
         if let avPlayer = player as? AVPlayerWrapper {
@@ -364,6 +375,9 @@ public class PlayerManager: ObservableObject {
         if playerItems.isEmpty {
             contentType = playerItem.episodeIndex == nil ? .movie : .episode
         }
+        // New item means new metadata; the didSet hooks only cover transport
+        // state, not identity.
+        refreshNowPlayingInfo(force: true)
         load(
             url: playerItem.url,
             lastPosition: playerItem.lastPosition,
@@ -722,6 +736,7 @@ extension PlayerManager {
     ) {
         if success {
             currentTime = targetTime
+            refreshNowPlayingInfo(force: true)
             if shouldResumeAfterSeek {
                 debugLog(
                     "Seek succeeded and playback should resume. target=\(debugInterval(targetTime))"
@@ -770,6 +785,7 @@ extension PlayerManager {
     public func setPlaybackSpeed(_ speed: Float) {
         playbackSpeed = speed
         playbackManager?.setPlaybackSpeed(speed)
+        refreshNowPlayingInfo(force: true)
     }
 }
 
@@ -910,6 +926,167 @@ extension PlayerManager {
         debugLog("Runtime state updated \(summary)")
     }
 
+}
+
+// MARK: - Now Playing, Remote Commands and Background Playback
+extension PlayerManager {
+    /// Publishes lock-screen / Control Center metadata and installs the system
+    /// transport controls.
+    ///
+    /// Off by default. `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter` are
+    /// process-global, so turning this on means PlayerKit takes over controls
+    /// the host may already be driving. It restores whatever it found when the
+    /// last owner releases, but taking them at all is the host's call — the
+    /// same posture `isExternalPlaybackEnabled` takes.
+    public var isNowPlayingEnabled: Bool {
+        get { nowPlayingEnabledStorage }
+        set {
+            guard newValue != nowPlayingEnabledStorage else { return }
+            nowPlayingEnabledStorage = newValue
+            if newValue {
+                installNowPlayingIfNeeded()
+                refreshNowPlayingInfo(force: true)
+            } else {
+                let coordinator = NowPlayingCoordinator.shared
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    coordinator.releaseCommands(for: self)
+                }
+            }
+            objectWillChange.send()
+        }
+    }
+
+    /// Artwork for the lock screen.
+    ///
+    /// PlayerKit does not fetch `PlayerItem.posterUrl` itself: that would mean
+    /// owning an image cache and a network policy, which belongs to the host.
+    public var nowPlayingArtwork: PKImage? {
+        get { nowPlayingArtworkStorage }
+        set {
+            nowPlayingArtworkStorage = newValue
+            let coordinator = NowPlayingCoordinator.shared
+            Task { @MainActor in
+                coordinator.setArtwork(newValue)
+            }
+            refreshNowPlayingInfo(force: true)
+        }
+    }
+
+    /// Lets audio continue when the app is backgrounded.
+    ///
+    /// Off by default: PlayerKit configures `AVPlayer` to pause in the
+    /// background as part of its capture-protection posture, so continuing is
+    /// an explicit relaxation.
+    ///
+    /// This only removes PlayerKit's objection. Background audio *also* needs
+    /// `audio` in the host app's `UIBackgroundModes`, which a package cannot
+    /// declare on the host's behalf. The VLC backends are unaffected by this
+    /// flag.
+    public var isBackgroundPlaybackEnabled: Bool {
+        get { backgroundPlaybackEnabledStorage }
+        set {
+            guard newValue != backgroundPlaybackEnabledStorage else { return }
+            backgroundPlaybackEnabledStorage = newValue
+            if let player = currentPlayer {
+                applyPlaybackPolicies(to: player)
+            }
+            objectWillChange.send()
+        }
+    }
+
+    /// Pushes the stored policies into a freshly created backend.
+    ///
+    /// Applied here rather than read back off `currentPlayer` on demand,
+    /// because a host configures these before any media exists — a computed
+    /// property proxying to `currentPlayer as? AVPlayerWrapper` would be inert
+    /// at exactly the moment it is set.
+    func applyPlaybackPolicies(to player: PlayerProtocol) {
+        guard let avPlayer = player as? AVPlayerWrapper else { return }
+        avPlayer.allowsBackgroundPlayback = backgroundPlaybackEnabledStorage
+    }
+
+    func installNowPlayingIfNeeded() {
+        guard nowPlayingEnabledStorage else { return }
+        let commands = makeNowPlayingCommands()
+        let coordinator = NowPlayingCoordinator.shared
+        let artwork = nowPlayingArtworkStorage
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            coordinator.installCommands(for: self, commands: commands)
+            coordinator.setArtwork(artwork)
+        }
+    }
+
+    func releaseNowPlaying() {
+        let coordinator = NowPlayingCoordinator.shared
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            coordinator.releaseCommands(for: self)
+        }
+    }
+
+    private func makeNowPlayingCommands() -> NowPlayingCommands {
+        NowPlayingCommands(
+            play: { [weak self] in self?.play() },
+            pause: { [weak self] in self?.pause() },
+            toggle: { [weak self] in
+                guard let self else { return }
+                self.isPlaying ? self.pause() : self.play()
+            },
+            skipForward: { [weak self] seconds in self?.scrubForward(by: seconds) },
+            skipBackward: { [weak self] seconds in self?.scrubBackward(by: seconds) },
+            seek: { [weak self] time in self?.seek(to: time) },
+            canSeek: { [weak self] in self?.seekableRange != nil },
+            next: { [weak self] in self?.playNext() },
+            previous: { [weak self] in self?.playPrevious() }
+        )
+    }
+
+    /// The state the lock screen should show, or `nil` when there is nothing
+    /// playing to describe.
+    func makeNowPlayingSnapshot() -> NowPlayingSnapshot? {
+        guard let item = playerItem else { return nil }
+        // Live has no meaningful total, and the seekable window is what the
+        // rest of PlayerKit already treats as the timeline.
+        let isLive = duration <= 0 && seekableRange != nil
+        let resolvedDuration: Double? = duration > 0 ? duration : nil
+        return NowPlayingSnapshot(
+            title: item.title,
+            subtitle: item.description,
+            duration: resolvedDuration,
+            elapsed: max(currentPlayer?.currentTime ?? currentTime, 0),
+            // playbackSpeed keeps its configured value while paused, so the
+            // lock screen would animate a stopped playhead without this.
+            rate: isPlaying ? Double(playbackSpeed) : 0,
+            isLive: isLive
+        )
+    }
+
+    /// Publishes now-playing state, if it has changed.
+    ///
+    /// Deliberately NOT driven from `applyRuntimeState`, which runs at 2 Hz:
+    /// `MPNowPlayingInfoCenter` extrapolates elapsed time from the rate and the
+    /// moment of the last push, so republishing on every tick would repeatedly
+    /// reset that interpolation. This is called from the same state-transition
+    /// points as `refreshPlaybackWakeLock`, plus seeks and speed changes.
+    func refreshNowPlayingInfo(force: Bool = false) {
+        guard nowPlayingEnabledStorage else { return }
+        let snapshot = makeNowPlayingSnapshot()
+        let canSeek = seekableRange != nil
+        let coordinator = NowPlayingCoordinator.shared
+        Task { @MainActor in
+            if force {
+                coordinator.setSeekingEnabled(canSeek)
+            }
+            guard let snapshot else {
+                coordinator.clearNowPlayingItem()
+                return
+            }
+            coordinator.setSeekingEnabled(canSeek)
+            coordinator.publish(snapshot)
+        }
+    }
 }
 
 // MARK: - External Playback (AirPlay)
@@ -1337,6 +1514,7 @@ extension PlayerManager {
         configureCastCallbacks()
         AudioSessionManager.shared.configureAudioSession(for: self)
         GameControllerManager.shared.attachControllerHandlers(for: self)
+        installNowPlayingIfNeeded()
         subscribeToCastState()
         subscribeToGameControllerEvents()
         integrationsConfigured = true
@@ -1404,6 +1582,7 @@ extension PlayerManager {
 
         gestureManager.restoreSystemBrightness()
         GameControllerManager.shared.releaseControllerHandlers(for: self)
+        releaseNowPlaying()
         isPlaybackWakeLockHeld = false
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -1457,6 +1636,7 @@ extension PlayerManager: PlayerLifecycleReporting {
             "duration=\(debugInterval(duration)) shouldResume=\(shouldResumePlaybackAfterStall)"
         )
         schedulePlaybackResumeIfNeeded(trigger: "media-ready")
+        refreshNowPlayingInfo(force: true)
     }
 
     private func performPlaybackResumeAttempt() {

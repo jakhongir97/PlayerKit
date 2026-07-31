@@ -255,6 +255,24 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         }
     }
 
+    /// Lets audio keep playing when the app is backgrounded.
+    ///
+    /// Off by default, because `audiovisualBackgroundPlaybackPolicy = .pauses`
+    /// arrived as part of the capture-protection posture in add12f5, alongside
+    /// disabling external playback. Continuing in the background is a genuine
+    /// relaxation of that posture, so it is opt-in exactly like
+    /// `allowsExternalPlayback` is.
+    ///
+    /// This only removes PlayerKit's own objection. Background audio also needs
+    /// the `audio` value in the host app's `UIBackgroundModes`, which a package
+    /// cannot supply.
+    var allowsBackgroundPlayback: Bool = false {
+        didSet {
+            guard let player else { return }
+            applyBackgroundPlaybackPolicy(to: player)
+        }
+    }
+
     #if os(macOS)
     private var playbackHealthMonitor: MacOSPlaybackHealthMonitor?
     private let playbackDiagnosticsLogQueue = DispatchQueue(
@@ -1415,11 +1433,19 @@ extension AVPlayerWrapper {
         #endif
     }
 
+    private func applyBackgroundPlaybackPolicy(to player: AVPlayer) {
+        if #available(iOS 15.0, tvOS 15.0, macOS 12.0, *) {
+            player.audiovisualBackgroundPlaybackPolicy =
+                allowsBackgroundPlayback ? .continuesIfPossible : .pauses
+        }
+    }
+
     private func configureContentProtection(for player: AVPlayer) {
         applyExternalPlaybackPolicy(to: player)
-        if #available(iOS 15.0, tvOS 15.0, macOS 12.0, *) {
-            player.audiovisualBackgroundPlaybackPolicy = .pauses
-        }
+        // Read through the stored properties rather than hard-coding, because
+        // this runs again on every item install and would otherwise stomp
+        // whatever the host configured.
+        applyBackgroundPlaybackPolicy(to: player)
     }
 
     var seekableTimeWindow: ClosedRange<Double>? {

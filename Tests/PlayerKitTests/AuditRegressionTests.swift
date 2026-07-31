@@ -564,6 +564,143 @@ final class AuditRegressionTests: XCTestCase {
         XCTAssertFalse(audio.isSessionActive)
     }
 
+    // MARK: - Now playing
+
+    /// The lock screen is process-global, so it is refcounted exactly like the
+    /// audio session and the controller handlers.
+    @MainActor
+    func testNowPlayingCommandsAreReleasedOnceForTwoOwners() {
+        let coordinator = NowPlayingCoordinator.shared
+        coordinator.ownership.removeAllOwners()
+        let releasesBefore = coordinator.resourceReleaseCount
+
+        let first = NSObject()
+        let second = NSObject()
+        coordinator.installCommands(for: first, commands: Self.noopCommands)
+        coordinator.installCommands(for: second, commands: Self.noopCommands)
+        XCTAssertTrue(coordinator.areCommandsInstalled)
+        XCTAssertEqual(coordinator.ownership.ownerCount, 2)
+
+        coordinator.releaseCommands(for: first)
+        XCTAssertTrue(
+            coordinator.areCommandsInstalled,
+            "one of two owners going away must not take the lock screen away"
+        )
+        XCTAssertEqual(coordinator.resourceReleaseCount, releasesBefore)
+
+        coordinator.releaseCommands(for: second)
+        XCTAssertFalse(coordinator.areCommandsInstalled)
+        XCTAssertEqual(coordinator.resourceReleaseCount, releasesBefore + 1)
+
+        coordinator.releaseCommands(for: second)
+        XCTAssertEqual(coordinator.resourceReleaseCount, releasesBefore + 1)
+    }
+
+    /// `MPNowPlayingInfoCenter` extrapolates elapsed time from the rate and the
+    /// moment of the last push, so republishing an unchanged state — which the
+    /// 2 Hz runtime tick would do — repeatedly resets that interpolation.
+    @MainActor
+    func testUnchangedSnapshotIsNotRepublished() {
+        let coordinator = NowPlayingCoordinator.shared
+        coordinator.ownership.removeAllOwners()
+        let owner = NSObject()
+        coordinator.installCommands(for: owner, commands: Self.noopCommands)
+        defer { coordinator.releaseCommands(for: owner) }
+
+        let snapshot = NowPlayingSnapshot(
+            title: "Fixture",
+            subtitle: nil,
+            duration: 600,
+            elapsed: 10,
+            rate: 1,
+            isLive: false
+        )
+        coordinator.publish(snapshot)
+        XCTAssertEqual(coordinator.lastPublishedSnapshot, snapshot)
+
+        var moved = snapshot
+        moved.elapsed = 20
+        coordinator.publish(moved)
+        XCTAssertEqual(coordinator.lastPublishedSnapshot, moved)
+    }
+
+    /// A live stream has no total, and publishing 0 renders a zero-length
+    /// scrubber instead of hiding it.
+    func testLiveSnapshotHasNoDurationAndIsMarkedLive() {
+        let (manager, player) = makeLiveManager(currentTime: 5000)
+        defer { manager.tearDown() }
+        withExtendedLifetime(player) {
+            manager.load(
+                playerItem: PlayerItem(
+                    title: "Channel 1",
+                    url: URL(string: "https://example.com/live.m3u8")!
+                )
+            )
+            manager.duration = 0
+            manager.currentTime = 5000
+
+            let snapshot = manager.makeNowPlayingSnapshot()
+            XCTAssertEqual(snapshot?.title, "Channel 1")
+            XCTAssertNil(snapshot?.duration, "live must not advertise a total")
+            XCTAssertEqual(snapshot?.isLive, true)
+        }
+    }
+
+    /// `playbackSpeed` keeps its configured value while paused, so reporting it
+    /// directly would animate a stopped playhead on the lock screen.
+    func testPausedSnapshotReportsZeroRate() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        defer { manager.tearDown() }
+
+        manager.load(
+            playerItem: PlayerItem(
+                title: "Fixture",
+                url: URL(string: "https://example.com/movie.m3u8")!
+            )
+        )
+        manager.setPlaybackSpeed(1.5)
+        manager.isPlaying = false
+
+        XCTAssertEqual(manager.playbackSpeed, 1.5)
+        XCTAssertEqual(manager.makeNowPlayingSnapshot()?.rate, 0)
+
+        manager.isPlaying = true
+        XCTAssertEqual(manager.makeNowPlayingSnapshot()?.rate, 1.5)
+    }
+
+    /// Background continuation relaxes the capture-protection posture, so it
+    /// must default to the old behaviour and survive a reload.
+    func testBackgroundPlaybackIsOffByDefaultAndSurvivesPlayerCreation() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        defer { manager.tearDown() }
+
+        XCTAssertFalse(manager.isBackgroundPlaybackEnabled)
+
+        manager.isBackgroundPlaybackEnabled = true
+        manager.setPlayer(type: .avPlayer)
+
+        let wrapper = manager.currentPlayer as? AVPlayerWrapper
+        XCTAssertEqual(
+            wrapper?.allowsBackgroundPlayback,
+            true,
+            "the preference must reach a backend created after it was set"
+        )
+    }
+
+    private static let noopCommands = NowPlayingCommands(
+        play: {},
+        pause: {},
+        toggle: {},
+        skipForward: { _ in },
+        skipBackward: { _ in },
+        seek: { _ in },
+        canSeek: { true },
+        next: nil,
+        previous: nil
+    )
+
     // MARK: - Ordinary playback
 
     /// Kept from the deleted DubberDisabledTests, where it guarded ordinary
