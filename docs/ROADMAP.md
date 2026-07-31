@@ -163,12 +163,23 @@ two others will not survive.
 - **Fork reconciliation.** Requires a human-supplied dossier (see §6); cannot be
   sized without it. **[unverified — no GitLab access from this repo; the only
   remote configured is `github.com/jakhongir97/PlayerKit`]**
-- **Fix `Package.swift`.** The manifest picks its dependency graph from
-  `FileManager.default.fileExists("Frameworks/VLCKit.xcframework")` at evaluation
-  time. This is worse than non-reproducible: combined with
-  `#if canImport(VLCKit)` it decides *which of two entirely different macOS VLC
-  backends compiles*, and the `public typealias VLCPlayerWrapper` makes that a
-  public API difference. CI has only ever built one of the two configurations.
+- ~~**Fix `Package.swift`.**~~ *Done, and the finding was overstated.* The
+  manifest picked its dependency graph from
+  `FileManager.default.fileExists("Frameworks/VLCKit.xcframework")` — a
+  `.gitignore`d path — so untracked state could change the resolved graph. That
+  part was real and is fixed: selection is now an explicit
+  `PLAYERKIT_LOCAL_VLCKIT=1` opt-in that fails loudly if the artifact is absent,
+  so every clean checkout, CI runner and consumer resolves identically.
+
+  But the claim that it decides *which of two macOS VLC backends compiles* does
+  not hold today. The published `VLCKit.xcframework` ships `ios-arm64` and
+  `ios-arm64_x86_64-simulator` only — **no macOS slice** — so `canImport(VLCKit)`
+  is false on macOS in both configurations and `DesktopVLCPlayerWrapper` compiles
+  either way. Verified by building both and finding
+  `DesktopVLCPlayerWrapper.swift.o` in each. The hazard is *latent*: it needs a
+  locally built xcframework carrying a macOS slice, which nobody publishes.
+  Consequently a CI matrix over "both VLC configurations" is not currently
+  buildable — there is no second configuration to build.
 - **Artifact supply chain.** VLCKit and GoogleCast resolve from release assets on
   a personal GitHub account even when the package is consumed from GitLab.
 - **CI matrix** on whichever host becomes canonical; **repo hygiene**, including

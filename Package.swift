@@ -2,8 +2,37 @@
 import Foundation
 import PackageDescription
 
+// Which VLCKit artifact to build against.
+//
+// This used to be decided by probing for `Frameworks/VLCKit.xcframework`, a
+// path that `.gitignore` excludes. A manifest that reads untracked state is not
+// reproducible: a stray checkout artefact silently changed the dependency graph,
+// and `swift package resolve` could produce different results on two machines
+// at the same commit.
+//
+// It is now an explicit opt-in. Unset — which is every clean checkout, every CI
+// runner and every consumer — resolves the published artifact, so the graph is
+// identical everywhere.
+//
+// Note what this does NOT currently do. The published VLCKit.xcframework ships
+// `ios-arm64` and `ios-arm64_x86_64-simulator` only, with no macOS slice, so
+// `canImport(VLCKit)` is false on macOS either way and `DesktopVLCPlayerWrapper`
+// (`#if os(macOS) && !canImport(VLCKit)`) compiles in both configurations —
+// verified by finding DesktopVLCPlayerWrapper.swift.o in both builds. The
+// hazard is latent rather than active: drop in a locally built xcframework that
+// *does* carry a macOS slice and the macOS backend flips, taking the public
+// `VLCPlayerWrapper` typealias with it.
 let localVLCKitPath = "Frameworks/VLCKit.xcframework"
-let hasLocalVLCKit = FileManager.default.fileExists(atPath: localVLCKitPath)
+let wantsLocalVLCKit = ProcessInfo.processInfo.environment["PLAYERKIT_LOCAL_VLCKIT"] == "1"
+let hasLocalVLCKit: Bool = {
+    guard wantsLocalVLCKit else { return false }
+    guard FileManager.default.fileExists(atPath: localVLCKitPath) else {
+        // Fail loudly rather than silently falling back to the published
+        // artifact, which would build a different package than was asked for.
+        fatalError("PLAYERKIT_LOCAL_VLCKIT=1 but \(localVLCKitPath) is missing.")
+    }
+    return true
+}()
 
 let vlcBinaryTarget: Target = hasLocalVLCKit
     ? .binaryTarget(
