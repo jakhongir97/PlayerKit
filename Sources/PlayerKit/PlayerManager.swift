@@ -233,26 +233,26 @@ public class PlayerManager: ObservableObject {
     #endif
     
     // State management
-    @Published var isPlaying: Bool = false {
+    @Published public internal(set) var isPlaying: Bool = false {
         didSet {
             refreshPlaybackWakeLock()
         }
     }
-    @Published var isBuffering: Bool = false {
+    @Published public internal(set) var isBuffering: Bool = false {
         didSet {
             refreshPlaybackWakeLock()
         }
     }
     @Published public private(set) var isPlaybackRequested: Bool = false
     @Published public var currentTime: Double = 0
-    @Published var duration: Double = 0
-    @Published var bufferedDuration: Double = 0
+    @Published public internal(set) var duration: Double = 0
+    @Published public internal(set) var bufferedDuration: Double = 0
     @Published public private(set) var playbackSpeed: Float = 1.0
     @Published public var suppressesHeuristicSkipButtons: Bool = false
     @Published public var heuristicSkipButtonTitles = HeuristicSkipButtonTitles()
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
-    @Published var isPiPActive: Bool = false
+    @Published public internal(set) var isPiPActive: Bool = false
     @Published var isCastingAvailable: Bool = false
     @Published var areControlsVisible: Bool = true
     @Published var isLocked: Bool = false {
@@ -263,10 +263,10 @@ public class PlayerManager: ObservableObject {
     @Published var userInteracting: Bool = false
     
     // Track identifiers
-    @Published var selectedAudio: TrackInfo?
-    @Published var selectedSubtitle: TrackInfo?
-    @Published var availableAudioTracks: [TrackInfo] = []
-    @Published var availableSubtitles: [TrackInfo] = []
+    @Published public internal(set) var selectedAudio: TrackInfo?
+    @Published public internal(set) var selectedSubtitle: TrackInfo?
+    @Published public internal(set) var availableAudioTracks: [TrackInfo] = []
+    @Published public internal(set) var availableSubtitles: [TrackInfo] = []
     private var savedAudio: TrackInfo?
     private var savedSubtitle: TrackInfo?
     
@@ -332,7 +332,7 @@ public class PlayerManager: ObservableObject {
             }
         }
     }
-    @Published var isVideoEnded: Bool = false {
+    @Published public internal(set) var isVideoEnded: Bool = false {
         didSet {
             refreshPlaybackWakeLock()
         }
