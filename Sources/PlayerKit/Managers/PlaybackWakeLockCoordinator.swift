@@ -18,9 +18,32 @@ final class PlaybackWakeLockCoordinator {
     private var isHoldingDisplaySleepAssertion = false
     #endif
 
+    let ownership = SharedResourceOwnership()
+
+    /// How many times the wake lock has actually been dropped, i.e. how many
+    /// times the last remaining owner let go.
+    private(set) var resourceReleaseCount = 0
+
     private init() {}
 
-    func setPlaybackActive(_ isActive: Bool) {
+    /// Records whether `owner` needs the screen kept awake, and acquires or
+    /// drops the process-wide override accordingly.
+    ///
+    /// The override is held while *any* owner wants it. This used to store a
+    /// single boolean, so a second player pausing would let the screen sleep
+    /// under a first player that was still playing.
+    func setPlaybackActive(_ isActive: Bool, for owner: AnyObject) {
+        if isActive {
+            guard ownership.addOwner(owner) else { return }
+        } else {
+            guard ownership.removeOwner(owner) else { return }
+            resourceReleaseCount += 1
+        }
+
+        applyPlaybackActive(isActive)
+    }
+
+    private func applyPlaybackActive(_ isActive: Bool) {
         #if os(iOS)
         if isActive {
             guard !isHoldingIdleTimerOverride else { return }

@@ -349,6 +349,165 @@ final class AuditRegressionTests: XCTestCase {
         }
     }
 
+    // MARK: - Refcounted process-global resources
+
+    /// Two holders, two releases, one actual release of the resource. This is
+    /// the property `tearDown()` needed and did not have: it deactivated the
+    /// audio session, dropped the wake lock and detached the controller
+    /// handlers unconditionally, so dismissing an inline trailer would have
+    /// taken all three away from a main player that was still on screen.
+    func testResourceIsReleasedOnlyWhenTheLastOwnerLetsGo() {
+        let ownership = SharedResourceOwnership()
+        let first = NSObject()
+        let second = NSObject()
+
+        XCTAssertTrue(ownership.addOwner(first), "first owner must acquire")
+        XCTAssertFalse(ownership.addOwner(second), "second owner must not re-acquire")
+        XCTAssertEqual(ownership.ownerCount, 2)
+
+        XCTAssertFalse(ownership.removeOwner(first), "resource still has a holder")
+        XCTAssertTrue(ownership.isHeld)
+
+        XCTAssertTrue(ownership.removeOwner(second), "last owner must release")
+        XCTAssertFalse(ownership.isHeld)
+        XCTAssertEqual(ownership.ownerCount, 0)
+    }
+
+    /// The acquisition sites are idempotent by design, so a repeated acquire
+    /// must not require a matching extra release — which is what a plain
+    /// integer count would have demanded.
+    func testRepeatedAcquireByTheSameOwnerStillReleasesOnFirstRelease() {
+        let ownership = SharedResourceOwnership()
+        let owner = NSObject()
+
+        XCTAssertTrue(ownership.addOwner(owner))
+        XCTAssertFalse(ownership.addOwner(owner))
+        XCTAssertFalse(ownership.addOwner(owner))
+        XCTAssertEqual(ownership.ownerCount, 1)
+
+        XCTAssertTrue(ownership.removeOwner(owner), "one release must be enough")
+        XCTAssertFalse(ownership.isHeld)
+    }
+
+    /// `tearDown()` is documented as idempotent, so a repeated release must not
+    /// report a second release — which a plain integer count would have done by
+    /// going negative.
+    func testRepeatedReleaseDoesNotReleaseTwice() {
+        let ownership = SharedResourceOwnership()
+        let owner = NSObject()
+        ownership.addOwner(owner)
+
+        XCTAssertTrue(ownership.removeOwner(owner))
+        XCTAssertFalse(ownership.removeOwner(owner), "second release is a no-op")
+        XCTAssertFalse(ownership.removeOwner(NSObject()), "unknown owner is a no-op")
+        XCTAssertEqual(ownership.ownerCount, 0)
+    }
+
+    /// The audio session itself, through the manager rather than the primitive.
+    func testAudioSessionIsDeactivatedOnceForTwoOwners() {
+        let manager = AudioSessionManager.shared
+        manager.ownership.removeAllOwners()
+        let releasesBefore = manager.resourceReleaseCount
+
+        let first = NSObject()
+        let second = NSObject()
+        manager.configureAudioSession(for: first)
+        manager.configureAudioSession(for: second)
+        XCTAssertTrue(manager.isSessionActive)
+
+        manager.deactivateAudioSession(for: first)
+        XCTAssertTrue(
+            manager.isSessionActive,
+            "the session must survive one of two owners going away"
+        )
+        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore)
+
+        manager.deactivateAudioSession(for: second)
+        XCTAssertFalse(manager.isSessionActive)
+        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore + 1)
+
+        // Idempotent teardown must not deactivate a session someone else took.
+        manager.deactivateAudioSession(for: second)
+        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore + 1)
+    }
+
+    func testControllerHandlersAreReleasedOnceForTwoOwners() {
+        let manager = GameControllerManager.shared
+        manager.ownership.removeAllOwners()
+        let releasesBefore = manager.resourceReleaseCount
+
+        let first = NSObject()
+        let second = NSObject()
+        manager.attachControllerHandlers(for: first)
+        manager.attachControllerHandlers(for: second)
+        XCTAssertEqual(manager.ownership.ownerCount, 2)
+
+        manager.releaseControllerHandlers(for: first)
+        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore)
+        XCTAssertTrue(manager.ownership.isHeld)
+
+        manager.releaseControllerHandlers(for: second)
+        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore + 1)
+        XCTAssertFalse(manager.ownership.isHeld)
+
+        manager.releaseControllerHandlers(for: second)
+        XCTAssertEqual(manager.resourceReleaseCount, releasesBefore + 1)
+    }
+
+    @MainActor
+    func testWakeLockIsDroppedOnceForTwoOwners() {
+        let coordinator = PlaybackWakeLockCoordinator.shared
+        coordinator.ownership.removeAllOwners()
+        let releasesBefore = coordinator.resourceReleaseCount
+
+        let first = NSObject()
+        let second = NSObject()
+        coordinator.setPlaybackActive(true, for: first)
+        coordinator.setPlaybackActive(true, for: second)
+        XCTAssertEqual(coordinator.ownership.ownerCount, 2)
+
+        coordinator.setPlaybackActive(false, for: first)
+        XCTAssertEqual(
+            coordinator.resourceReleaseCount,
+            releasesBefore,
+            "one player pausing must not let the screen sleep under another"
+        )
+        XCTAssertTrue(coordinator.ownership.isHeld)
+
+        coordinator.setPlaybackActive(false, for: second)
+        XCTAssertEqual(coordinator.resourceReleaseCount, releasesBefore + 1)
+        XCTAssertFalse(coordinator.ownership.isHeld)
+
+        coordinator.setPlaybackActive(false, for: second)
+        XCTAssertEqual(coordinator.resourceReleaseCount, releasesBefore + 1)
+    }
+
+    /// `PlayerManager.tearDown()` must hand back exactly what it took, and must
+    /// not hand back what another owner is still holding.
+    func testTearDownDoesNotReleaseAnotherOwnersAudioSession() {
+        let audio = AudioSessionManager.shared
+        audio.ownership.removeAllOwners()
+
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+
+        let otherPlayer = NSObject()
+        audio.configureAudioSession(for: otherPlayer)
+        audio.configureAudioSession(for: manager)
+        XCTAssertEqual(audio.ownership.ownerCount, 2)
+
+        manager.tearDown()
+
+        XCTAssertTrue(
+            audio.isSessionActive,
+            "tearing one player down must leave the other player's session active"
+        )
+        XCTAssertEqual(audio.ownership.ownerCount, 1)
+
+        audio.deactivateAudioSession(for: otherPlayer)
+        XCTAssertFalse(audio.isSessionActive)
+    }
+
     // MARK: - Dub language selection
 
     /// The built-in Start button forced the target language to Uzbek, which

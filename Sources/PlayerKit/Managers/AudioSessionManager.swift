@@ -13,15 +13,27 @@ class AudioSessionManager: NSObject {
     /// `.shouldResume` resumed playback the user had deliberately stopped.
     var isPlayingProvider: (() -> Bool)?
 
-    private var isSessionActive = false
+    private(set) var isSessionActive = false
     private var wasPlayingWhenInterrupted = false
+
+    let ownership = SharedResourceOwnership()
+
+    /// How many times the audio session has actually been handed back, i.e.
+    /// how many times the last remaining owner let go. A second player
+    /// releasing while a first still holds the session must not move this.
+    private(set) var resourceReleaseCount = 0
 
     private override init() {
         super.init()
         setupNotifications()
     }
 
-    func configureAudioSession() {
+    /// Activates the shared audio session on behalf of `owner`.
+    ///
+    /// `AVAudioSession` is process-global, so the session stays active until
+    /// every owner has released it — see `deactivateAudioSession(for:)`.
+    func configureAudioSession(for owner: AnyObject) {
+        ownership.addOwner(owner)
         do {
             let session = AVAudioSession.sharedInstance()
 
@@ -34,16 +46,22 @@ class AudioSessionManager: NSObject {
         }
     }
 
-    /// Releases the shared audio session back to the rest of the system.
+    /// Releases `owner`'s claim on the shared audio session.
     ///
-    /// Previously the session was activated on first playback and never
-    /// deactivated, so other apps stayed interrupted for the remaining lifetime
-    /// of the host process even after the player was dismissed.
-    /// `.notifyOthersOnDeactivation` is what lets a backgrounded music app
-    /// resume rather than staying silently stopped.
-    func deactivateAudioSession() {
+    /// The session is only handed back to the rest of the system once the last
+    /// owner has released it. Deactivating unconditionally is correct for one
+    /// player and wrong for two: dismissing an inline trailer would silence the
+    /// main player and hand the session to whatever else was waiting for it.
+    ///
+    /// Before that, the session was activated on first playback and never
+    /// deactivated at all, so other apps stayed interrupted for the remaining
+    /// lifetime of the host process. `.notifyOthersOnDeactivation` is what lets
+    /// a backgrounded music app resume rather than staying silently stopped.
+    func deactivateAudioSession(for owner: AnyObject) {
+        guard ownership.removeOwner(owner) else { return }
         guard isSessionActive else { return }
         isSessionActive = false
+        resourceReleaseCount += 1
         do {
             try AVAudioSession.sharedInstance().setActive(
                 false,
@@ -125,10 +143,28 @@ final class AudioSessionManager {
     var onResumeRequested: (() -> Void)?
     var isPlayingProvider: (() -> Bool)?
 
+    private(set) var isSessionActive = false
+
+    let ownership = SharedResourceOwnership()
+
+    /// See the iOS declaration. macOS performs no session work, but it tracks
+    /// the same ownership transitions so the refcounting contract is identical
+    /// — and observable — on both platforms.
+    private(set) var resourceReleaseCount = 0
+
     private init() {}
 
     // macOS uses default system audio handling.
-    func configureAudioSession() {}
-    func deactivateAudioSession() {}
+    func configureAudioSession(for owner: AnyObject) {
+        ownership.addOwner(owner)
+        isSessionActive = true
+    }
+
+    func deactivateAudioSession(for owner: AnyObject) {
+        guard ownership.removeOwner(owner) else { return }
+        guard isSessionActive else { return }
+        isSessionActive = false
+        resourceReleaseCount += 1
+    }
 }
 #endif

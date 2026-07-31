@@ -19,6 +19,12 @@ final class GameControllerManager: ObservableObject {
     private var rightBumperScrubEndWorkItem: DispatchWorkItem?
     private let delayInSeconds: Double = 1.0
 
+    let ownership = SharedResourceOwnership()
+
+    /// How many times the controller handlers have actually been detached,
+    /// i.e. how many times the last remaining owner let go.
+    private(set) var resourceReleaseCount = 0
+
     private init() {
         NotificationCenter.default.addObserver(self, selector: #selector(controllerDidConnect(_:)), name: .GCControllerDidConnect, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(controllerDidDisconnect(_:)), name: .GCControllerDidDisconnect, object: nil)
@@ -46,13 +52,20 @@ final class GameControllerManager: ObservableObject {
         isAnyControllerConnected = !controllers.isEmpty
     }
 
-    /// Detaches every handler PlayerKit installed.
+    /// Detaches every handler PlayerKit installed, on behalf of `owner`.
     ///
     /// `GCController` instances are shared process-wide, so assigning these
     /// handlers overwrites whatever the host app had bound to the same buttons.
     /// Without this, dismissing the player left PlayerKit owning the host's
     /// controller input for the remaining lifetime of the process.
-    func releaseControllerHandlers() {
+    ///
+    /// Handlers stay attached until the last owner releases them: detaching
+    /// unconditionally would take controller input away from a player that is
+    /// still on screen as soon as any other player went away.
+    func releaseControllerHandlers(for owner: AnyObject) {
+        guard ownership.removeOwner(owner) else { return }
+        resourceReleaseCount += 1
+
         for controller in controllers {
             guard let gamepad = controller.extendedGamepad else { continue }
             gamepad.buttonA.pressedChangedHandler = nil
@@ -71,8 +84,10 @@ final class GameControllerManager: ObservableObject {
         rightBumperScrubEndWorkItem = nil
     }
 
-    /// Re-attaches handlers for every currently connected controller.
-    func attachControllerHandlers() {
+    /// Re-attaches handlers for every currently connected controller, on behalf
+    /// of `owner`.
+    func attachControllerHandlers(for owner: AnyObject) {
+        ownership.addOwner(owner)
         for controller in GCController.controllers() {
             configureController(controller)
         }

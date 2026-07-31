@@ -3623,13 +3623,15 @@ extension PlayerManager {
         isPlaybackWakeLockHeld = shouldHoldWakeLock
 
         if Thread.isMainThread {
-            Task { @MainActor in
-                PlaybackWakeLockCoordinator.shared.setPlaybackActive(shouldHoldWakeLock)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                PlaybackWakeLockCoordinator.shared.setPlaybackActive(shouldHoldWakeLock, for: self)
             }
         } else {
-            DispatchQueue.main.async {
-                Task { @MainActor in
-                    PlaybackWakeLockCoordinator.shared.setPlaybackActive(shouldHoldWakeLock)
+            DispatchQueue.main.async { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    PlaybackWakeLockCoordinator.shared.setPlaybackActive(shouldHoldWakeLock, for: self)
                 }
             }
         }
@@ -3641,8 +3643,8 @@ extension PlayerManager {
         guard !integrationsConfigured else { return }
         configureAudioSessionCallbacks()
         configureCastCallbacks()
-        AudioSessionManager.shared.configureAudioSession()
-        GameControllerManager.shared.attachControllerHandlers()
+        AudioSessionManager.shared.configureAudioSession(for: self)
+        GameControllerManager.shared.attachControllerHandlers(for: self)
         subscribeToCastState()
         subscribeToGameControllerEvents()
         integrationsConfigured = true
@@ -3709,12 +3711,13 @@ extension PlayerManager {
         resetPlayer(clearMediaContext: true, clearDubWorkflow: true)
 
         gestureManager.restoreSystemBrightness()
-        GameControllerManager.shared.releaseControllerHandlers()
+        GameControllerManager.shared.releaseControllerHandlers(for: self)
         isPlaybackWakeLockHeld = false
-        Task { @MainActor in
-            PlaybackWakeLockCoordinator.shared.setPlaybackActive(false)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            PlaybackWakeLockCoordinator.shared.setPlaybackActive(false, for: self)
         }
-        AudioSessionManager.shared.deactivateAudioSession()
+        AudioSessionManager.shared.deactivateAudioSession(for: self)
 
         // Let the integrations rebuild on the next play so a torn-down manager
         // can be reused rather than being permanently inert.
