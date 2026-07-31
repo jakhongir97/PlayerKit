@@ -6,6 +6,20 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ## [Unreleased]
 
+### Added
+- Lock-screen and Control Center support: `PlayerManager.isNowPlayingEnabled`
+  publishes now-playing metadata and installs the system transport controls
+  (play/pause/toggle, 15s skip, scrub, next/previous), and
+  `PlayerManager.nowPlayingArtwork` supplies the artwork. Off by default.
+  `MPRemoteCommandCenter` and `MPNowPlayingInfoCenter` are process-global, so
+  the host's prior state is snapshotted and restored, and each command is
+  enabled only when it would do something. Live streams publish no duration and
+  set `MPNowPlayingInfoPropertyIsLiveStream`.
+- `PlayerManager.isBackgroundPlaybackEnabled` lets audio continue when the app
+  is backgrounded. Off by default, because pausing in the background is part of
+  PlayerKit's capture-protection posture. Requires `audio` in the host app's
+  `UIBackgroundModes`, which a package cannot declare — see the README.
+
 ### Removed
 - **Breaking:** the Dubber live-dubbing integration is removed. It had been
   inert behind `PlayerKitFeatureFlags.isDubberEnabled = false`, and that flag

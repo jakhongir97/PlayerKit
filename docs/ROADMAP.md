@@ -47,12 +47,20 @@ leakage. The `Player.playerManager` escape hatch exists precisely because the
 facade cannot do the job. A library you cannot ask "are you playing?" is not a
 library you promote to primary.
 
-**c. There is no background or lock-screen support whatsoever.** `grep` for
+**c. There was no background or lock-screen support whatsoever.** `grep` for
 `MPNowPlayingInfoCenter`, `MPRemoteCommandCenter`, `scenePhase` and
-`didEnterBackground` returns **zero hits across ~23,000 lines**. No now-playing
-metadata, no lock-screen controls, no remote commands, no background transition
-handling. For a primary video player this is table stakes, and it is missing
-entirely.
+`didEnterBackground` returned **zero hits across ~23,000 lines**. For a primary
+video player this is table stakes, and it was missing entirely.
+
+> **Closed.** `NowPlayingCoordinator` publishes lock-screen / Control Center
+> metadata and installs the system transport controls, refcounted through
+> `SharedResourceOwnership` like the other three process-global resources —
+> `MPRemoteCommandCenter` is the same hazard as `GCController`, with the added
+> trap that `removeTarget(nil)` would remove the *host's* targets, so every
+> token is retained and removed individually. Both `isNowPlayingEnabled` and
+> `isBackgroundPlaybackEnabled` are opt-in and default off. Background audio
+> additionally needs `audio` in the host app's `UIBackgroundModes`, which a
+> package cannot declare — documented in the README rather than worked around.
 
 **d. Live TV is greenfield, and last week's live-seek fix was one layer of
 five.** There is no channel, EPG, programme or DVR concept anywhere. The fix to
@@ -181,9 +189,10 @@ mostly API and platform integration, not architecture.*
   `isPiPActive` and `isVideoEnded` are now public read-only. Still outstanding:
   the missing `mute`, autoplay control, and track enumeration.
 - **Introduce `PlayerConfiguration`.** There is no configuration type today.
-- **Background, lock screen, remote commands.** `MPNowPlayingInfoCenter`,
-  `MPRemoteCommandCenter`, background audio session handling, scene-phase
-  transitions. Entirely absent today.
+- ~~**Background, lock screen, remote commands.**~~ *Done* — now-playing
+  metadata, the six remote commands, and an opt-in background-playback policy.
+  Scene-phase transition handling is still open, but `AVPlayer`'s own
+  background policy covers the case that mattered.
 - ~~**Fix live end-to-end** — slider range, scrub paths, gesture clamping — so
   finding (d) is closed at every layer.~~ *Done in Sprint 1.* Note this closes
   the *clamping*, not live TV: the timeline model is still Phase 3 and channels

@@ -58,6 +58,51 @@ struct ContentView: View {
 
 You can also use `PlayerView(playerItem:)` directly if you prefer a view-first API.
 
+## Lock Screen, Control Center and Background Audio
+
+Both are **off by default** and additive — existing hosts are unaffected.
+
+```swift
+player.playerManager.isNowPlayingEnabled = true
+player.playerManager.nowPlayingArtwork = UIImage(named: "poster")
+```
+
+`isNowPlayingEnabled` publishes title, subtitle, duration and elapsed time to
+the lock screen and Control Center, and installs the system transport controls
+(play, pause, toggle, 15-second skip, scrub, next/previous). `MPRemoteCommandCenter`
+and `MPNowPlayingInfoCenter` are process-global, so PlayerKit snapshots whatever
+the host had and restores it when the player goes away. Controls are enabled
+only when they would do something: the scrubber follows the seekable window, and
+next/previous follow `canPlayNextItem` / `canPlayPreviousItem`.
+
+Live streams publish no total duration and set `MPNowPlayingInfoPropertyIsLiveStream`,
+so the lock screen hides the scrubber rather than drawing a zero-length one.
+
+PlayerKit does not download `PlayerItem.posterUrl` for artwork — that would mean
+owning an image cache and a network policy. Supply a `UIImage`/`NSImage` via
+`nowPlayingArtwork`.
+
+### Background audio
+
+```swift
+player.playerManager.isBackgroundPlaybackEnabled = true
+```
+
+**This alone is not enough.** Background audio also needs the `audio` background
+mode in *your app's* `Info.plist`, which a package cannot declare for you:
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+    <string>audio</string>
+</array>
+```
+
+Note that PlayerKit configures `AVPlayer` to pause in the background as part of
+its capture-protection posture, alongside disabling external playback. Enabling
+background playback is a deliberate relaxation of that posture. It affects the
+AVFoundation backend only; the VLC backends are unaffected.
+
 ## Versioning and Stability
 
 PlayerKit follows Semantic Versioning:
