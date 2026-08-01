@@ -28,12 +28,19 @@ public struct PlayerView: View {
     public var body: some View {
         ZStack {
             // Full-screen PlayerRenderingView
+            // Keyed on the player *instance*, not on its type. A new wrapper —
+            // and so a new player view — is built by every `resetPlayer` +
+            // `setupPlayer` pair, including ones that keep the same backend
+            // (`setPlayer()` with the current type, `ensurePlayerConfigured`).
+            // Keying on the type meant SwiftUI held the previous backend's view
+            // through those, and only picked the new one up if an unrelated
+            // publish happened to drive `updateUIView` afterwards.
             PlayerRenderingView(playerManager: playerManager)
-                .id(playerManager.selectedPlayerType)
+                .id(playerManager.playerGeneration)
                 .edgesIgnoringSafeArea(.all)
 
-            // GestureView for handling gestures
-            GestureView(gestureManager: playerManager.gestureManager)
+            // The gesture surface: touch host, HUD, affordances and coaching.
+            GestureSurface(manager: playerManager.gestureManager)
                 .zIndex(0)
                 .edgesIgnoringSafeArea(.all)
             

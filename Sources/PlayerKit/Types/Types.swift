@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 public enum PlayerType: String, CaseIterable, Identifiable, Codable {
@@ -71,19 +72,28 @@ enum SeekDirection: CustomStringConvertible {
     }
 }
 
-enum GestureStates: CustomStringConvertible {
-    case idle
-    case singleTapPending
-    case multipleTapping
+/// Everything the double-tap seek overlay needs to draw itself.
+///
+/// One value describes a whole seek session: the side it runs on, how much has
+/// been skipped so far, and where the most recent tap landed so the ring can
+/// open from the fingertip. `tapID` counts taps within the session, and is what
+/// replays the per-tap animations without rebuilding the readout around them —
+/// a counter rather than a `UUID`, since it only has to differ from the tap
+/// before it, and an `Int` compares without touching the random pool.
+struct DoubleTapSeekOverlayState: Equatable {
+    let direction: SeekDirection
+    /// Seconds accumulated across the session, e.g. 10, 20, 30…
+    let seconds: Double
+    /// Where the tap landed, as a fraction of the surface in each axis.
+    ///
+    /// Stored as a unit point rather than raw points so a rotation mid-session
+    /// cannot strand the ripple off-screen: the origin was previously captured
+    /// against the pre-rotation size and then drawn against the new one.
+    let unitOrigin: CGPoint
+    let tapID: Int
 
-    var description: String {
-        switch self {
-        case .idle:
-            return "idle"
-        case .singleTapPending:
-            return "singleTapPending"
-        case .multipleTapping:
-            return "multipleTapping"
-        }
+    /// The draw-time position for a given surface.
+    func origin(in size: CGSize) -> CGPoint {
+        CGPoint(x: unitOrigin.x * size.width, y: unitOrigin.y * size.height)
     }
 }

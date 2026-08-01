@@ -34,8 +34,14 @@ class ControlVisibilityManager {
     }
 
     /// Starts the auto-hide timer, which hides controls after the specified duration
+    ///
+    /// Suppressed entirely under VoiceOver, Switch Control and Guided Access:
+    /// chrome that disappears on a timer is unusable when navigating by focus,
+    /// because the element you were about to reach stops existing mid-scan.
     private func startAutoHideTimer() {
         stopAutoHideTimer()  // Ensure no existing timer is running
+
+        guard !AssistiveTechnologyState.current.suppressesAutoHide else { return }
 
         autoHideTimer = Timer.publish(every: visibilityDuration, on: .main, in: .common)
             .autoconnect()

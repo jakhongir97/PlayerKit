@@ -399,13 +399,29 @@ and 7 still need a human and are the critical path.
    and `isVideoEnded`, all as `public internal(set)`. `TrackInfo` gained
    `Identifiable`/`Equatable`/`Hashable`/`Sendable`, without which the track
    lists are visible but unusable from a host.
-7. ☐ **Ten minutes on a device**: confirm whether the volume/brightness swipe
-   fires at all. [GestureView.swift:12-14](../Sources/PlayerKit/UI%20Controls/Views/GestureView.swift#L12)
-   chains three `.gesture()` modifiers on one view; this cannot be settled by
-   reading. The specific suspicion: `tapGesture` is a
-   `DragGesture(minimumDistance: 0)` attached last, and it recognises on
-   touch-down, so it plausibly pre-empts the `DragGesture()` that drives
-   volume and brightness.
+7. ☑ **The gesture layer was rewritten, and the writes were the real bug.**
+   The arbitration suspicion was correct but minor; the reason users reported
+   that "swipes do nothing" was three separate defects underneath it.
+   `FeedbackView` had been deleted with nothing replacing it, so volume and
+   brightness produced *no on-screen feedback whatsoever*. The swipe region was
+   the middle third of the height intersected with the outer thirds of the
+   width — about a fifth of the surface — while taps used a different partition
+   entirely, so the two disagreed between x=0.33w and x=0.40w. And the volume
+   write went through an `MPVolumeView` that was never added to a view
+   hierarchy, which reaches nothing *and* leaves iOS drawing its own HUD over
+   the video.
+
+   The layer is now `Sources/PlayerKit/Gestures/`: a `TouchClassifier` that
+   resolves a touch once at the slop threshold and owns it to completion, a
+   `TapSeekMachine` extracted from the old manager with seven correctness
+   fixes, effectors behind `OutputLevelControlling` with real iOS *and* macOS
+   implementations, and a UIKit/AppKit touch host that receives the
+   `touchesCancelled` a `DragGesture` never delivered. One `GestureGeometry`
+   answers "where am I" for the classifier, the HUD, the affordance and the
+   coach, so a hint can no longer point at a region the router does not honour.
+
+   Still worth ten minutes on a device: the haptic grammar, the brightness
+   two-segment mapping against real auto-brightness, and VLCKit's volume scale.
 8. ☑ **Turn on `-strict-concurrency` as warnings** in `Package.swift` to stop
    the 291 growing while Phase 2 is scheduled. Verified against a real consumer
    package that `swiftSettings` do not inherit, so a host sees no new

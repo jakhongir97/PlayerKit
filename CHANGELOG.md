@@ -7,6 +7,67 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ## [Unreleased]
 
 ### Added
+- Reworked gesture layer. The volume and brightness swipes now cover a full half
+  of the picture at full height instead of roughly a fifth of the surface, are
+  axis-locked, and have an on-screen HUD again — `FeedbackView` had been deleted
+  with nothing replacing it, so those gestures were producing no feedback at all.
+- New gestures: horizontal drag-to-scrub with fine-scrub tiers, long-press for
+  2× speed, two-finger tap for play/pause, and on macOS a scroll wheel and
+  keyboard shortcuts — the first working desktop path to volume.
+- First-run gesture walkthrough with a ghost fingertip beside each rail, plus a
+  resting affordance, arm-on-contact probing and a confusion nudge. Re-runnable
+  via `PlayerManager.showGestureCoach()`; configurable through
+  `gestureConfiguration.coachPolicy`.
+- `PlayerManager.gestureConfiguration`, `.gestureCapabilities`, `.volume`,
+  `.skipForward()`, `.skipBackward()`, `.nudgeVolume(_:)`, `.nudgeBrightness(_:)`
+  and `Notification.Name.PlayerKitGestureCoachingDidFinish`.
+- Visible ±10s buttons in the transport row, and adjustable Volume/Brightness
+  accessibility elements — those gestures previously had no non-gesture path at
+  all.
+
+### Fixed
+- Reversing a double-tap skip re-read the live playhead, which on every real
+  backend still reports the pre-seek position because seeks are asynchronous. A
+  back tap after three fast forward taps from 100s landed at 90 while the overlay
+  read "10 seconds" — a 40-second regression. It now re-bases on the last target
+  actually issued.
+- A double tap on a stream with no seekable window hid the entire interface and
+  never put it back.
+- A skip already hard against the end of the seekable window kept incrementing
+  the readout for movement it had not delivered.
+- The volume gesture wrote through an `MPVolumeView` that was never added to a
+  view hierarchy, so the write reached nothing and iOS drew its own volume HUD
+  over the video. Volume now drives the backend by default (`volumeTarget`
+  opt-in for system volume), and an `MPVolumeView` is mounted purely to suppress
+  the system HUD.
+- A seek session could outlive the item it was opened on, so one tap after an
+  episode change seeked the new item to the old item's position.
+- Engaging a swipe jumped the level by a slop's worth, because the total
+  translation was used rather than the travel since engagement.
+- A gesture stolen by a system edge swipe, Notification Centre or a call banner
+  left a half-applied change behind; the touch host now receives a real cancel.
+- Gestures blocked by the lock now report themselves instead of failing silently.
+- **The lock was cosmetic.** Locking the player set every control to
+  `opacity(0)` but left the whole chrome inside `allowsHitTesting(true)`, so an
+  invisible play/pause button, close button and scrubber stayed fully tappable
+  and VoiceOver still read them out. Visibility, hit testing and accessibility
+  are now driven by one predicate per control.
+- Gesture capabilities were computed once when the view reached its window,
+  before any backend existed, so the volume half fell through to brightness —
+  and with autoplay off nothing ever recomputed them, so the volume gesture
+  never arrived at all.
+- Auto-hide no longer runs under VoiceOver, Switch Control or Guided Access.
+
+### Changed
+- **Brightness and volume swap sides**: brightness is now the leading half,
+  volume the trailing half, matching VLC, Infuse and MX Player. Set
+  `gestureConfiguration.railMapping = .volumeLeading` to keep the old
+  arrangement.
+- The brightness gesture pins the panel at 8% and fades a compositing scrim
+  below that, rather than driving the panel to black.
+- `DoubleTapSeekOverlayState` stores a unit origin rather than a raw point, so
+  the ripple survives a rotation.
+
 - Lock-screen and Control Center support: `PlayerManager.isNowPlayingEnabled`
   publishes now-playing metadata and installs the system transport controls
   (play/pause/toggle, 15s skip, scrub, next/previous), and

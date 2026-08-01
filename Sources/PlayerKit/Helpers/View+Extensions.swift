@@ -121,6 +121,18 @@ public extension View {
     func monospacedDigitsCompat() -> some View {
         self.monospacedDigit()
     }
+
+    /// Letter spacing where the platform has it, unchanged text where it does
+    /// not. `tracking` arrived in iOS 16 / macOS 13, both above the deployment
+    /// target, and the difference is cosmetic — small caps set a little tighter.
+    @ViewBuilder
+    func trackingCompat(_ amount: CGFloat) -> some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            self.tracking(amount)
+        } else {
+            self
+        }
+    }
 }
 
 public extension View {

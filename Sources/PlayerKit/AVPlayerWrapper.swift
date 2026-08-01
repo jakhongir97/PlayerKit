@@ -941,6 +941,16 @@ extension AVPlayerWrapper: PlayerEventSource {}
 
 extension AVPlayerWrapper: PlayerSeekWindowReporting, PlayerMuteControlling {}
 
+extension AVPlayerWrapper: PlayerVolumeControlling {
+    /// Unity when there is no backing player yet, so a rail that opens before
+    /// the item loads starts at the top rather than at silence.
+    var outputVolume: Float { player?.volume ?? 1 }
+
+    func setOutputVolume(_ value: Float) {
+        player?.volume = min(max(value, 0), 1)
+    }
+}
+
 extension AVPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool {
         AVPictureInPictureController.isPictureInPictureSupported()

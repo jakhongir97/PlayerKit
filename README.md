@@ -11,7 +11,8 @@ It supports:
   `PlayerManager.isExternalPlaybackEnabled` (off by default, because PlayerKit
   configures `AVPlayer` for screen-capture protection)
 - Audio/subtitle track selection
-- Gesture-based seeking, brightness, and volume controls
+- A discoverable gesture layer: skip, volume, brightness, drag-to-scrub,
+  speed hold, zoom, with on-screen feedback and a first-run walkthrough
 - Accessibility labels, hints and an adjustable action on core playback controls
 
 Not yet supported: localization (all user-facing strings are English; see
@@ -129,6 +130,70 @@ substituting a different manager, and two simultaneous players are not supported
 Playback errors are surfaced through:
 - `PlayerManager.shared.lastError`
 - `Notification.Name.PlayerKitDidFail`, whose `object` is the `PlayerKitError`
+
+## Gestures
+
+Every gesture has on-screen feedback, an accessible equivalent, and a capability
+that reports honestly when the platform cannot perform it.
+
+| Gesture | Where | What it does |
+|---|---|---|
+| Single tap | anywhere | Show/hide the controls |
+| Double tap, then keep tapping | outer 40% of either side | Skip ∓10s, accumulating |
+| Vertical swipe | leading half, full height | Brightness |
+| Vertical swipe | trailing half, full height | Volume |
+| Horizontal drag | anywhere | Scrub, with fine-scrub tiers as you drag away from the axis |
+| Long press (0.45s) | anywhere | 2× speed while held |
+| Pinch | anywhere | Fit / fill |
+| Two-finger tap | anywhere | Play / pause |
+| Scroll wheel, arrow keys, space, `F` | macOS | The same actions |
+
+Rails are anchored to the half the finger starts in and stay there for the life
+of the touch, so a diagonal drag never switches control mid-gesture.
+
+### Teaching them
+
+Gestures nobody can see are gestures nobody uses. Four layers, cheapest first:
+
+1. **Resting affordance** — a quiet track on each side while the controls are up.
+2. **Arm on contact** — resting a finger on a half reveals that rail's current
+   value at 55% opacity after 0.12s, before any travel. Lifting without moving is
+   an ordinary tap that wrote nothing, so probing is free.
+3. **First-run walkthrough** — on the first frame of playback, a ghost fingertip
+   travels beside each rail with one line of copy. Under six seconds, no scrim,
+   no modal, no pause, zero taps required. Performing the gesture while it is on
+   screen hands the rail over live under the finger.
+4. **Confusion nudge** — a one-line tip after a detectably failed attempt: a
+   swipe that engaged and gave up, or three taps in one half by someone who has
+   never swiped there.
+
+Re-runnable at any time:
+
+```swift
+playerManager.showGestureCoach()   // ignores the "already seen" flag
+playerManager.resetGestureCoach()  // clears every persisted coaching flag
+```
+
+### Configuration
+
+```swift
+playerManager.gestureConfiguration.volumeTarget = .system       // default .player
+playerManager.gestureConfiguration.railMapping = .volumeLeading // default .brightnessLeading
+playerManager.gestureConfiguration.brightnessMode = .overlayOnly // never touch the panel
+playerManager.gestureConfiguration.coachPolicy = .disabled
+playerManager.gestureConfiguration.isScrubGestureEnabled = false
+```
+
+`playerManager.gestureCapabilities` reports what is actually available right now,
+so a host can hide an affordance rather than offer a control that does nothing.
+
+### Accessibility
+
+The walkthrough is never shown under VoiceOver, Switch Control or Voice Control —
+teaching a swipe to someone who cannot emit one teaches nothing. They get the
+equivalent instead: named actions on the video element, adjustable Volume and
+Brightness rotor elements, visible ±10s buttons in the transport row, and
+auto-hide is suppressed entirely so chrome does not vanish mid-scan.
 
 ## Lifecycle
 

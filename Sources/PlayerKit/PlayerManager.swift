@@ -57,6 +57,7 @@ public class PlayerManager: ObservableObject {
         didSet {
             refreshPlaybackWakeLock()
             refreshNowPlayingInfo()
+            notifyGesturePlaybackStartedIfNeeded()
         }
     }
     @Published public internal(set) var isBuffering: Bool = false {
@@ -83,7 +84,16 @@ public class PlayerManager: ObservableObject {
         }
     }
     @Published var userInteracting: Bool = false
-    
+    /// Mirrors `GestureManager`'s seek session, flipping only when one opens or
+    /// closes.
+    ///
+    /// The controls read it from here rather than observing the gesture manager
+    /// directly: that manager republishes on every tap so the overlay can move
+    /// its ripple, and `@ObservedObject` wakes its view for any change, so the
+    /// whole controls tree was re-evaluating several times a second for a flag
+    /// that changes twice a session.
+    @Published private(set) var isDoubleTapSeeking: Bool = false
+
     // Track identifiers
     @Published public internal(set) var selectedAudio: TrackInfo?
     @Published public internal(set) var selectedSubtitle: TrackInfo?
@@ -131,6 +141,7 @@ public class PlayerManager: ObservableObject {
             if isMediaReady {
                 refreshTrackInfo()
                 NotificationCenter.default.post(name: .PlayerKitMediaReady, object: nil)
+                notifyGesturePlaybackStartedIfNeeded()
             }
         }
     }
@@ -146,6 +157,7 @@ public class PlayerManager: ObservableObject {
     var trackManager: TrackManager?
     lazy var castManager = CastManager.shared
     let gestureManager = GestureManager()
+    private var didNotifyGesturePlaybackStart = false
     let orientationManager = OrientationManager()
     
     // Lazy initialization for controlVisibilityManager
@@ -156,10 +168,32 @@ public class PlayerManager: ObservableObject {
     private var currentProvider: PlayerProvider?
     public weak var currentPlayer: PlayerProtocol? {
         didSet {
+            // Bump *before* the other refreshes so anything they trigger already
+            // sees the new generation.
+            playerGeneration &+= 1
             refreshPlaybackWakeLock()
             refreshNowPlayingInfo()
         }
     }
+
+    /// Increments every time `currentPlayer` is swapped.
+    ///
+    /// `PlayerRenderingView` draws `currentPlayer?.getPlayerView()`, but
+    /// `currentPlayer` is a plain `weak var` — not `@Published` — so SwiftUI was
+    /// never told when the player it is rendering got replaced. The rendering
+    /// view had no declared dependency on the one thing it renders, and redrew
+    /// only because some *unrelated* property (`currentTime`, `isBuffering`)
+    /// happened to publish a moment later. Anything that swapped the player
+    /// while those went quiet left the previous backend's view on screen, which
+    /// is a black rectangle once its own player has been torn down — with audio
+    /// continuing from the new one.
+    ///
+    /// A counter rather than `ObjectIdentifier(player)`: identifiers are derived
+    /// from the address, so a freshly allocated wrapper can be handed the
+    /// address of the one just released and compare *equal* to it — the same
+    /// trap `PlayerKitWindowCaptureProtectionRegistry` documents. A counter
+    /// cannot collide.
+    @Published private(set) var playerGeneration: Int = 0
     private var lastPosition: Double = 0
     private var integrationsConfigured = false
     private var lastRuntimeStateDebugSummary: String?
@@ -414,6 +448,14 @@ public class PlayerManager: ObservableObject {
         )
         cancelPendingPlaybackResume()
         clearError()
+        // A seek session that outlives the item it was opened on is anchored to
+        // the *previous* playhead, so one further tap would seek the new item
+        // to the old item's position plus ten seconds. It also swallows the
+        // `userInteracted()` at the end of this method, because that guards on
+        // `isDoubleTapSeeking` — which is why a newly loaded episode could come
+        // up with the controls already hidden.
+        gestureManager.reset()
+        didNotifyGesturePlaybackStart = false
         isMediaReady = false
         isVideoEnded = false
         currentTime = max(lastPosition ?? 0, 0)
@@ -1221,9 +1263,63 @@ extension PlayerManager {
             self?.seekableRange
         }
         
+        // Routed through the visibility manager rather than writing
+        // `areControlsVisible` directly, so a gesture-driven hide also cancels
+        // the auto-hide timer and posts `.PlayerKitControlsHidden` like every
+        // other path that puts the controls away.
         gestureManager.onControlsVisibilityChange = { [weak self] isVisible in
-            self?.areControlsVisible = isVisible
+            guard let self else { return }
+            if isVisible {
+                self.controlVisibilityManager.showControls()
+            } else {
+                self.controlVisibilityManager.hideControls()
+            }
         }
+
+        gestureManager.onSeekSessionChange = { [weak self] isSeeking in
+            self?.isDoubleTapSeeking = isSeeking
+        }
+
+        // Feeds the deferred-toggle decision: only a tap that arrives while the
+        // chrome is *hidden* has its show held back, because that is the one
+        // that would otherwise wash the whole interface in and out behind a
+        // skip.
+        gestureManager.areControlsVisibleProvider = { [weak self] in
+            self?.areControlsVisible ?? true
+        }
+
+        // The volume rail writes the backend's own level rather than the
+        // device's. Resolved through `currentPlayer` on every read so switching
+        // backends mid-session cannot leave the rail driving a dead object.
+        gestureManager.volumeControl.backendProvider = { [weak self] in
+            self?.currentPlayer as? PlayerVolumeControlling
+        }
+
+        gestureManager.isPlayingProvider = { [weak self] in
+            self?.isPlaying ?? false
+        }
+        gestureManager.speedProvider = { [weak self] in
+            self?.playbackSpeed ?? 1
+        }
+        gestureManager.onSetSpeed = { [weak self] speed in
+            self?.setPlaybackSpeed(speed)
+        }
+        gestureManager.onTogglePlayback = { [weak self] in
+            guard let self else { return }
+            self.isPlaying ? self.pause() : self.play()
+        }
+    }
+
+    /// Fires once per presentation, on the first frame of real playback.
+    ///
+    /// Deliberately gated on `isPlaying && isMediaReady` rather than on view
+    /// appearance: the coached walkthrough teaches gestures over the picture, so
+    /// the first thing the user should see is video, not a lesson over a
+    /// spinner.
+    private func notifyGesturePlaybackStartedIfNeeded() {
+        guard !didNotifyGesturePlaybackStart, isPlaying, isMediaReady else { return }
+        didNotifyGesturePlaybackStart = true
+        gestureManager.playbackDidStart()
     }
     
     public func setGravityToDefault() {
@@ -1235,7 +1331,7 @@ extension PlayerManager {
 extension PlayerManager {
     /// Called whenever the user interacts, showing controls and resetting the auto-hide timer
     public func userInteracted() {
-        guard !gestureManager.isMultipleTapping else { return }
+        guard !gestureManager.isDoubleTapSeeking else { return }
         controlVisibilityManager.showControls()
     }
     
@@ -1474,6 +1570,7 @@ extension PlayerManager {
 
     private func resetPlayer(clearMediaContext: Bool) {
         cancelPendingPlaybackResume()
+        gestureManager.reset()
         #if os(macOS)
         endPlaybackDiagnosticsSampling(reason: "player reset")
         resetPlaybackDiagnosticsHistory()
@@ -1630,6 +1727,7 @@ extension PlayerManager {
 
         resetPlayer(clearMediaContext: true)
 
+        gestureManager.reset()
         gestureManager.restoreSystemBrightness()
         GameControllerManager.shared.releaseControllerHandlers(for: self)
         releaseNowPlaying()

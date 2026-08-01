@@ -184,6 +184,20 @@ extension VLCPlayerWrapper: TimeControlProtocol {
 
 extension VLCPlayerWrapper: PlayerMuteControlling {}
 
+extension VLCPlayerWrapper: PlayerVolumeControlling {
+    /// VLCKit's scale is 0…200, where 100 is unity and anything above it
+    /// amplifies. PlayerKit deliberately stops at unity: a gesture that can
+    /// clip the signal is not a volume control, it is a distortion pedal.
+    var outputVolume: Float {
+        guard let audio = player.audio else { return 1 }
+        return min(max(Float(audio.volume) / 100, 0), 1)
+    }
+
+    func setOutputVolume(_ value: Float) {
+        player.audio?.volume = Int32((min(max(value, 0), 1) * 100).rounded())
+    }
+}
+
 // MARK: - TrackSelectionProtocol
 extension VLCPlayerWrapper: TrackSelectionProtocol {
     /// Track identity for the VLC backend.

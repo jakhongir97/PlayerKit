@@ -58,6 +58,8 @@ private final class DesktopVLCLibrary {
     private typealias LibVLCMediaPlayerGetRate = @convention(c) (VLCMediaPlayerPointer?) -> Float
     private typealias LibVLCMediaPlayerSetRate = @convention(c) (VLCMediaPlayerPointer?, Float) -> Int32
     private typealias LibVLCAudioSetMute = @convention(c) (VLCMediaPlayerPointer?, Int32) -> Void
+    private typealias LibVLCAudioSetVolume = @convention(c) (VLCMediaPlayerPointer?, Int32) -> Int32
+    private typealias LibVLCAudioGetVolume = @convention(c) (VLCMediaPlayerPointer?) -> Int32
     private typealias LibVLCAudioGetTrack = @convention(c) (VLCMediaPlayerPointer?) -> Int32
     private typealias LibVLCAudioSetTrack = @convention(c) (VLCMediaPlayerPointer?, Int32) -> Int32
     private typealias LibVLCAudioGetTrackDescription = @convention(c) (VLCMediaPlayerPointer?) -> UnsafeMutableRawPointer?
@@ -92,6 +94,8 @@ private final class DesktopVLCLibrary {
     private let getRateFn: LibVLCMediaPlayerGetRate?
     private let setRateFn: LibVLCMediaPlayerSetRate?
     private let audioSetMuteFn: LibVLCAudioSetMute?
+    private let audioSetVolumeFn: LibVLCAudioSetVolume?
+    private let audioGetVolumeFn: LibVLCAudioGetVolume?
     private let audioGetTrackFn: LibVLCAudioGetTrack?
     private let audioSetTrackFn: LibVLCAudioSetTrack?
     private let audioGetTrackDescriptionFn: LibVLCAudioGetTrackDescription?
@@ -124,6 +128,8 @@ private final class DesktopVLCLibrary {
             getRateFn = nil
             setRateFn = nil
             audioSetMuteFn = nil
+            audioSetVolumeFn = nil
+            audioGetVolumeFn = nil
             audioGetTrackFn = nil
             audioSetTrackFn = nil
             audioGetTrackDescriptionFn = nil
@@ -172,6 +178,8 @@ private final class DesktopVLCLibrary {
             getRateFn = nil
             setRateFn = nil
             audioSetMuteFn = nil
+            audioSetVolumeFn = nil
+            audioGetVolumeFn = nil
             audioGetTrackFn = nil
             audioSetTrackFn = nil
             audioGetTrackDescriptionFn = nil
@@ -204,6 +212,11 @@ private final class DesktopVLCLibrary {
         getRateFn = Self.loadSymbol(vlcHandle, "libvlc_media_player_get_rate", as: LibVLCMediaPlayerGetRate.self)
         setRateFn = Self.loadSymbol(vlcHandle, "libvlc_media_player_set_rate", as: LibVLCMediaPlayerSetRate.self)
         audioSetMuteFn = Self.loadSymbol(vlcHandle, "libvlc_audio_set_mute", as: LibVLCAudioSetMute.self)
+        // Not part of `isFullyLoaded`: a libvlc without these is still a
+        // usable player, it just has no volume gesture, which the capability
+        // set then reports honestly instead of no-oping.
+        audioSetVolumeFn = Self.loadSymbol(vlcHandle, "libvlc_audio_set_volume", as: LibVLCAudioSetVolume.self)
+        audioGetVolumeFn = Self.loadSymbol(vlcHandle, "libvlc_audio_get_volume", as: LibVLCAudioGetVolume.self)
         audioGetTrackFn = Self.loadSymbol(vlcHandle, "libvlc_audio_get_track", as: LibVLCAudioGetTrack.self)
         audioSetTrackFn = Self.loadSymbol(vlcHandle, "libvlc_audio_set_track", as: LibVLCAudioSetTrack.self)
         audioGetTrackDescriptionFn = Self.loadSymbol(vlcHandle, "libvlc_audio_get_track_description", as: LibVLCAudioGetTrackDescription.self)
@@ -364,6 +377,24 @@ private final class DesktopVLCLibrary {
     func setMuted(_ muted: Bool, for player: VLCMediaPlayerPointer?) {
         guard player != nil else { return }
         audioSetMuteFn?(player, muted ? 1 : 0)
+    }
+
+    var supportsVolumeControl: Bool {
+        audioSetVolumeFn != nil && audioGetVolumeFn != nil
+    }
+
+    /// 0…1. libvlc's own scale is 0…200 with 100 at unity; PlayerKit stops at
+    /// unity rather than amplifying.
+    func outputVolume(for player: VLCMediaPlayerPointer?) -> Float {
+        guard let player, let audioGetVolumeFn else { return 1 }
+        let raw = audioGetVolumeFn(player)
+        guard raw >= 0 else { return 1 }
+        return min(max(Float(raw) / 100, 0), 1)
+    }
+
+    func setOutputVolume(_ value: Float, for player: VLCMediaPlayerPointer?) {
+        guard let player, let audioSetVolumeFn else { return }
+        _ = audioSetVolumeFn(player, Int32((min(max(value, 0), 1) * 100).rounded()))
     }
 
     func seek(to seconds: Double, for player: VLCMediaPlayerPointer?) -> Bool {
@@ -701,6 +732,23 @@ extension DesktopVLCPlayerWrapper: StreamingInfoProtocol {
 extension DesktopVLCPlayerWrapper: PlayerEventSource {}
 
 extension DesktopVLCPlayerWrapper: PlayerMuteControlling {}
+
+/// A genuinely working volume gesture on macOS, not a stub.
+///
+/// The old gesture layer compiled a `#else` branch on the desktop that stored
+/// `0.5` into a constant and wrote it nowhere, so the whole left half of a Mac
+/// window silently did nothing.
+extension DesktopVLCPlayerWrapper: PlayerVolumeControlling {
+    var supportsVolumeControl: Bool { runtime.supportsVolumeControl }
+
+    var outputVolume: Float {
+        runtime.outputVolume(for: mediaPlayer)
+    }
+
+    func setOutputVolume(_ value: Float) {
+        runtime.setOutputVolume(value, for: mediaPlayer)
+    }
+}
 
 extension DesktopVLCPlayerWrapper: PlayerPictureInPictureSupporting {
     var isPictureInPictureSupported: Bool { false }
