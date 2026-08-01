@@ -2,6 +2,11 @@ import SwiftUI
 
 public struct PlayerItem {
     public let title: String
+    /// A title treatment — the artwork that spells the title out — to show in
+    /// place of `title`. The text title is still the fallback: it is what the
+    /// controls render until the image loads, if it fails, and what VoiceOver
+    /// reads.
+    public let titleImageURL: URL?
     public let description: String?
     public let url: URL
     public let posterUrl: URL?
@@ -23,6 +28,7 @@ public struct PlayerItem {
     // Add a public initializer
     #if os(macOS)
     public init(title: String,
+                titleImageURL: URL? = nil,
                 description: String? = nil,
                 url: URL,
                 posterUrl: URL? = nil,
@@ -35,6 +41,7 @@ public struct PlayerItem {
                 playbackHealthAssetIdentifier: String? = nil,
                 playbackHealthMonitoringEligible: Bool = false) {
         self.title = title
+        self.titleImageURL = titleImageURL
         self.description = description
         self.url = url
         self.posterUrl = posterUrl
@@ -49,6 +56,7 @@ public struct PlayerItem {
     }
     #else
     public init(title: String,
+                titleImageURL: URL? = nil,
                 description: String? = nil,
                 url: URL,
                 posterUrl: URL? = nil,
@@ -59,6 +67,7 @@ public struct PlayerItem {
                 lastPosition: Double? = nil,
                 episodeIndex: Int? = nil) {
         self.title = title
+        self.titleImageURL = titleImageURL
         self.description = description
         self.url = url
         self.posterUrl = posterUrl

@@ -16,6 +16,7 @@ public final class Player {
     public func load(
         url: URL,
         title: String? = nil,
+        titleImageURL: URL? = nil,
         description: String? = nil,
         posterURL: URL? = nil,
         castVideoURL: URL? = nil,
@@ -28,6 +29,7 @@ public final class Player {
 
         let item = PlayerItem(
             title: title ?? inferredTitle(from: url),
+            titleImageURL: titleImageURL,
             description: description,
             url: url,
             posterUrl: posterURL,

@@ -378,6 +378,7 @@ public class PlayerManager: ObservableObject {
         #if os(macOS)
         return PlayerItem(
             title: sourceItem.title,
+            titleImageURL: sourceItem.titleImageURL,
             description: sourceItem.description,
             url: sourceItem.url,
             posterUrl: sourceItem.posterUrl,
@@ -393,6 +394,7 @@ public class PlayerManager: ObservableObject {
         #else
         PlayerItem(
             title: sourceItem.title,
+            titleImageURL: sourceItem.titleImageURL,
             description: sourceItem.description,
             url: sourceItem.url,
             posterUrl: sourceItem.posterUrl,
