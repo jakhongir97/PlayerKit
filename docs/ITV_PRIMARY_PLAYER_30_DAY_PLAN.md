@@ -108,7 +108,7 @@ still available as a runtime fallback.
 - Keep IMA host-owned and make content installation/failure recovery deterministic.
 - Runtime-prove the implemented adaptive HLS Auto/Maximum/Optimal/Minimum menu.
 - Add backend-provided intro/credits behavior; heuristics are fallback only.
-- Add WebVTT scrub thumbnails with bounded caching.
+- Runtime-prove the implemented bounded WebVTT scrub thumbnails with representative media.
 - Restore trailer-specific controls/resume behavior and the episode sheet slot.
 - Localize all PlayerKit chrome in English, Russian, and Uzbek.
 - Add iOS QoE events for load, ready, first frame, stall, recovery, fatal error,
