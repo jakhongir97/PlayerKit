@@ -6,6 +6,7 @@ struct PlayerControlsView: View {
     #if os(iOS)
     @ObservedObject var thumbnailPreviewController: WebVTTThumbnailPreviewController
     #endif
+    let presentationPolicy: PlayerPresentationPolicy
 
     static let sideControlExtent: CGFloat = 50
     static let middleSpacing: CGFloat = 8
@@ -72,7 +73,10 @@ struct PlayerControlsView: View {
                     Spacer(minLength: 8)
 
                     VStack {
-                        BottomControlsView(playerManager: playerManager)
+                        BottomControlsView(
+                            playerManager: playerManager,
+                            presentationPolicy: presentationPolicy
+                        )
                             .presented(showsChrome)
                         playbackSlider
                             .presented(showsScrubber)

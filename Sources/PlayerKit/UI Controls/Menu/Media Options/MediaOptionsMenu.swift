@@ -4,55 +4,68 @@ import SwiftUI
 struct MediaOptionsMenu: View {
     @StateObject private var viewModel: MediaOptionsMenuViewModel
     @ObservedObject private var playerManager: PlayerManager
+    private let presentationPolicy: PlayerPresentationPolicy
 
     private let insets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
     
-    init(playerManager: PlayerManager = .shared) {
+    init(
+        playerManager: PlayerManager = .shared,
+        presentationPolicy: PlayerPresentationPolicy = .init()
+    ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         _viewModel = StateObject(wrappedValue: MediaOptionsMenuViewModel(playerManager: playerManager))
+        self.presentationPolicy = presentationPolicy
     }
 
     var body: some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            GlassEffectContainer {
-                HStack {
-                    if !playerManager.availablePlaybackQualityPresets.isEmpty {
-                        PlaybackQualityMenu(playerManager: playerManager)
-                    }
+        if hasVisibleOptions {
+            #if compiler(>=6.2)
+            if #available(iOS 26.0, macOS 26.0, *) {
+                GlassEffectContainer {
+                    HStack {
+                        if presentationPolicy.showsPlaybackQualityControl,
+                           !playerManager.availablePlaybackQualityPresets.isEmpty {
+                            PlaybackQualityMenu(playerManager: playerManager)
+                        }
 
-                    PlaybackSpeedMenu(playerManager: playerManager)
+                        if presentationPolicy.showsPlaybackSpeedControl {
+                            PlaybackSpeedMenu(playerManager: playerManager)
+                        }
 
-                    if viewModel.hasSubtitles {
-                        SubtitleMenu(playerManager: playerManager)
-                    }
+                        if viewModel.hasSubtitles {
+                            SubtitleMenu(playerManager: playerManager)
+                        }
 
-                    if viewModel.hasAudioTracks {
-                        AudioMenu(playerManager: playerManager)
+                        if viewModel.hasAudioTracks {
+                            AudioMenu(playerManager: playerManager)
+                        }
                     }
+                    .padding(insets)
+                    .contentShape(Capsule())
                 }
-                .padding(insets)
-                .contentShape(Capsule())
+                .glassEffect(.clear, in: .capsule)
+                .clipShape(Capsule())
+                .buttonStyle(.plain)
+                .transaction { $0.animation = nil }
+            } else {
+                fallback
             }
-            .glassEffect(.clear, in: .capsule)
-            .clipShape(Capsule())
-            .buttonStyle(.plain)
-            .transaction { $0.animation = nil }
-        } else {
+            #else
             fallback
+            #endif
         }
-        #else
-        fallback
-        #endif
     }
 
     private var fallback: some View {
         HStack {
-            if !playerManager.availablePlaybackQualityPresets.isEmpty {
+            if presentationPolicy.showsPlaybackQualityControl,
+               !playerManager.availablePlaybackQualityPresets.isEmpty {
                 PlaybackQualityMenu(playerManager: playerManager)
             }
 
-            PlaybackSpeedMenu(playerManager: playerManager)
+            if presentationPolicy.showsPlaybackSpeedControl {
+                PlaybackSpeedMenu(playerManager: playerManager)
+            }
 
             if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
             if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
@@ -64,6 +77,27 @@ struct MediaOptionsMenu: View {
         )
         .contentShape(Capsule())
         .buttonStyle(.plain)
+    }
+
+    private var hasVisibleOptions: Bool {
+        Self.hasVisibleOptions(
+            presentationPolicy: presentationPolicy,
+            hasPlaybackQualities: !playerManager.availablePlaybackQualityPresets.isEmpty,
+            hasSubtitles: viewModel.hasSubtitles,
+            hasAudioTracks: viewModel.hasAudioTracks
+        )
+    }
+
+    static func hasVisibleOptions(
+        presentationPolicy: PlayerPresentationPolicy,
+        hasPlaybackQualities: Bool,
+        hasSubtitles: Bool,
+        hasAudioTracks: Bool
+    ) -> Bool {
+        presentationPolicy.showsPlaybackSpeedControl
+            || (presentationPolicy.showsPlaybackQualityControl && hasPlaybackQualities)
+            || hasSubtitles
+            || hasAudioTracks
     }
 }
 

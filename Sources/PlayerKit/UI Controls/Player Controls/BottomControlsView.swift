@@ -3,6 +3,7 @@ import SwiftUI
 @MainActor
 struct BottomControlsView: View {
     @ObservedObject var playerManager: PlayerManager
+    let presentationPolicy: PlayerPresentationPolicy
 
     private var isIPhone: Bool { PlayerKitPlatform.isPhone }
     private let pillInsets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
@@ -40,7 +41,10 @@ struct BottomControlsView: View {
 
     private var regularLayout: some View {
         HStack(spacing: 12) {
-            MediaOptionsMenu(playerManager: playerManager)
+            MediaOptionsMenu(
+                playerManager: playerManager,
+                presentationPolicy: presentationPolicy
+            )
             SkipIntroButtonView(playerManager: playerManager)
 
             Spacer()
@@ -60,7 +64,10 @@ struct BottomControlsView: View {
     private var compactLayout: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
-                MediaOptionsMenu(playerManager: playerManager)
+                MediaOptionsMenu(
+                    playerManager: playerManager,
+                    presentationPolicy: presentationPolicy
+                )
                 Spacer(minLength: 8)
                 trailingIconActions
             }

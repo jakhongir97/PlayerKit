@@ -22,6 +22,43 @@ final class UIAuditRegressionTests: XCTestCase {
         XCTAssertFalse(hostManaged.automaticallyTearsDownOnDisappear)
     }
 
+    func testPresentationPolicyDefaultsToFullChromeAndCanKeepEndedPlaybackNonblocking() {
+        let defaults = PlayerPresentationPolicy()
+        XCTAssertTrue(defaults.showsPlaybackSpeedControl)
+        XCTAssertTrue(defaults.showsPlaybackQualityControl)
+        XCTAssertTrue(defaults.showsPlaybackEndedOverlay)
+
+        let trailer = PlayerPresentationPolicy(
+            showsPlaybackSpeedControl: false,
+            showsPlaybackQualityControl: false,
+            showsPlaybackEndedOverlay: false
+        )
+        let manager = PlayerManager.shared
+        manager.isVideoEnded = true
+        defer { manager.isVideoEnded = false }
+
+        XCTAssertTrue(PlayerView(playerManager: manager).hasBlockingStatus)
+        XCTAssertFalse(
+            PlayerView(playerManager: manager, presentationPolicy: trailer).hasBlockingStatus
+        )
+        XCTAssertFalse(
+            MediaOptionsMenu.hasVisibleOptions(
+                presentationPolicy: trailer,
+                hasPlaybackQualities: true,
+                hasSubtitles: false,
+                hasAudioTracks: false
+            )
+        )
+        XCTAssertTrue(
+            MediaOptionsMenu.hasVisibleOptions(
+                presentationPolicy: trailer,
+                hasPlaybackQualities: false,
+                hasSubtitles: true,
+                hasAudioTracks: false
+            )
+        )
+    }
+
     func testPlayerViewLoadIdentityFollowsEveryInputAndIsStableForNaN() {
         let url = URL(string: "https://example.com/video.m3u8")!
         let first = PlayerItem(title: "One", url: url, lastPosition: .nan, episodeIndex: 1)

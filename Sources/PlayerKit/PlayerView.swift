@@ -3,6 +3,22 @@ import SwiftUI
 import AppKit
 #endif
 
+public struct PlayerPresentationPolicy: Equatable, Sendable {
+    public let showsPlaybackSpeedControl: Bool
+    public let showsPlaybackQualityControl: Bool
+    public let showsPlaybackEndedOverlay: Bool
+
+    public init(
+        showsPlaybackSpeedControl: Bool = true,
+        showsPlaybackQualityControl: Bool = true,
+        showsPlaybackEndedOverlay: Bool = true
+    ) {
+        self.showsPlaybackSpeedControl = showsPlaybackSpeedControl
+        self.showsPlaybackQualityControl = showsPlaybackQualityControl
+        self.showsPlaybackEndedOverlay = showsPlaybackEndedOverlay
+    }
+}
+
 @MainActor
 public struct PlayerView: View {
     @ObservedObject var playerManager: PlayerManager
@@ -18,35 +34,42 @@ public struct PlayerView: View {
     /// Disable only when the embedding host pauses temporary disappearances and
     /// calls `PlayerManager.tearDown()` when its presentation actually exits.
     let automaticallyTearsDownOnDisappear: Bool
+    let presentationPolicy: PlayerPresentationPolicy
 
     public init(
         playerItem: PlayerItem? = nil,
         playerManager: PlayerManager = .shared,
-        automaticallyTearsDownOnDisappear: Bool = true
+        automaticallyTearsDownOnDisappear: Bool = true,
+        presentationPolicy: PlayerPresentationPolicy = .init()
     ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .single(playerItem)
         self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
+        self.presentationPolicy = presentationPolicy
     }
     
     public init(
         playerManager: PlayerManager = .shared,
-        automaticallyTearsDownOnDisappear: Bool = true
+        automaticallyTearsDownOnDisappear: Bool = true,
+        presentationPolicy: PlayerPresentationPolicy = .init()
     ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .none
         self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
+        self.presentationPolicy = presentationPolicy
     }
     
     public init(
         playerItems: [PlayerItem],
         currentIndex: Int = 0,
         playerManager: PlayerManager = .shared,
-        automaticallyTearsDownOnDisappear: Bool = true
+        automaticallyTearsDownOnDisappear: Bool = true,
+        presentationPolicy: PlayerPresentationPolicy = .init()
     ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .episodes(playerItems, currentIndex)
         self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
+        self.presentationPolicy = presentationPolicy
     }
 
     public var body: some View {
@@ -92,7 +115,7 @@ public struct PlayerView: View {
                 .zIndex(2)
             }
 
-            if playerManager.isVideoEnded {
+            if playerManager.isVideoEnded && presentationPolicy.showsPlaybackEndedOverlay {
                 PlaybackEndedOverlayView(playerManager: playerManager)
                     .zIndex(3)
             }
@@ -176,8 +199,8 @@ public struct PlayerView: View {
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
     }
 
-    private var hasBlockingStatus: Bool {
-        if playerManager.isVideoEnded { return true }
+    var hasBlockingStatus: Bool {
+        if playerManager.isVideoEnded && presentationPolicy.showsPlaybackEndedOverlay { return true }
         guard let error = playerManager.lastError else { return false }
         return PlaybackErrorPresentation(
             error,
@@ -191,10 +214,14 @@ public struct PlayerView: View {
         #if os(iOS)
         PlayerControlsView(
             playerManager: playerManager,
-            thumbnailPreviewController: thumbnailPreviewController
+            thumbnailPreviewController: thumbnailPreviewController,
+            presentationPolicy: presentationPolicy
         )
         #else
-        PlayerControlsView(playerManager: playerManager)
+        PlayerControlsView(
+            playerManager: playerManager,
+            presentationPolicy: presentationPolicy
+        )
         #endif
     }
     
