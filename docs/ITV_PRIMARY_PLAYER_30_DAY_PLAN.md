@@ -23,7 +23,7 @@ losing the Standard Player's production contract.
 - PlayerKit and the real iTV app compile against the local candidate. Current
   generic Debug simulator builds pass for both arm64 and x86_64 in PlayerKit and
   iTV; generic iOS 14 PlayerKit source/device slices also compiled earlier.
-- `swift test --no-parallel` executes 332 tests with 5 environment-dependent
+- `swift test --no-parallel` executes 335 tests with 5 environment-dependent
   skips and 0 failures. Focused checks cover exact markers, quality policy, QoE,
   WebVTT, injectable strings, recovery, host-owned teardown and presentation
   policy; the focused presentation-policy selection is 10/10 green.
@@ -56,9 +56,13 @@ losing the Standard Player's production contract.
   parser, supplies only sanitized raw bitrates after ad release, rejects stale
   item results, avoids shared persistent caching for signed manifests, preserves
   the semantic choice across episodes, and injects
-  EN/RU/UZ copy for this menu slice. Parser/policy/rate checks pass; real HLS and
-  layout proof remain open. The full approved PlayerStrings bags are still
-  incomplete, and `playbackStarted` is not a decoded-first-frame metric.
+  EN/RU/UZ copy. PlayerKit `18cd8a7` and iTV `c3cbf3bc` now cover all 126
+  iTV/iOS `PlayerStrings` values with 125 matched host keys or locale-aware
+  numeric formatters; the contract, property-list, placeholder-signature,
+  seconds/rate/percentage and 7 focused library checks pass. Candidate copy is
+  not native-approved and localized device/layout proof remains open. The
+  macOS-only diagnostics console is outside this iTV/iOS slice and remains
+  English. `playbackStarted` is not a decoded-first-frame metric.
 - Runtime smoke testing is still open because no simulator is booted and the
   installed runtimes are iOS 18.5 and 26.3 only. In particular, no report
   list/POST, timestamp share sheet, series catalog selection or trailer media/end
@@ -180,7 +184,7 @@ one because a month-end comparison is impossible without a Standard baseline.
 | Aug 10 | deterministic ad/content handoff seam | host-owned IMA candidate pulled forward; real SDK/tag failure paths remain | preroll/no-fill/error/background matrix |
 | Aug 11 | WebVTT thumbnail loader/cache | connect iTV thumbnail URLs | scrub/memory/network checks |
 | Aug 12 | host presentation policy pulled forward; episode navigation contract | report/share menu and typed existing-catalog selection pulled forward | static checks green; report/share/catalog/trailer runtime and episode race checks remain |
-| Aug 13 | localizable PlayerKit strings | English/Russian/Uzbek host strings | truncation, RTL-safe layout, VoiceOver copy |
+| Aug 13 | complete injectable iTV/iOS PlayerStrings candidate | matched English/Russian/Uzbek host bags and locale-aware formatters | static/compile gates green; native approval, truncation, RTL-safe layout and VoiceOver copy remain |
 | Aug 14 | VOD defect burn-down | movie/trailer/episode golden flows; strict trailer candidate already compiled | Week 2 non-inferiority gate; host-action/trailer media proof required |
 | Aug 17 | local asset support | downloaded movie/episode routes and progress | airplane-mode and expired-download matrix |
 | Aug 18 | unified VOD/live seekable ranges | generic live/DVR route | live-edge and catch-up range checks |
