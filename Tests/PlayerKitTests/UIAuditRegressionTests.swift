@@ -27,6 +27,7 @@ final class UIAuditRegressionTests: XCTestCase {
         XCTAssertTrue(defaults.showsPlaybackSpeedControl)
         XCTAssertTrue(defaults.showsPlaybackQualityControl)
         XCTAssertTrue(defaults.showsPlaybackEndedOverlay)
+        XCTAssertTrue(defaults.showsMediaTrackControls)
 
         let trailer = PlayerPresentationPolicy(
             showsPlaybackSpeedControl: false,
@@ -55,6 +56,37 @@ final class UIAuditRegressionTests: XCTestCase {
                 hasPlaybackQualities: false,
                 hasSubtitles: true,
                 hasAudioTracks: false
+            )
+        )
+    }
+
+    func testMediaTrackPolicyDoesNotHideIndependentQualityControl() {
+        let tracksHidden = PlayerPresentationPolicy(
+            showsPlaybackSpeedControl: false,
+            showsPlaybackQualityControl: false,
+            showsMediaTrackControls: false
+        )
+        XCTAssertFalse(
+            MediaOptionsMenu.hasVisibleOptions(
+                presentationPolicy: tracksHidden,
+                hasPlaybackQualities: false,
+                hasSubtitles: true,
+                hasAudioTracks: true
+            )
+        )
+        XCTAssertFalse(tracksHidden.resolved(for: .pureLive).showsMediaTrackControls)
+
+        let qualityVisible = PlayerPresentationPolicy(
+            showsPlaybackSpeedControl: false,
+            showsPlaybackQualityControl: true,
+            showsMediaTrackControls: false
+        )
+        XCTAssertTrue(
+            MediaOptionsMenu.hasVisibleOptions(
+                presentationPolicy: qualityVisible,
+                hasPlaybackQualities: true,
+                hasSubtitles: true,
+                hasAudioTracks: true
             )
         )
     }

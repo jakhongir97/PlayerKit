@@ -32,11 +32,13 @@ struct MediaOptionsMenu: View {
                             PlaybackSpeedMenu(playerManager: playerManager)
                         }
 
-                        if viewModel.hasSubtitles {
+                        if presentationPolicy.showsMediaTrackControls,
+                           viewModel.hasSubtitles {
                             SubtitleMenu(playerManager: playerManager)
                         }
 
-                        if viewModel.hasAudioTracks {
+                        if presentationPolicy.showsMediaTrackControls,
+                           viewModel.hasAudioTracks {
                             AudioMenu(playerManager: playerManager)
                         }
                     }
@@ -67,8 +69,12 @@ struct MediaOptionsMenu: View {
                 PlaybackSpeedMenu(playerManager: playerManager)
             }
 
-            if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
-            if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
+            if presentationPolicy.showsMediaTrackControls && viewModel.hasSubtitles {
+                SubtitleMenu(playerManager: playerManager)
+            }
+            if presentationPolicy.showsMediaTrackControls && viewModel.hasAudioTracks {
+                AudioMenu(playerManager: playerManager)
+            }
         }
         .padding(insets)
         .thinMaterialBackgroundCompat(in: Capsule())
@@ -96,8 +102,8 @@ struct MediaOptionsMenu: View {
     ) -> Bool {
         presentationPolicy.showsPlaybackSpeedControl
             || (presentationPolicy.showsPlaybackQualityControl && hasPlaybackQualities)
-            || hasSubtitles
-            || hasAudioTracks
+            || (presentationPolicy.showsMediaTrackControls
+                && (hasSubtitles || hasAudioTracks))
     }
 }
 

@@ -7,15 +7,18 @@ public struct PlayerPresentationPolicy: Equatable, Sendable {
     public let showsPlaybackSpeedControl: Bool
     public let showsPlaybackQualityControl: Bool
     public let showsPlaybackEndedOverlay: Bool
+    public let showsMediaTrackControls: Bool
 
     public init(
         showsPlaybackSpeedControl: Bool = true,
         showsPlaybackQualityControl: Bool = true,
-        showsPlaybackEndedOverlay: Bool = true
+        showsPlaybackEndedOverlay: Bool = true,
+        showsMediaTrackControls: Bool = true
     ) {
         self.showsPlaybackSpeedControl = showsPlaybackSpeedControl
         self.showsPlaybackQualityControl = showsPlaybackQualityControl
         self.showsPlaybackEndedOverlay = showsPlaybackEndedOverlay
+        self.showsMediaTrackControls = showsMediaTrackControls
     }
 
     func resolved(for timelineMode: PlayerTimelineMode) -> Self {
@@ -25,7 +28,8 @@ public struct PlayerPresentationPolicy: Equatable, Sendable {
         return Self(
             showsPlaybackSpeedControl: false,
             showsPlaybackQualityControl: showsPlaybackQualityControl,
-            showsPlaybackEndedOverlay: false
+            showsPlaybackEndedOverlay: false,
+            showsMediaTrackControls: showsMediaTrackControls
         )
     }
 }
