@@ -201,6 +201,157 @@ final class AuditRegressionTests: XCTestCase {
         }
     }
 
+    func testExplicitTimelineModesSelectOnlyTheirOwnSeekRange() {
+        let (manager, player) = makeLiveManager(currentTime: 5000)
+        defer { manager.tearDown() }
+        withExtendedLifetime(player) {
+            manager.playerItem = PlayerItem(
+                title: "Fixture",
+                url: URL(string: "https://example.com/live.m3u8")!,
+                timelineMode: .pureLive
+            )
+            XCTAssertNil(manager.seekableRange)
+
+            manager.playerItem = PlayerItem(
+                title: "Fixture",
+                url: URL(string: "https://example.com/live.m3u8")!,
+                timelineMode: .seekableLive
+            )
+            XCTAssertEqual(manager.seekableRange, Self.liveWindow)
+
+            manager.playerItem = PlayerItem(
+                title: "Fixture",
+                url: URL(string: "https://example.com/video.m3u8")!,
+                timelineMode: .onDemand
+            )
+            manager.duration = 600
+            XCTAssertEqual(manager.seekableRange, 0 ... 600)
+        }
+    }
+
+    func testSeekableLiveReportsEdgeWithToleranceAndGoLiveUsesSharedSeekPath() {
+        let (manager, player) = makeLiveManager(currentTime: 7197)
+        defer { manager.tearDown() }
+        manager.playerItem = PlayerItem(
+            title: "Fixture",
+            url: URL(string: "https://example.com/live.m3u8")!,
+            timelineMode: .seekableLive
+        )
+
+        withExtendedLifetime(player) {
+            XCTAssertEqual(manager.isAtLiveEdge, false)
+
+            manager.currentTime = 7198
+            XCTAssertEqual(manager.isAtLiveEdge, true)
+
+            manager.currentTime = 5000
+            player.currentTime = 5000
+            manager.goLive()
+
+            XCTAssertEqual(player.seekRequests, [Self.liveWindow.upperBound])
+            XCTAssertEqual(player.transportEvents, ["seek", "play"])
+            XCTAssertEqual(manager.currentTime, Self.liveWindow.upperBound)
+            XCTAssertEqual(manager.isAtLiveEdge, true)
+            XCTAssertTrue(player.isPlaying)
+        }
+    }
+
+    func testGoLiveDoesNotResumeWhenTheUpperEdgeSeekFails() {
+        let (manager, player) = makeLiveManager(currentTime: 5000)
+        defer { manager.tearDown() }
+        manager.playerItem = PlayerItem(
+            title: "Fixture",
+            url: URL(string: "https://example.com/live.m3u8")!,
+            timelineMode: .seekableLive
+        )
+        player.seekSucceeds = false
+
+        withExtendedLifetime(player) {
+            manager.goLive()
+
+            XCTAssertEqual(player.seekRequests, [Self.liveWindow.upperBound])
+            XCTAssertEqual(player.transportEvents, ["seek"])
+            XCTAssertEqual(manager.currentTime, 5000)
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+
+    func testGoLiveRejectsAStaleCompletionAfterSameURLReload() {
+        let (manager, player) = makeLiveManager(currentTime: 5000)
+        let previousAutoplay = manager.autoplay
+        defer {
+            manager.autoplay = previousAutoplay
+            manager.tearDown()
+        }
+        let url = URL(string: "https://example.com/live.m3u8")!
+        manager.playerItem = PlayerItem(
+            title: "First owner",
+            url: url,
+            timelineMode: .seekableLive
+        )
+        manager.autoplay = false
+        player.defersSeekCompletion = true
+
+        withExtendedLifetime(player) {
+            manager.goLive()
+            XCTAssertEqual(player.transportEvents, ["seek"])
+
+            manager.load(
+                playerItem: PlayerItem(
+                    title: "Replacement owner",
+                    url: url,
+                    timelineMode: .seekableLive,
+                    lastPosition: 4100
+                )
+            )
+            player.completeDeferredSeek(success: true)
+
+            XCTAssertEqual(manager.playerItem?.title, "Replacement owner")
+            XCTAssertEqual(manager.currentTime, 4100)
+            XCTAssertEqual(player.transportEvents, ["seek"])
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+
+    func testPureLiveHasNoSeekOrGoLiveReloadPath() {
+        let (manager, player) = makeLiveManager(currentTime: 5000)
+        defer { manager.tearDown() }
+        manager.playerItem = PlayerItem(
+            title: "Fixture",
+            url: URL(string: "https://example.com/live.m3u8")!,
+            timelineMode: .pureLive
+        )
+
+        withExtendedLifetime(player) {
+            var seekSucceeded: Bool?
+            manager.seek(to: 6000) { seekSucceeded = $0 }
+            manager.goLive()
+
+            XCTAssertEqual(manager.isAtLiveEdge, true)
+            XCTAssertEqual(seekSucceeded, false)
+            XCTAssertTrue(player.seekRequests.isEmpty)
+            XCTAssertEqual(player.currentTime, 5000)
+        }
+    }
+
+    func testTimelineModeDefaultsAndInternalCopiesRemainCompatible() {
+        let manager = PlayerManager.shared
+        defer { manager.tearDown() }
+        let url = URL(string: "https://example.com/live.m3u8")!
+        XCTAssertEqual(PlayerItem(title: "Default", url: url).timelineMode, .automatic)
+
+        let source = PlayerItem(
+            title: "DVR",
+            url: url,
+            timelineMode: .seekableLive,
+            lastPosition: 12
+        )
+        let copy = manager.makePlayerItemCopy(from: source, resumePosition: 34)
+
+        XCTAssertEqual(copy.timelineMode, .seekableLive)
+        XCTAssertEqual(copy.lastPosition, 34)
+    }
+
     /// Entry point 1 — a slider drag calls `seek(to:)` directly. A target
     /// inside the DVR window must land exactly, not be clamped to zero.
     func testSeekLandsInsideLiveWindow() {
@@ -647,6 +798,38 @@ final class AuditRegressionTests: XCTestCase {
         }
     }
 
+    func testPureLiveSnapshotIsLiveWithoutASeekableWindow() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        defer { manager.tearDown() }
+        manager.playerItem = PlayerItem(
+            title: "Channel 1",
+            url: URL(string: "https://example.com/live.m3u8")!,
+            timelineMode: .pureLive
+        )
+        manager.duration = 0
+
+        let snapshot = manager.makeNowPlayingSnapshot()
+        XCTAssertEqual(snapshot?.isLive, true)
+        XCTAssertNil(snapshot?.duration)
+    }
+
+    func testFiniteDurationSeekableLiveSnapshotDoesNotPublishAStableTotal() {
+        let manager = PlayerManager.shared
+        manager.resetPlayer()
+        defer { manager.tearDown() }
+        manager.playerItem = PlayerItem(
+            title: "Channel 1",
+            url: URL(string: "https://example.com/live.m3u8")!,
+            timelineMode: .seekableLive
+        )
+        manager.duration = 3600
+
+        let snapshot = manager.makeNowPlayingSnapshot()
+        XCTAssertEqual(snapshot?.isLive, true)
+        XCTAssertNil(snapshot?.duration)
+    }
+
     /// `playbackSpeed` keeps its configured value while paused, so reporting it
     /// directly would animate a stopped playhead on the lock screen.
     func testPausedSnapshotReportsZeroRate() {
@@ -820,6 +1003,8 @@ final class AuditRegressionTests: XCTestCase {
 /// to get wrong.
 private final class LiveTimelineMockPlayer: PlayerProtocol, PlayerSeekWindowReporting {
     var isPlaying = false
+    var seekSucceeds = true
+    var defersSeekCompletion = false
     var playbackSpeed: Float = 1
     var currentTime: Double = 0
     var duration: Double = 0
@@ -834,6 +1019,8 @@ private final class LiveTimelineMockPlayer: PlayerProtocol, PlayerSeekWindowRepo
     /// Every position the backend was asked to seek to, in order, so a test can
     /// assert that a clamp happened before the request rather than after.
     private(set) var seekRequests: [Double] = []
+    private(set) var transportEvents: [String] = []
+    private var deferredSeek: (time: Double, completion: (@MainActor (Bool) -> Void)?)?
 
     func canSeekWithinCurrentWindow(to time: Double, tolerance: Double) -> Bool {
         guard let seekableTimeWindow else { return false }
@@ -841,14 +1028,33 @@ private final class LiveTimelineMockPlayer: PlayerProtocol, PlayerSeekWindowRepo
             && time <= seekableTimeWindow.upperBound + tolerance
     }
 
-    func play() { isPlaying = true }
+    func play() {
+        transportEvents.append("play")
+        isPlaying = true
+    }
     func pause() { isPlaying = false }
     func stop() { isPlaying = false }
 
     func seek(to time: Double, completion: (@MainActor (Bool) -> Void)?) {
         seekRequests.append(time)
-        currentTime = time
-        completion?(true)
+        transportEvents.append("seek")
+        if defersSeekCompletion {
+            deferredSeek = (time, completion)
+            return
+        }
+        if seekSucceeds {
+            currentTime = time
+        }
+        completion?(seekSucceeds)
+    }
+
+    func completeDeferredSeek(success: Bool) {
+        guard let deferredSeek else { return }
+        self.deferredSeek = nil
+        if success {
+            currentTime = deferredSeek.time
+        }
+        deferredSeek.completion?(success)
     }
 
     /// Deliberately unclamped, matching the real backends: they seek to

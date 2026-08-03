@@ -36,7 +36,8 @@ struct SkipIntroButtonView: View {
     }
 
     var body: some View {
-        if let introTargetSeconds,
+        if (playerManager.playerItem?.timelineMode ?? .automatic).allowsMarkerSkipActions,
+           let introTargetSeconds,
            shouldShowButton(targetTime: introTargetSeconds) {
             SkipSegmentButton(title: title, systemImage: "goforward") {
                 playerManager.userInteracted()
@@ -119,7 +120,8 @@ struct SkipOutroButtonView: View {
     }
 
     var body: some View {
-        if let outroStartSeconds,
+        if (playerManager.playerItem?.timelineMode ?? .automatic).allowsMarkerSkipActions,
+           let outroStartSeconds,
            shouldShowButton(startTime: outroStartSeconds) {
             SkipSegmentButton(title: title, systemImage: "goforward") {
                 playerManager.userInteracted()

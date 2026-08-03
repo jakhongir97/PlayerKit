@@ -39,6 +39,27 @@ public struct PlayerSkipSegment: Hashable, Sendable {
     }
 }
 
+/// The shape of the media timeline exposed by the host.
+///
+/// ``automatic`` preserves PlayerKit's existing duration/seek-window inference.
+/// Explicit modes let a host distinguish VOD, DVR, and unseekable live streams
+/// without introducing app-specific channel or programme models.
+public enum PlayerTimelineMode: Hashable, Sendable {
+    case automatic
+    case onDemand
+    case seekableLive
+    case pureLive
+
+    var allowsMarkerSkipActions: Bool {
+        switch self {
+        case .automatic, .onDemand:
+            return true
+        case .seekableLive, .pureLive:
+            return false
+        }
+    }
+}
+
 public struct PlayerItem {
     public let title: String
     /// A title treatment — the artwork that spells the title out — to show in
@@ -59,6 +80,7 @@ public struct PlayerItem {
     public let externalPlaybackURL: URL?
     public let externalPlaybackContentType: String?
     public let externalPlaybackDuration: Double?
+    public let timelineMode: PlayerTimelineMode
     public var lastPosition: Double? // Optional last playback position
     public let episodeIndex: Int?
     public let skipSegments: [PlayerSkipSegment]
@@ -84,6 +106,7 @@ public struct PlayerItem {
                 externalPlaybackURL: URL? = nil,
                 externalPlaybackContentType: String? = nil,
                 externalPlaybackDuration: Double? = nil,
+                timelineMode: PlayerTimelineMode = .automatic,
                 lastPosition: Double? = nil,
                 episodeIndex: Int? = nil,
                 skipSegments: [PlayerSkipSegment] = [],
@@ -100,6 +123,7 @@ public struct PlayerItem {
         self.externalPlaybackURL = externalPlaybackURL ?? castVideoUrl
         self.externalPlaybackContentType = externalPlaybackContentType
         self.externalPlaybackDuration = externalPlaybackDuration
+        self.timelineMode = timelineMode
         self.lastPosition = lastPosition
         self.episodeIndex = episodeIndex
         self.skipSegments = skipSegments
@@ -118,6 +142,7 @@ public struct PlayerItem {
                 externalPlaybackURL: URL? = nil,
                 externalPlaybackContentType: String? = nil,
                 externalPlaybackDuration: Double? = nil,
+                timelineMode: PlayerTimelineMode = .automatic,
                 lastPosition: Double? = nil,
                 episodeIndex: Int? = nil,
                 skipSegments: [PlayerSkipSegment] = []) {
@@ -132,6 +157,7 @@ public struct PlayerItem {
         self.externalPlaybackURL = externalPlaybackURL ?? castVideoUrl
         self.externalPlaybackContentType = externalPlaybackContentType
         self.externalPlaybackDuration = externalPlaybackDuration
+        self.timelineMode = timelineMode
         self.lastPosition = lastPosition
         self.episodeIndex = episodeIndex
         self.skipSegments = skipSegments

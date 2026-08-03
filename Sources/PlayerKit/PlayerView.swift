@@ -17,6 +17,17 @@ public struct PlayerPresentationPolicy: Equatable, Sendable {
         self.showsPlaybackQualityControl = showsPlaybackQualityControl
         self.showsPlaybackEndedOverlay = showsPlaybackEndedOverlay
     }
+
+    func resolved(for timelineMode: PlayerTimelineMode) -> Self {
+        guard timelineMode == .seekableLive || timelineMode == .pureLive else {
+            return self
+        }
+        return Self(
+            showsPlaybackSpeedControl: false,
+            showsPlaybackQualityControl: showsPlaybackQualityControl,
+            showsPlaybackEndedOverlay: false
+        )
+    }
 }
 
 @MainActor
@@ -115,7 +126,7 @@ public struct PlayerView: View {
                 .zIndex(2)
             }
 
-            if playerManager.isVideoEnded && presentationPolicy.showsPlaybackEndedOverlay {
+            if playerManager.isVideoEnded && effectivePresentationPolicy.showsPlaybackEndedOverlay {
                 PlaybackEndedOverlayView(playerManager: playerManager)
                     .zIndex(3)
             }
@@ -200,7 +211,9 @@ public struct PlayerView: View {
     }
 
     var hasBlockingStatus: Bool {
-        if playerManager.isVideoEnded && presentationPolicy.showsPlaybackEndedOverlay { return true }
+        if playerManager.isVideoEnded && effectivePresentationPolicy.showsPlaybackEndedOverlay {
+            return true
+        }
         guard let error = playerManager.lastError else { return false }
         return PlaybackErrorPresentation(
             error,
@@ -209,18 +222,24 @@ public struct PlayerView: View {
         ).blocksPlayback
     }
 
+    var effectivePresentationPolicy: PlayerPresentationPolicy {
+        presentationPolicy.resolved(
+            for: playerManager.playerItem?.timelineMode ?? .automatic
+        )
+    }
+
     @ViewBuilder
     private var playerControls: some View {
         #if os(iOS)
         PlayerControlsView(
             playerManager: playerManager,
             thumbnailPreviewController: thumbnailPreviewController,
-            presentationPolicy: presentationPolicy
+            presentationPolicy: effectivePresentationPolicy
         )
         #else
         PlayerControlsView(
             playerManager: playerManager,
-            presentationPolicy: presentationPolicy
+            presentationPolicy: effectivePresentationPolicy
         )
         #endif
     }
@@ -324,6 +343,7 @@ extension PlayerView {
         let externalPlaybackURL: URL?
         let externalPlaybackContentType: String?
         let externalPlaybackDurationBits: UInt64?
+        let timelineMode: PlayerTimelineMode
         let lastPositionBits: UInt64?
         let episodeIndex: Int?
         #if os(macOS)
@@ -343,6 +363,7 @@ extension PlayerView {
             externalPlaybackURL = item.externalPlaybackURL
             externalPlaybackContentType = item.externalPlaybackContentType
             externalPlaybackDurationBits = item.externalPlaybackDuration?.bitPattern
+            timelineMode = item.timelineMode
             lastPositionBits = item.lastPosition?.bitPattern
             episodeIndex = item.episodeIndex
             #if os(macOS)

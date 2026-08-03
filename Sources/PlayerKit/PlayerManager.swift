@@ -37,6 +37,7 @@ public struct HeuristicSkipButtonTitles: Equatable {
 @MainActor
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
+    private static let liveEdgeTolerance: Double = 2
 
     #if os(macOS)
     public var isPlaybackHealthMonitoringEnabled = false
@@ -268,6 +269,7 @@ public class PlayerManager: ObservableObject {
     private var qoeEventReducer = PlayerQoEEventReducer()
     private var playbackRetryTask: Task<Void, Never>?
     private var playbackRetryGeneration: UInt = 0
+    private var mediaItemGeneration: UInt = 0
     private var externalEpisodeNavigationTask: Task<Void, Never>?
     private var externalEpisodeNavigationGeneration = 0
     private struct ExternalEpisodeNavigationSnapshot {
@@ -500,6 +502,7 @@ public class PlayerManager: ObservableObject {
             externalPlaybackURL: sourceItem.externalPlaybackURL,
             externalPlaybackContentType: sourceItem.externalPlaybackContentType,
             externalPlaybackDuration: sourceItem.externalPlaybackDuration,
+            timelineMode: sourceItem.timelineMode,
             lastPosition: resumePosition,
             episodeIndex: sourceItem.episodeIndex,
             skipSegments: sourceItem.skipSegments,
@@ -519,6 +522,7 @@ public class PlayerManager: ObservableObject {
             externalPlaybackURL: sourceItem.externalPlaybackURL,
             externalPlaybackContentType: sourceItem.externalPlaybackContentType,
             externalPlaybackDuration: sourceItem.externalPlaybackDuration,
+            timelineMode: sourceItem.timelineMode,
             lastPosition: resumePosition,
             episodeIndex: sourceItem.episodeIndex,
             skipSegments: sourceItem.skipSegments
@@ -595,6 +599,7 @@ public class PlayerManager: ObservableObject {
         itemContext: PlayerItem,
         shouldAutoplay: Bool? = nil
     ) {
+        mediaItemGeneration &+= 1
         let startsPlayback = shouldAutoplay ?? autoplayStorage
         emitQoEEvents(qoeEventReducer.loadRequested(autoplay: startsPlayback))
         configureIntegrationsIfNeeded()
@@ -1003,14 +1008,82 @@ extension PlayerManager {
     /// no-op. Fall back to the backend's seekable window, which is exactly the
     /// DVR buffer the user can actually move within.
     var seekableRange: ClosedRange<Double>? {
-        if duration > 0 {
+        switch playerItem?.timelineMode ?? .automatic {
+        case .automatic:
+            if duration > 0 {
+                return 0 ... duration
+            }
+            return backendSeekableRange
+        case .onDemand:
+            guard duration > 0 else { return nil }
             return 0 ... duration
+        case .seekableLive:
+            return backendSeekableRange
+        case .pureLive:
+            return nil
         }
+    }
+
+    private var backendSeekableRange: ClosedRange<Double>? {
         guard let window = seekWindowReporter?.seekableTimeWindow,
               window.upperBound > window.lowerBound else {
             return nil
         }
         return window
+    }
+
+    /// Whether the current live playhead is at the moving edge.
+    ///
+    /// `nil` means the current item is on-demand, automatic inference has not
+    /// identified a live window, or a seekable live window is not available yet.
+    /// Pure-live media is always at its only playable edge.
+    public var isAtLiveEdge: Bool? {
+        switch playerItem?.timelineMode ?? .automatic {
+        case .onDemand:
+            return nil
+        case .pureLive:
+            return true
+        case .automatic:
+            guard duration <= 0 else { return nil }
+        case .seekableLive:
+            break
+        }
+
+        guard let range = seekableRange else { return nil }
+        return currentTime >= range.upperBound - Self.liveEdgeTolerance
+    }
+
+    /// Seeks a DVR/live-window item to its current upper edge and starts a
+    /// paused item only after that seek succeeds.
+    ///
+    /// Pure-live media has no alternate position and is deliberately left
+    /// untouched. The seek still travels through ``seek(to:completion:)`` so
+    /// gestures, sliders, remote commands, and this action share one clamp.
+    public func goLive() {
+        switch playerItem?.timelineMode ?? .automatic {
+        case .onDemand, .pureLive:
+            return
+        case .automatic:
+            guard duration <= 0 else { return }
+        case .seekableLive:
+            break
+        }
+
+        guard let range = seekableRange else { return }
+        let backendGeneration = playerGeneration
+        let itemGeneration = mediaItemGeneration
+        let itemURL = playerItem?.url
+        let startsPlayback = !isPlaybackRequested
+        seek(to: range.upperBound) { [weak self] success in
+            guard success,
+                  let self,
+                  self.playerGeneration == backendGeneration,
+                  self.mediaItemGeneration == itemGeneration,
+                  self.playerItem?.url == itemURL else { return }
+            if startsPlayback {
+                self.play()
+            }
+        }
     }
 
     public func seek(to time: Double, completion: (@MainActor (Bool) -> Void)? = nil) {
@@ -1041,8 +1114,16 @@ extension PlayerManager {
             completion?(false)
             return
         }
+        let backendGeneration = playerGeneration
+        let itemGeneration = mediaItemGeneration
         playbackManager.seek(to: targetTime) { [weak self] success in
             guard let self else {
+                completion?(false)
+                return
+            }
+            guard self.playerGeneration == backendGeneration,
+                  self.mediaItemGeneration == itemGeneration else {
+                self.debugLog("Ignoring stale seek completion after media owner changed.")
                 completion?(false)
                 return
             }
@@ -1426,10 +1507,22 @@ extension PlayerManager {
     /// playing to describe.
     func makeNowPlayingSnapshot() -> NowPlayingSnapshot? {
         guard let item = playerItem else { return nil }
-        // Live has no meaningful total, and the seekable window is what the
-        // rest of PlayerKit already treats as the timeline.
-        let isLive = duration <= 0 && seekableRange != nil
-        let resolvedDuration: Double? = duration > 0 ? duration : nil
+        let isLive: Bool
+        let resolvedDuration: Double?
+        switch item.timelineMode {
+        case .automatic:
+            // Preserve the original inference for hosts that have not opted in.
+            isLive = duration <= 0 && seekableRange != nil
+            resolvedDuration = duration > 0 ? duration : nil
+        case .onDemand:
+            isLive = false
+            resolvedDuration = duration > 0 ? duration : nil
+        case .seekableLive, .pureLive:
+            // A live broadcast has no stable total, even if a backend reports
+            // a finite DVR window as its duration.
+            isLive = true
+            resolvedDuration = nil
+        }
         return NowPlayingSnapshot(
             title: item.title,
             subtitle: item.description,
@@ -1959,6 +2052,7 @@ extension PlayerManager {
     }
 
     private func resetPlayer(clearMediaContext: Bool) {
+        mediaItemGeneration &+= 1
         cancelPendingPlaybackResume()
         cancelPlaybackRetry()
         cancelExternalEpisodeNavigation(clearHandler: clearMediaContext)

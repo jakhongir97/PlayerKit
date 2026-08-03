@@ -41,6 +41,7 @@ struct BottomControlsView: View {
 
     private var regularLayout: some View {
         HStack(spacing: 12) {
+            LiveStatusView(playerManager: playerManager)
             MediaOptionsMenu(
                 playerManager: playerManager,
                 presentationPolicy: presentationPolicy
@@ -63,6 +64,13 @@ struct BottomControlsView: View {
 
     private var compactLayout: some View {
         VStack(spacing: 8) {
+            if showsCompactLiveStatusRow {
+                HStack {
+                    LiveStatusView(playerManager: playerManager)
+                    Spacer(minLength: 0)
+                }
+            }
+
             HStack(spacing: 12) {
                 MediaOptionsMenu(
                     playerManager: playerManager,
@@ -78,6 +86,10 @@ struct BottomControlsView: View {
                 SkipOutroButtonView(playerManager: playerManager)
             }
         }
+    }
+
+    var showsCompactLiveStatusRow: Bool {
+        playerManager.isAtLiveEdge != nil
     }
 
     @ViewBuilder
@@ -144,5 +156,44 @@ struct BottomControlsView: View {
         if !showsPiP && !showsRotate && showsFullscreen {
             FullscreenButtonView(playerManager: playerManager)
         }
+    }
+}
+
+@MainActor
+private struct LiveStatusView: View {
+    @ObservedObject var playerManager: PlayerManager
+
+    @ViewBuilder
+    var body: some View {
+        if let isAtLiveEdge = playerManager.isAtLiveEdge {
+            if isAtLiveEdge {
+                label(playerManager.strings.live)
+                    .accessibilityLabel(playerManager.strings.live)
+            } else {
+                Button(action: playerManager.goLive) {
+                    label(playerManager.strings.goLive)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .accessibilityLabel(playerManager.strings.goLive)
+                .accessibilityHint(playerManager.strings.goLiveHint)
+            }
+        }
+    }
+
+    private func label(_ title: String) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.caption.weight(.bold))
+                .foregroundColor(.white)
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background(Color.black.opacity(0.45))
+        .clipShape(Capsule())
+        .contentShape(Capsule())
     }
 }

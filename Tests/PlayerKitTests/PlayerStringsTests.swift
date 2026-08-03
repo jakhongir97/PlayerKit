@@ -6,6 +6,9 @@ final class PlayerStringsTests: XCTestCase {
         let strings = PlayerStrings()
 
         XCTAssertEqual(strings.play, "Play")
+        XCTAssertEqual(strings.live, "LIVE")
+        XCTAssertEqual(strings.goLive, "Go Live")
+        XCTAssertEqual(strings.goLiveHint, "Jumps to the live edge")
         XCTAssertEqual(strings.playbackPositionValue("01:02", "42:00"), "01:02 of 42:00")
         XCTAssertEqual(strings.skipIntervalValue(1.25), "1.25")
         XCTAssertEqual(strings.skipForwardSeconds(10), "Skip forward 10 seconds")

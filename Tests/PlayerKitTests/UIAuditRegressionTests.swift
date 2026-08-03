@@ -63,13 +63,86 @@ final class UIAuditRegressionTests: XCTestCase {
         let url = URL(string: "https://example.com/video.m3u8")!
         let first = PlayerItem(title: "One", url: url, lastPosition: .nan, episodeIndex: 1)
         let renamed = PlayerItem(title: "Two", url: url, lastPosition: .nan, episodeIndex: 1)
+        let live = PlayerItem(title: "One", url: url, timelineMode: .seekableLive, lastPosition: .nan, episodeIndex: 1)
 
         let firstIdentity = PlayerView.LoadMode.single(first).identity
         XCTAssertEqual(firstIdentity, PlayerView.LoadMode.single(first).identity)
         XCTAssertNotEqual(firstIdentity, PlayerView.LoadMode.single(renamed).identity)
+        XCTAssertNotEqual(firstIdentity, PlayerView.LoadMode.single(live).identity)
         XCTAssertNotEqual(
             PlayerView.LoadMode.episodes([first], 0).identity,
             PlayerView.LoadMode.episodes([first], 1).identity
+        )
+    }
+
+    func testExplicitPureLiveHidesTheScrubberWithoutChangingAutomaticLayout() {
+        let manager = PlayerManager.shared
+        defer { manager.tearDown() }
+        let url = URL(string: "https://example.com/live.m3u8")!
+        manager.areControlsVisible = true
+        manager.isLocked = false
+
+        manager.playerItem = PlayerItem(title: "Automatic", url: url)
+        XCTAssertTrue(
+            PlayerControlsView(playerManager: manager, presentationPolicy: .init()).showsScrubber
+        )
+
+        manager.playerItem = PlayerItem(title: "Pure live", url: url, timelineMode: .pureLive)
+        XCTAssertFalse(
+            PlayerControlsView(playerManager: manager, presentationPolicy: .init()).showsScrubber
+        )
+    }
+
+    func testExplicitLiveModesResolvePresentationAndMarkerPoliciesInternally() {
+        let manager = PlayerManager.shared
+        defer { manager.tearDown() }
+        let url = URL(string: "https://example.com/live.m3u8")!
+        let requested = PlayerPresentationPolicy()
+
+        for mode in [PlayerTimelineMode.seekableLive, .pureLive] {
+            manager.playerItem = PlayerItem(title: "Live", url: url, timelineMode: mode)
+            let view = PlayerView(playerManager: manager, presentationPolicy: requested)
+
+            XCTAssertEqual(
+                view.effectivePresentationPolicy,
+                PlayerPresentationPolicy(
+                    showsPlaybackSpeedControl: false,
+                    showsPlaybackQualityControl: true,
+                    showsPlaybackEndedOverlay: false
+                )
+            )
+            XCTAssertFalse(mode.allowsMarkerSkipActions)
+            manager.isVideoEnded = true
+            XCTAssertFalse(view.hasBlockingStatus)
+            manager.isVideoEnded = false
+        }
+
+        XCTAssertEqual(requested.resolved(for: .automatic), requested)
+        XCTAssertEqual(requested.resolved(for: .onDemand), requested)
+        XCTAssertFalse(
+            PlayerPresentationPolicy(showsPlaybackQualityControl: false)
+                .resolved(for: .seekableLive)
+                .showsPlaybackQualityControl
+        )
+        XCTAssertTrue(PlayerTimelineMode.automatic.allowsMarkerSkipActions)
+        XCTAssertTrue(PlayerTimelineMode.onDemand.allowsMarkerSkipActions)
+    }
+
+    func testCompactLiveStatusGetsItsOwnConditionalRow() {
+        let manager = PlayerManager.shared
+        defer { manager.tearDown() }
+        let url = URL(string: "https://example.com/live.m3u8")!
+
+        manager.playerItem = PlayerItem(title: "Movie", url: url, timelineMode: .onDemand)
+        XCTAssertFalse(
+            BottomControlsView(playerManager: manager, presentationPolicy: .init())
+                .showsCompactLiveStatusRow
+        )
+
+        manager.playerItem = PlayerItem(title: "Live", url: url, timelineMode: .pureLive)
+        XCTAssertTrue(
+            BottomControlsView(playerManager: manager, presentationPolicy: .init())
+                .showsCompactLiveStatusRow
         )
     }
 

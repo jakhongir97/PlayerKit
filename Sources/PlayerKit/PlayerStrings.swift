@@ -33,6 +33,9 @@ public struct PlayerStrings {
     public var bufferingHint = "Media is loading"
     public var playbackPosition = "Playback position"
     public var seekThroughMediaHint = "Drag to seek through the media"
+    public var live = "LIVE"
+    public var goLive = "Go Live"
+    public var goLiveHint = "Jumps to the live edge"
     public var playbackPositionValue: (_ current: String, _ total: String) -> String = {
         "\($0) of \($1)"
     }

@@ -18,9 +18,10 @@ struct PlayerControlsView: View {
 
     /// The scrubber outlives the chrome: it stays up while a skip session or a
     /// drag is moving the playhead, so the user can see where they are going.
-    private var showsScrubber: Bool {
+    var showsScrubber: Bool {
         (playerManager.isDoubleTapSeeking || playerManager.isSeeking || playerManager.areControlsVisible)
             && !playerManager.isLocked
+            && playerManager.playerItem?.timelineMode != .pureLive
     }
 
     var body: some View {
