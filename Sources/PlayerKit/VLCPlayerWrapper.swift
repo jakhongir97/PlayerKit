@@ -107,7 +107,7 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
     /// Distinguishes a caller-requested stop from reaching the end of the media,
     /// both of which VLCKit surfaces as `.stopped`.
     private var isStoppingByRequest = false
-    
+
     public weak var lifecycleReporter: PlayerLifecycleReporting?
     public var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
     public var hasLoadedMedia: Bool { player.media != nil }

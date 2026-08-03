@@ -558,7 +558,7 @@ public class PlayerManager: ObservableObject {
             itemContext: playerItem
         )
     }
-    
+
     public func loadEpisodes(playerItems: [PlayerItem], currentIndex: Int = 0 ) {
         guard !playerItems.isEmpty else {
             // An empty playlist is an explicit transition to no media. Keeping
@@ -655,7 +655,7 @@ public class PlayerManager: ObservableObject {
         }
         userInteracted()
     }
-    
+
     public func videoDidEnd() {
         // Backends call this only from their authoritative end event. Timeline
         // values can still lag that callback (and live/VOD transitions can
@@ -1196,7 +1196,7 @@ extension PlayerManager {
 
         applySavedTrackIdentifiers()
     }
-    
+
     public func selectAudioTrack(track: TrackInfo) {
         let shouldResumeAfterTrackSelection = shouldResumePlaybackAfterStall
         let trackSelectionReferenceTime = max(currentPlayer?.currentTime ?? currentTime, 0)
@@ -1219,12 +1219,12 @@ extension PlayerManager {
         trackManager?.selectSubtitle(withID: track?.id)
         userInteracted()
     }
-    
+
     private func saveCurrentTracks() {
         savedAudio = selectedAudio
         savedSubtitleSelection = selectedSubtitle.map(SavedSubtitleSelection.selected) ?? .disabled
     }
-    
+
     private func applySavedTrackIdentifiers() {
         if let savedAudio = savedAudio {
             let match = availableAudioTracks.first(where: { $0.id == savedAudio.id })
@@ -1236,7 +1236,7 @@ extension PlayerManager {
                 selectAudioTrack(track: match)
             }
         }
-        
+
         switch savedSubtitleSelection {
         case .unchanged:
             break
