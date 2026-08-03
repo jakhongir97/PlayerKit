@@ -250,7 +250,7 @@ public class PlayerManager: ObservableObject {
     private var isMutedStorage = false
     private var autoplayStorage = true
     private var externalPlaybackEnabledStorage = false
-    private var pictureInPictureRestorationHandlerStorage: (((Bool) -> Void) -> Void)?
+    private var pictureInPictureRestorationHandlerStorage: ((@escaping (Bool) -> Void) -> Void)?
     private var voiceControlRunningOverrideStorage: Bool?
     private var shouldResumePlaybackAfterStall: Bool {
         get { isPlaybackRequested }
@@ -1539,7 +1539,7 @@ extension PlayerManager {
 extension PlayerManager {
     /// Lets the host restore its player presentation when system PiP closes.
     /// Call the supplied completion with `true` only after restoration succeeds.
-    public var onPictureInPictureRestoreRequested: (((Bool) -> Void) -> Void)? {
+    public var onPictureInPictureRestoreRequested: ((@escaping (Bool) -> Void) -> Void)? {
         get { pictureInPictureRestorationHandlerStorage }
         set {
             pictureInPictureRestorationHandlerStorage = newValue

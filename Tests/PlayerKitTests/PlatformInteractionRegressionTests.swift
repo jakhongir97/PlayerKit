@@ -87,6 +87,23 @@ final class PlatformInteractionRegressionTests: XCTestCase {
         )
     }
 
+    func testPictureInPictureRestorationMayCompleteAsynchronously() {
+        let manager = PlayerManager.shared
+        let original = manager.onPictureInPictureRestoreRequested
+        defer { manager.onPictureInPictureRestoreRequested = original }
+
+        var deferredCompletion: ((Bool) -> Void)?
+        manager.onPictureInPictureRestoreRequested = { completion in
+            deferredCompletion = completion
+        }
+
+        var restored: Bool?
+        manager.onPictureInPictureRestoreRequested? { restored = $0 }
+        XCTAssertNotNil(deferredCompletion)
+        deferredCompletion?(true)
+        XCTAssertEqual(restored, true)
+    }
+
     #if os(macOS)
     func testMountingPointerHostDoesNotStealFirstResponder() {
         let window = NSWindow(

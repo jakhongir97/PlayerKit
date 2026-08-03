@@ -275,7 +275,7 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var playerView = AVPlayerView()
     private var currentSourceURL: URL?
     private var pipController: AVPictureInPictureController?
-    var onPictureInPictureRestoreRequested: (((Bool) -> Void) -> Void)?
+    var onPictureInPictureRestoreRequested: ((@escaping (Bool) -> Void) -> Void)?
     
     private var playerItemStatusObserver: NSKeyValueObservation?
     private var playbackEndedObserver: Any? {
