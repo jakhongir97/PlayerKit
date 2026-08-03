@@ -178,13 +178,13 @@ final class PlayerKitPointerHostView: NSView {
 
     private var scrollAccumulator: CGSize = .zero
     private var isScrolling = false
+    private var magnificationScale: CGFloat = 1
 
     override var acceptsFirstResponder: Bool { true }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         onWindowChange?(window)
-        window?.makeFirstResponder(self)
     }
 
     private func location(_ event: NSEvent) -> CGPoint {
@@ -195,6 +195,10 @@ final class PlayerKitPointerHostView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        // Mounting a player must not steal focus from a text field or another
+        // control. An intentional click on the video is the point at which its
+        // keyboard shortcuts become active.
+        window?.makeFirstResponder(self)
         manager?.touchesBegan(at: location(event), touchCount: 1, source: .pointer)
     }
 
@@ -211,14 +215,27 @@ final class PlayerKitPointerHostView: NSView {
     }
 
     override func magnify(with event: NSEvent) {
-        let phase: PinchPhase
         switch event.phase {
-        case .began: phase = .began
-        case .ended: phase = .ended
-        case .cancelled: phase = .cancelled
-        default: phase = .changed
+        case .began:
+            magnificationScale = 1
+            manager?.pinchChanged(scale: magnificationScale, phase: .began)
+            magnificationScale = max(magnificationScale + event.magnification, 0.01)
+            manager?.pinchChanged(scale: magnificationScale, phase: .changed)
+        case .ended:
+            magnificationScale = max(magnificationScale + event.magnification, 0.01)
+            manager?.pinchChanged(scale: magnificationScale, phase: .changed)
+            manager?.pinchChanged(scale: magnificationScale, phase: .ended)
+            magnificationScale = 1
+        case .cancelled:
+            manager?.pinchChanged(scale: magnificationScale, phase: .cancelled)
+            magnificationScale = 1
+        default:
+            // NSEvent reports an incremental magnification delta, unlike
+            // UIPinchGestureRecognizer.scale. Accumulate it across the gesture
+            // before applying the shared fit/fill thresholds.
+            magnificationScale = max(magnificationScale + event.magnification, 0.01)
+            manager?.pinchChanged(scale: magnificationScale, phase: .changed)
         }
-        manager?.pinchChanged(scale: 1 + event.magnification, phase: phase)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -240,6 +257,9 @@ final class PlayerKitPointerHostView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        guard !Self.hasReservedShortcutModifier(event.modifierFlags) else {
+            return super.keyDown(with: event)
+        }
         guard let manager else { return super.keyDown(with: event) }
         switch event.keyCode {
         case 49: manager.twoFingerTap()                        // space
@@ -250,6 +270,10 @@ final class PlayerKitPointerHostView: NSView {
         case 3: manager.toggleZoom()                           // F
         default: super.keyDown(with: event)
         }
+    }
+
+    static func hasReservedShortcutModifier(_ flags: NSEvent.ModifierFlags) -> Bool {
+        !flags.intersection([.command, .control, .option]).isEmpty
     }
 }
 

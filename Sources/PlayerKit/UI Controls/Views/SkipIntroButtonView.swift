@@ -8,6 +8,7 @@ private enum SkipSegmentHeuristics {
     static let minimumOutroRemainingSeconds = 4.0
 }
 
+@MainActor
 struct SkipIntroButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
@@ -71,6 +72,7 @@ struct SkipIntroButtonView: View {
     }
 }
 
+@MainActor
 struct SkipOutroButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
@@ -147,6 +149,7 @@ struct SkipOutroButtonView: View {
 }
 
 private struct SkipSegmentButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
     let systemImage: String
     let action: () -> Void
@@ -155,15 +158,17 @@ private struct SkipSegmentButton: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.caption.weight(.bold))
 
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .multilineTextAlignment(.center)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
+            .frame(minHeight: 44)
             .background(buttonBackground)
             .overlay(buttonStroke)
         }

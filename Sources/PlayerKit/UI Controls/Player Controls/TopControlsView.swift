@@ -1,27 +1,33 @@
 import SwiftUI
 
+@MainActor
 struct TopControlsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var playerManager: PlayerManager
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             CloseButtonView(playerManager: playerManager)
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 2) {
                 if let item = playerManager.playerItem {
                     PlayerTitleView(title: item.title, imageURL: item.titleImageURL)
 
                     if let description = item.description {
                         Text(description)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(.gray)
-                            .lineLimit(1)
+                            .font(.callout.weight(.medium))
+                            .foregroundStyle(.white)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     }
                 }
             }
-            .padding(.horizontal)
-            Spacer()
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
-            SharingMenuView(isAirPlayEnabled: playerManager.isExternalPlaybackEnabled)
+            SharingMenuView(
+                playerManager: playerManager,
+                isAirPlayEnabled: playerManager.canUseAirPlay
+            )
             SettingsMenu(playerManager: playerManager)
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -39,6 +45,7 @@ struct TopControlsView: View {
 /// arrives, and keeps rendering it if the fetch fails — so no cache or
 /// network policy has to move into PlayerKit for this to degrade well.
 private struct PlayerTitleView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let title: String
     let imageURL: URL?
 
@@ -80,8 +87,8 @@ private struct PlayerTitleView: View {
 
     private var titleText: some View {
         Text(title)
-            .font(.system(size: 25, weight: .semibold))
-            .foregroundColor(.white)
-            .lineLimit(1)
+            .font(.title2.weight(.semibold))
+            .foregroundStyle(.white)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
     }
 }

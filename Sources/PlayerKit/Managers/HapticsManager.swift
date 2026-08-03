@@ -32,6 +32,7 @@ public enum PKNotificationFeedbackType {
 ///
 /// Main-thread only: `UIFeedbackGenerator` is a UIKit type. Every caller is a
 /// SwiftUI action or a gesture callback, both of which already run there.
+@MainActor
 class HapticsManager {
     static let shared = HapticsManager()
 

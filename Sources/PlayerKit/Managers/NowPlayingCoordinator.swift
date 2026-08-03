@@ -75,6 +75,8 @@ final class NowPlayingCoordinator {
 
     private var commandTargets: [(MPRemoteCommand, Any)] = []
     private var previousCommandEnablement: [(MPRemoteCommand, Bool)] = []
+    private var previousSkipForwardIntervals: [NSNumber]?
+    private var previousSkipBackwardIntervals: [NSNumber]?
     private var previousNowPlayingInfo: [String: Any]?
     private var artwork: MPMediaItemArtwork?
 
@@ -104,6 +106,8 @@ final class NowPlayingCoordinator {
         add(center.pauseCommand, handler: commands.pause)
         add(center.togglePlayPauseCommand, handler: commands.toggle)
 
+        previousSkipForwardIntervals = center.skipForwardCommand.preferredIntervals
+        previousSkipBackwardIntervals = center.skipBackwardCommand.preferredIntervals
         center.skipForwardCommand.preferredIntervals = [NSNumber(value: Self.skipInterval)]
         center.skipBackwardCommand.preferredIntervals = [NSNumber(value: Self.skipInterval)]
         add(center.skipForwardCommand) { commands.skipForward(Self.skipInterval) }
@@ -148,6 +152,16 @@ final class NowPlayingCoordinator {
             command.isEnabled = wasEnabled
         }
         previousCommandEnablement.removeAll()
+
+        let center = MPRemoteCommandCenter.shared()
+        if let previousSkipForwardIntervals {
+            center.skipForwardCommand.preferredIntervals = previousSkipForwardIntervals
+        }
+        if let previousSkipBackwardIntervals {
+            center.skipBackwardCommand.preferredIntervals = previousSkipBackwardIntervals
+        }
+        previousSkipForwardIntervals = nil
+        previousSkipBackwardIntervals = nil
 
         MPNowPlayingInfoCenter.default().nowPlayingInfo = previousNowPlayingInfo
         previousNowPlayingInfo = nil

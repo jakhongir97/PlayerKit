@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 class PlaybackManager {
     private var player: PlayerProtocol
     private weak var playerManager: PlayerManager?
@@ -20,7 +21,7 @@ class PlaybackManager {
     func pause() { player.pause() }
     func stop() { player.stop() }
     
-    func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
+    func seek(to time: Double, completion: (@MainActor (Bool) -> Void)? = nil) {
         player.seek(to: time, completion: completion)
     }
     

@@ -48,6 +48,7 @@ enum ScrubRateTier: Equatable, CaseIterable {
 /// re-rates only the travel that happens afterwards, so the playhead never jumps
 /// when the finger drifts across a tier boundary, and dragging back out to full
 /// rate converges on the thumb rather than snapping.
+@MainActor
 final class ScrubController {
 
     private var offset: Double = 0

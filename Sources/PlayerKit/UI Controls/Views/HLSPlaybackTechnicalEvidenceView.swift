@@ -324,7 +324,7 @@ struct HLSPlaybackTechnicalEvidenceView: View {
                                 Text(errorDescription(error))
                                     .font(.system(size: 10, design: .monospaced))
                                 Text(PlaybackDiagnosticsFormat.fullTime(error.occurredAt))
-                                    .font(.system(size: 9))
+                                    .font(.caption2)
                                     .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
                             }
                             .padding(.vertical, 6)
@@ -353,7 +353,7 @@ struct HLSPlaybackTechnicalEvidenceView: View {
                                 Text(
                                     "\(event.mediaType.rawValue) · \(event.confidence.rawValue) evidence · \(PlaybackDiagnosticsFormat.fullTime(event.occurredAt))"
                                 )
-                                .font(.system(size: 9, design: .monospaced))
+                                .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
                             }
                             .padding(.vertical, 6)
@@ -528,7 +528,7 @@ struct HLSPlaybackTechnicalEvidenceView: View {
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(label)
-                .font(.system(size: 9))
+                .font(.caption2)
                 .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
             Spacer(minLength: 8)
             Text(value)
@@ -556,7 +556,7 @@ struct HLSPlaybackTechnicalEvidenceView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title.uppercased())
-                .font(.system(size: 8, weight: .bold))
+                .font(.caption2.bold())
                 .tracking(0.5)
                 .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
                 .padding(.top, 8)
@@ -581,9 +581,9 @@ struct HLSPlaybackTechnicalEvidenceView: View {
                         )
                         VStack(alignment: .leading, spacing: 1) {
                             Text(itemName)
-                                .font(.system(size: 9, weight: .medium))
+                                .font(.caption2.weight(.medium))
                             Text(trackMetadata(track))
-                                .font(.system(size: 8, design: .monospaced))
+                                .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
                         }
                     }
@@ -639,7 +639,7 @@ struct HLSPlaybackTechnicalEvidenceView: View {
                         ? "xmark.octagon"
                         : "arrow.down.circle"
                 )
-                .font(.system(size: 9, weight: .semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(
                     entry.didFail
                         ? PlaybackDiagnosticsTheme.danger
@@ -647,12 +647,12 @@ struct HLSPlaybackTechnicalEvidenceView: View {
                 )
                 Spacer()
                 Text(PlaybackDiagnosticsFormat.fullTime(entry.occurredAt))
-                    .font(.system(size: 8, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
             }
 
             Text(requestSummary(entry))
-                .font(.system(size: 8, design: .monospaced))
+                .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -665,7 +665,7 @@ struct HLSPlaybackTechnicalEvidenceView: View {
 
     private func emptyRow(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 9))
+            .font(.caption2)
             .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)

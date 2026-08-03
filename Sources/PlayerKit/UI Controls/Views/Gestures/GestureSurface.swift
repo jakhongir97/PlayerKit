@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 /// Replaces `GestureView`.
 ///
@@ -10,31 +11,23 @@ import SwiftUI
 struct GestureSurface: View {
 
     let manager: GestureManager
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         GeometryReader { proxy in
-            let surface = SurfaceGeometry(size: proxy.size, insets: proxy.safeAreaInsets)
+            let surface = SurfaceGeometry(
+                size: proxy.size,
+                insets: proxy.safeAreaInsets,
+                layoutDirection: layoutDirection
+            )
             let geometry = manager.resolvedGeometry(for: surface)
 
             ZStack {
-                GestureTouchHost(
+                AccessibleGestureTouchHost(
                     manager: manager,
                     surface: surface,
                     onWindow: { manager.attachWindow($0) }
                 )
-                .accessibilityElement()
-                .accessibilityLabel("Video")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Shows the playback controls. More actions are available in the rotor.")
-                .accessibilityAction { manager.toggleControls() }
-                .accessibilityAction(named: Text("Skip forward 10 seconds")) { manager.skipForward() }
-                .accessibilityAction(named: Text("Skip back 10 seconds")) { manager.skipBackward() }
-                .accessibilityAction(named: Text("Play or pause")) { manager.togglePlayback() }
-                .accessibilityAction(named: Text("Fill screen")) { manager.toggleZoom() }
-                // Never `.accessibilityDirectTouch`: at full-screen size it
-                // silences VoiceOver across the whole player, chrome included.
-
-                GestureAccessibilityProxies(manager: manager, geometry: geometry)
 
                 GestureScrimView(model: manager.hudModel)
 
@@ -50,6 +43,81 @@ struct GestureSurface: View {
                 GestureCoachView(model: manager.coach, geometry: geometry)
             }
         }
+    }
+}
+
+/// A small observed leaf so configuration, lock and zoom changes update the
+/// rotor without making the full gesture surface observe touch-rate HUD state.
+private struct AccessibleGestureTouchHost: View {
+    @ObservedObject var manager: GestureManager
+    let surface: SurfaceGeometry
+    let onWindow: (PKWindow?) -> Void
+
+    private var canSkip: Bool {
+        manager.configuration.isEnabled
+            && !manager.isLocked()
+            && manager.seekableRangeProvider?() != nil
+    }
+
+    private var canTogglePlayback: Bool {
+        manager.configuration.isEnabled
+            && manager.configuration.isTwoFingerPlayPauseEnabled
+            && !manager.isLocked()
+    }
+
+    private var canZoom: Bool {
+        manager.isZoomAvailable() && !manager.isLocked()
+    }
+
+    private var skipSeconds: String {
+        let value = manager.configuration.skipInterval
+        return value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+    }
+
+    private var accessibilityHint: Text {
+        if manager.isLocked() {
+            return Text("Controls are locked. Use Unlock controls to make playback actions available.")
+        }
+        return Text(
+            "Shows the playback controls. Playback speed is in the controls; seeking, volume, brightness and zoom are available in Actions when supported."
+        )
+    }
+
+    var body: some View {
+        let geometry = manager.resolvedGeometry(for: surface)
+
+        GestureTouchHost(manager: manager, surface: surface, onWindow: onWindow)
+            .accessibilityElement()
+            .accessibilityLabel("Video")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint(accessibilityHint)
+            .accessibilityAction { manager.toggleControls() }
+            .accessibilityActionIf(
+                canSkip,
+                named: Text("Skip forward \(skipSeconds) seconds")
+            ) {
+                manager.skipForward()
+            }
+            .accessibilityActionIf(
+                canSkip,
+                named: Text("Skip back \(skipSeconds) seconds")
+            ) {
+                manager.skipBackward()
+            }
+            .accessibilityActionIf(canTogglePlayback, named: Text("Play or pause")) {
+                manager.togglePlayback()
+            }
+            .accessibilityActionIf(
+                canZoom,
+                named: manager.isZoomFilled
+                    ? Text("Fit video to screen")
+                    : Text("Fill screen")
+            ) {
+                manager.toggleZoom()
+            }
+            .gestureAdjustmentAccessibilityActions(manager: manager, geometry: geometry)
+            // Never `.accessibilityDirectTouch`: at full-screen size it
+            // silences VoiceOver across the whole player, chrome included.
     }
 }
 

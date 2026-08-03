@@ -1,10 +1,12 @@
 import SwiftUI
 
+@MainActor
 struct PlaybackSliderView: View {
     @ObservedObject var playerManager: PlayerManager
     @State private var sliderValue: Double = 0
     @State private var isEditingSlider = false
     @State private var pendingSeekValue: Double?
+    @State private var seekRequestID = 0
 
     private var sliderHeight: CGFloat {
         PlayerKitPlatform.isDesktop ? 36 : 45
@@ -81,7 +83,7 @@ struct PlaybackSliderView: View {
                             "Begin scrubbing current=\(formatTime(playerManager.currentTime)) " +
                             "isPlaying=\(playerManager.isPlaying)"
                         )
-                        pendingSeekValue = nil
+                        invalidatePendingSeek()
                         playerManager.userInteracted()
                     } else {
                         let targetValue = sliderValue
@@ -90,23 +92,14 @@ struct PlaybackSliderView: View {
                             "current=\(formatTime(playerManager.currentTime)) " +
                             "shouldResume=\(playerManager.isPlaying)"
                         )
-                        pendingSeekValue = targetValue
                         playerManager.userInteracted()
-                        playerManager.seek(to: targetValue) { success in
-                            DispatchQueue.main.async {
-                                debugLog(
-                                    "Seek completion success=\(success) " +
-                                    "target=\(formatTime(targetValue)) " +
-                                    "current=\(formatTime(playerManager.currentTime)) " +
-                                    "isPlaying=\(playerManager.isPlaying)"
-                                )
-                                pendingSeekValue = nil
-                                if !success {
-                                    sliderValue = playerManager.currentTime
-                                }
-                            }
-                        }
+                        performSeek(to: targetValue)
                     }
+                } onEditingCancelled: {
+                    playerManager.isSeeking = false
+                    isEditingSlider = false
+                    invalidatePendingSeek()
+                    sliderValue = playerManager.currentTime
                 }
                 .frame(height: sliderHeight)
                 .padding(.vertical)
@@ -117,6 +110,7 @@ struct PlaybackSliderView: View {
                 .accessibilityValue(accessibilityValueText)
                 .accessibilityHint(PlayerKitPlatform.isDesktop ? "Click or drag to seek through the media" : "Drag to seek through the media")
                 .accessibilityIdentifier("player.timeline")
+                .accessibilityHidden(seekableRange == nil)
                 // The slider previously exposed a label and a value but no way
                 // to change them, so VoiceOver users could read the playhead
                 // but could not seek at all. Attaching an adjustable action is
@@ -138,8 +132,16 @@ struct PlaybackSliderView: View {
             if !isEditingSlider {
                 sliderValue = newValue
                 if let pendingSeekValue, abs(pendingSeekValue - newValue) < 0.75 {
-                    self.pendingSeekValue = nil
+                    invalidatePendingSeek()
                 }
+            }
+        }
+        .compatOnChange(of: seekableRange) { range in
+            if range == nil, isEditingSlider {
+                playerManager.isSeeking = false
+                isEditingSlider = false
+                invalidatePendingSeek()
+                sliderValue = playerManager.currentTime
             }
         }
     }
@@ -172,9 +174,34 @@ struct PlaybackSliderView: View {
             seekableRange.upperBound
         )
         sliderValue = target
-        pendingSeekValue = target
         playerManager.userInteracted()
-        playerManager.seek(to: target) { _ in }
+        performSeek(to: target)
+    }
+
+    private func performSeek(to target: Double) {
+        seekRequestID &+= 1
+        let requestID = seekRequestID
+        pendingSeekValue = target
+        playerManager.seek(to: target) { success in
+            DispatchQueue.main.async {
+                guard requestID == seekRequestID else { return }
+                debugLog(
+                    "Seek completion success=\(success) " +
+                    "target=\(formatTime(target)) " +
+                    "current=\(formatTime(playerManager.currentTime)) " +
+                    "isPlaying=\(playerManager.isPlaying)"
+                )
+                pendingSeekValue = nil
+                if !success {
+                    sliderValue = playerManager.currentTime
+                }
+            }
+        }
+    }
+
+    private func invalidatePendingSeek() {
+        seekRequestID &+= 1
+        pendingSeekValue = nil
     }
 
     private func formatTime(_ value: Double) -> String {

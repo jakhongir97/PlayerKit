@@ -1,4 +1,4 @@
-#if canImport(VLCKit)
+#if canImport(VLCKit) && !os(macOS)
 import Foundation
 import VLCKit
 #if canImport(UIKit)
@@ -7,38 +7,116 @@ import UIKit
 import AppKit
 #endif
 
+private enum VLCMediaPlayerEvent: Sendable {
+    case stopped
+    case buffering
+    case error
+    case other
+}
+
+private final class VLCMediaPlayerDelegateProxy: NSObject, VLCMediaPlayerDelegate {
+    weak var wrapper: VLCPlayerWrapper?
+    let generation: UInt64
+
+    init(wrapper: VLCPlayerWrapper, generation: UInt64) {
+        self.wrapper = wrapper
+        self.generation = generation
+    }
+
+    nonisolated func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
+        let event: VLCMediaPlayerEvent
+        switch newState {
+        case .stopped: event = .stopped
+        case .buffering: event = .buffering
+        case .error: event = .error
+        default: event = .other
+        }
+        let target = wrapper
+        let callbackGeneration = generation
+        Task { @MainActor in
+            target?.handleMediaPlayerEvent(event, generation: callbackGeneration)
+        }
+    }
+
+    nonisolated func mediaPlayerTimeChanged(_ aNotification: Notification) {
+        let target = wrapper
+        let callbackGeneration = generation
+        Task { @MainActor in
+            target?.handleMediaPlayerTimeChanged(generation: callbackGeneration)
+        }
+    }
+}
+
+private final class VLCMediaDelegateProxy: NSObject, VLCMediaDelegate {
+    weak var wrapper: VLCPlayerWrapper?
+    let generation: UInt64
+
+    init(wrapper: VLCPlayerWrapper, generation: UInt64) {
+        self.wrapper = wrapper
+        self.generation = generation
+    }
+
+    nonisolated func mediaDidFinishParsing(_ aMedia: VLCMedia) {
+        let target = wrapper
+        let callbackGeneration = generation
+        Task { @MainActor in
+            target?.handleMediaDidFinishParsing(generation: callbackGeneration)
+        }
+    }
+
+    nonisolated func mediaMetaDataDidChange(_ aMedia: VLCMedia) {
+        let target = wrapper
+        let callbackGeneration = generation
+        Task { @MainActor in
+            target?.handleMediaMetadataDidChange(generation: callbackGeneration)
+        }
+    }
+}
+
+@MainActor
 public class VLCPlayerWrapper: NSObject, PlayerProtocol {
-    public var player: VLCMediaPlayer
+    public internal(set) var player: VLCMediaPlayer
     private let playerView = VLCPlayerView()
     #if canImport(UIKit)
-    public var pipController: VLCPictureInPictureWindowControlling?
+    public var pipController: VLCPictureInPictureWindowControlling? {
+        didSet {
+            if let oldValue,
+               pipController == nil || oldValue !== pipController {
+                oldValue.stateChangeEventHandler = nil
+                oldValue.stopPictureInPicture()
+            }
+            pipController?.stateChangeEventHandler = { [weak self] isStarted in
+                Task { @MainActor [weak self] in
+                    self?.lifecycleReporter?.playerDidChangePiPState(isActive: isStarted)
+                }
+            }
+        }
+    }
     private var drawableProxy: VLCPlayerDrawableProxy?
     #endif
     private var lastPosition: Double?
     private var shouldEmitRuntimeState = false
     /// Survives media replacement, unlike `VLCMediaPlayer.rate`.
     private var desiredPlaybackRate: Float = 1.0
+    private var desiredMuted = false
+    private var mediaGeneration: UInt64 = 0
+    private var playerDelegateProxy: VLCMediaPlayerDelegateProxy?
+    private var mediaDelegateProxy: VLCMediaDelegateProxy?
     /// Cancels a pending resume-position application if the media changes first.
     private var pendingResumeGeneration = 0
     /// Distinguishes a caller-requested stop from reaching the end of the media,
     /// both of which VLCKit surfaces as `.stopped`.
     private var isStoppingByRequest = false
     
-    weak var lifecycleReporter: PlayerLifecycleReporting?
-    var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
+    public weak var lifecycleReporter: PlayerLifecycleReporting?
+    public var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
+    public var hasLoadedMedia: Bool { player.media != nil }
     
     public override init() {
         self.player = VLCMediaPlayer()
         super.init()
 
-        #if canImport(UIKit)
-        drawableProxy = VLCPlayerDrawableProxy(wrapper: self)
-        player.drawable = drawableProxy
-        #else
-        player.drawable = playerView
-        #endif
-
-        player.delegate = self
+        configurePlayer(player, generation: mediaGeneration)
         setupObservers()
     }
     
@@ -76,6 +154,20 @@ public class VLCPlayerWrapper: NSObject, PlayerProtocol {
         NotificationCenter.default.removeObserver(self, name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
         #endif
     }
+
+    private func configurePlayer(_ player: VLCMediaPlayer, generation: UInt64) {
+        #if canImport(UIKit)
+        if drawableProxy == nil {
+            drawableProxy = VLCPlayerDrawableProxy(wrapper: self)
+        }
+        player.drawable = drawableProxy
+        #else
+        player.drawable = playerView
+        #endif
+        let proxy = VLCMediaPlayerDelegateProxy(wrapper: self, generation: generation)
+        playerDelegateProxy = proxy
+        player.delegate = proxy
+    }
     
 }
 
@@ -91,9 +183,9 @@ extension VLCPlayerWrapper: PlaybackControlProtocol {
     public var playbackSpeed: Float {
         get { desiredPlaybackRate }
         set {
-            let sanitized = (newValue.isFinite && newValue > 0) ? newValue : 1.0
-            desiredPlaybackRate = sanitized
-            player.rate = sanitized
+            guard newValue.isFinite, newValue > 0 else { return }
+            desiredPlaybackRate = newValue
+            player.rate = newValue
         }
     }
 
@@ -101,6 +193,7 @@ extension VLCPlayerWrapper: PlaybackControlProtocol {
         player.play()
         // Re-assert the selected rate: it does not survive media replacement.
         player.rate = desiredPlaybackRate
+        player.audio?.isMuted = desiredMuted
         emitRuntimeState()
     }
     
@@ -117,6 +210,7 @@ extension VLCPlayerWrapper: PlaybackControlProtocol {
     }
 
     public func setMuted(_ muted: Bool) {
+        desiredMuted = muted
         player.audio?.isMuted = muted
     }
 }
@@ -124,11 +218,13 @@ extension VLCPlayerWrapper: PlaybackControlProtocol {
 // MARK: - TimeControlProtocol
 extension VLCPlayerWrapper: TimeControlProtocol {
     public var currentTime: Double {
-        return Double(player.time.intValue) / 1000
+        let value = Double(player.time.intValue) / 1000
+        return value.isFinite ? max(value, 0) : 0
     }
     
     public var duration: Double {
-        return Double(player.media?.length.intValue ?? 0) / 1000
+        let value = Double(player.media?.length.intValue ?? 0) / 1000
+        return value.isFinite ? max(value, 0) : 0
     }
     
     /// VLCKit exposes no buffered-range API, so this is genuinely unknown.
@@ -149,8 +245,8 @@ extension VLCPlayerWrapper: TimeControlProtocol {
         return player.state == .buffering || player.state == .opening
     }
 
-    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
-        guard duration > 0 else {
+    public func seek(to time: Double, completion: (@MainActor (Bool) -> Void)? = nil) {
+        guard time.isFinite, time >= 0, duration > 0 else {
             completion?(false)
             return
         }
@@ -162,14 +258,21 @@ extension VLCPlayerWrapper: TimeControlProtocol {
         // cannot honestly claim success. Verify that the playhead actually
         // landed near the requested time instead of fabricating `true`.
         let tolerance = 1.0
+        let generation = mediaGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            guard let self else {
-                completion?(false)
-                return
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    completion?(false)
+                    return
+                }
+                guard self.mediaGeneration == generation else {
+                    completion?(false)
+                    return
+                }
+                let landed = abs(self.currentTime - time) <= tolerance
+                completion?(landed)
+                self.emitRuntimeState()
             }
-            let landed = abs(self.currentTime - time) <= tolerance
-            completion?(landed)
-            self.emitRuntimeState()
         }
     }
     
@@ -178,7 +281,8 @@ extension VLCPlayerWrapper: TimeControlProtocol {
     }
     
     public func scrubBackward(by seconds: TimeInterval) {
-        seek(to: currentTime - seconds)
+        guard seconds.isFinite else { return }
+        seek(to: max(currentTime - seconds, 0))
     }
 }
 
@@ -188,12 +292,13 @@ extension VLCPlayerWrapper: PlayerVolumeControlling {
     /// VLCKit's scale is 0…200, where 100 is unity and anything above it
     /// amplifies. PlayerKit deliberately stops at unity: a gesture that can
     /// clip the signal is not a volume control, it is a distortion pedal.
-    var outputVolume: Float {
+    public var outputVolume: Float {
         guard let audio = player.audio else { return 1 }
         return min(max(Float(audio.volume) / 100, 0), 1)
     }
 
-    func setOutputVolume(_ value: Float) {
+    public func setOutputVolume(_ value: Float) {
+        guard value.isFinite else { return }
         player.audio?.volume = Int32((min(max(value, 0), 1) * 100).rounded())
     }
 }
@@ -274,84 +379,103 @@ extension VLCPlayerWrapper: TrackSelectionProtocol {
 // MARK: - MediaLoadingProtocol
 extension VLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
+        mediaGeneration &+= 1
+        pendingResumeGeneration &+= 1
+        isStoppingByRequest = false
+        let oldPlayer = player
+        oldPlayer.delegate = nil
+        oldPlayer.media?.delegate = nil
+        mediaDelegateProxy = nil
+        oldPlayer.stop()
+
+        let replacement = VLCMediaPlayer()
+        player = replacement
+        configurePlayer(replacement, generation: mediaGeneration)
+        #if canImport(UIKit)
+        pipController = nil
+        #endif
+
         let media = VLCMedia(url: url)
-        self.lastPosition = lastPosition
+        self.lastPosition = lastPosition.flatMap { value in
+            value.isFinite && value >= 0 ? value : nil
+        }
         player.media = media
-        player.media?.delegate = self
+        let mediaProxy = VLCMediaDelegateProxy(wrapper: self, generation: mediaGeneration)
+        mediaDelegateProxy = mediaProxy
+        player.media?.delegate = mediaProxy
         player.play()
+        player.rate = desiredPlaybackRate
+        player.audio?.isMuted = desiredMuted
         emitRuntimeState()
     }
 }
 
-// MARK: - VLCMediaDelegate
-extension VLCPlayerWrapper: VLCMediaDelegate {
-    public func mediaDidFinishParsing(_ aMedia: VLCMedia) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.lifecycleReporter?.playerDidBecomeReady()
-            self.emitRuntimeState()
+// MARK: - VLCMediaDelegate relay handlers
+extension VLCPlayerWrapper {
+    fileprivate func handleMediaDidFinishParsing(generation: UInt64) {
+        guard mediaGeneration == generation, player.media != nil else { return }
+        lifecycleReporter?.playerDidBecomeReady()
+        emitRuntimeState()
 
-            guard let position = self.lastPosition else { return }
-            // Applying the resume position is still delayed — VLCKit will not
-            // accept a seek until it has started decoding — but it is now tied
-            // to the media that requested it. Previously an unconditional
-            // asyncAfter would fire after the media had been replaced, or after
-            // the user had already scrubbed somewhere else, and clobber them.
-            self.pendingResumeGeneration += 1
-            let generation = self.pendingResumeGeneration
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self,
-                      self.pendingResumeGeneration == generation,
-                      self.player.media === aMedia else { return }
-                self.player.time = VLCTime(number: NSNumber(value: position * 1000))
-                self.lastPosition = nil
-                self.emitRuntimeState()
-            }
+        guard let position = lastPosition else { return }
+        // Applying the resume position is still delayed — VLCKit will not
+        // accept a seek until it has started decoding — but it is tied to the
+        // generation that requested it so stale callbacks cannot seek new media.
+        pendingResumeGeneration += 1
+        let resumeGeneration = pendingResumeGeneration
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self,
+                  self.mediaGeneration == generation,
+                  self.pendingResumeGeneration == resumeGeneration,
+                  self.player.media != nil else { return }
+            self.player.time = VLCTime(number: NSNumber(value: position * 1000))
+            self.lastPosition = nil
+            self.emitRuntimeState()
         }
     }
     
-    public func mediaMetaDataDidChange(_ aMedia: VLCMedia) {
-        DispatchQueue.main.async {
-            self.lifecycleReporter?.playerDidUpdateTracks()
-        }
+    fileprivate func handleMediaMetadataDidChange(generation: UInt64) {
+        guard mediaGeneration == generation, player.media != nil else { return }
+        lifecycleReporter?.playerDidUpdateTracks()
     }
 }
 
 // MARK: - VLCMediaPlayer Notification Handlers
-extension VLCPlayerWrapper: VLCMediaPlayerDelegate {
+extension VLCPlayerWrapper {
     /// VLCKit delivers these on its own thread. Every branch hops to main
     /// because they all end up mutating `@Published` state on `PlayerManager`;
     /// previously the `else` branch and `mediaPlayerTimeChanged` did not, which
     /// is undefined behaviour for SwiftUI observation.
-    public func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            switch newState {
-            case .stopped:
-                // VLCKit reports both "reached the end of the media" and "was
-                // told to stop" as `.stopped`. Only the former is end-of-playback;
-                // reporting the latter would fire autoplay-next when the host
-                // deliberately tore the player down.
-                if self.isStoppingByRequest {
-                    self.isStoppingByRequest = false
-                } else {
-                    self.lifecycleReporter?.playerDidEndPlayback()
-                }
-            case .buffering:
-                self.lifecycleReporter?.playerDidStall()
-            case .error:
-                self.lifecycleReporter?.playerDidFail(with: .mediaLoadFailed("VLC playback error"))
-            default:
-                break
+    fileprivate func handleMediaPlayerEvent(
+        _ event: VLCMediaPlayerEvent,
+        generation: UInt64
+    ) {
+        guard mediaGeneration == generation else { return }
+        switch event {
+        case .stopped:
+            // VLCKit reports both "reached the end of the media" and "was
+            // told to stop" as `.stopped`. Only the former is end-of-playback;
+            // reporting the latter would fire autoplay-next when the host
+            // deliberately tore the player down.
+            if isStoppingByRequest {
+                isStoppingByRequest = false
+            } else {
+                lifecycleReporter?.playerDidEndPlayback()
             }
-            self.emitRuntimeState()
+        case .buffering:
+            lifecycleReporter?.playerDidStall()
+        case .error:
+            lifecycleReporter?.playerDidFail(with: .mediaLoadFailed("VLC playback error"))
+        case .other:
+            break
         }
+        emitRuntimeState()
     }
 
-    public func mediaPlayerTimeChanged(_ aNotification: Notification) {
-        DispatchQueue.main.async { [weak self] in
-            self?.emitRuntimeState()
-        }
+    fileprivate func handleMediaPlayerTimeChanged(generation: UInt64) {
+        guard mediaGeneration == generation else { return }
+        emitRuntimeState()
     }
 }
 
@@ -379,8 +503,18 @@ extension VLCPlayerWrapper: ViewRenderingProtocol {
 
 // MARK: - GestureHandlingProtocol
 extension VLCPlayerWrapper: GestureHandlingProtocol {
+    public var isZoomSupported: Bool {
+        #if canImport(UIKit)
+        if let orientation = playerView.window?.windowScene?.interfaceOrientation,
+           orientation != .unknown {
+            return orientation.isLandscape
+        }
+        #endif
+        return !PlayerKitPlatform.isPortraitInterface
+    }
+
     public func handlePinchGesture(scale: CGFloat) {
-        guard !PlayerKitPlatform.isPortraitInterface else { return }
+        guard isZoomSupported else { return }
         scale > 1 ? setGravityToFill() : setGravityToDefault()
     }
     
@@ -464,10 +598,11 @@ extension VLCPlayerWrapper: StreamingInfoProtocol {
 }
 
 extension VLCPlayerWrapper: PlayerEventSource {}
+extension VLCPlayerWrapper: PlayerMediaAvailabilityReporting {}
 
 
 extension VLCPlayerWrapper: PlayerPictureInPictureSupporting {
-    var isPictureInPictureSupported: Bool {
+    public var isPictureInPictureSupported: Bool {
         #if canImport(UIKit)
         true
         #else
@@ -475,7 +610,7 @@ extension VLCPlayerWrapper: PlayerPictureInPictureSupporting {
         #endif
     }
 
-    var isPictureInPicturePossible: Bool {
+    public var isPictureInPicturePossible: Bool {
         #if canImport(UIKit)
         pipController != nil
         #else
@@ -485,12 +620,12 @@ extension VLCPlayerWrapper: PlayerPictureInPictureSupporting {
 }
 
 extension VLCPlayerWrapper: PlayerStateSource {
-    func startRuntimeStateUpdates() {
+    public func startRuntimeStateUpdates() {
         shouldEmitRuntimeState = true
         emitRuntimeState()
     }
     
-    func stopRuntimeStateUpdates() {
+    public func stopRuntimeStateUpdates() {
         shouldEmitRuntimeState = false
     }
 }

@@ -33,6 +33,7 @@ public struct HeuristicSkipButtonTitles: Equatable {
     }
 }
 
+@MainActor
 public class PlayerManager: ObservableObject {
     public static let shared = PlayerManager()
 
@@ -55,6 +56,7 @@ public class PlayerManager: ObservableObject {
     // State management
     @Published public internal(set) var isPlaying: Bool = false {
         didSet {
+            guard oldValue != isPlaying else { return }
             refreshPlaybackWakeLock()
             refreshNowPlayingInfo()
             notifyGesturePlaybackStartedIfNeeded()
@@ -62,12 +64,12 @@ public class PlayerManager: ObservableObject {
     }
     @Published public internal(set) var isBuffering: Bool = false {
         didSet {
+            guard oldValue != isBuffering else { return }
             refreshPlaybackWakeLock()
-            refreshNowPlayingInfo()
         }
     }
     @Published public private(set) var isPlaybackRequested: Bool = false
-    @Published public var currentTime: Double = 0
+    @Published public internal(set) var currentTime: Double = 0
     @Published public internal(set) var duration: Double = 0
     @Published public internal(set) var bufferedDuration: Double = 0
     @Published public private(set) var playbackSpeed: Float = 1.0
@@ -76,11 +78,13 @@ public class PlayerManager: ObservableObject {
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
     @Published public internal(set) var isPiPActive: Bool = false
-    @Published var isCastingAvailable: Bool = false
+    @Published public internal(set) var isCastingAvailable: Bool = false
     @Published var areControlsVisible: Bool = true
     @Published var isLocked: Bool = false {
         didSet {
+            guard oldValue != isLocked else { return }
             NotificationCenter.default.post(name: .PlayerKitLocked, object: isLocked)
+            gestureManager.refreshAccessibilityState()
         }
     }
     @Published var userInteracting: Bool = false
@@ -100,7 +104,12 @@ public class PlayerManager: ObservableObject {
     @Published public internal(set) var availableAudioTracks: [TrackInfo] = []
     @Published public internal(set) var availableSubtitles: [TrackInfo] = []
     private var savedAudio: TrackInfo?
-    private var savedSubtitle: TrackInfo?
+    private enum SavedSubtitleSelection {
+        case unchanged
+        case disabled
+        case selected(TrackInfo)
+    }
+    private var savedSubtitleSelection: SavedSubtitleSelection = .unchanged
     
     @Published var selectedPlayerType: PlayerType = PlayerType.resolved(UserDefaults.standard.loadPlayerType()) {
         didSet {
@@ -112,6 +121,7 @@ public class PlayerManager: ObservableObject {
             UserDefaults.standard.savePlayerType(selectedPlayerType)
         }
     }
+    @Published private(set) var activeBuiltInPlayerType: PlayerType?
     @Published var playerItem: PlayerItem?
     @Published var playerItems: [PlayerItem] = []
     @Published var currentPlayerItemIndex: Int = 0
@@ -124,19 +134,25 @@ public class PlayerManager: ObservableObject {
             guard shouldDismiss else {
                 refreshPlaybackWakeLock()
                 refreshNowPlayingInfo()
-            refreshNowPlayingInfo()
                 return
             }
             #if os(macOS)
             endPlaybackDiagnosticsSampling(reason: "player dismissed")
             #endif
             playbackManager?.stop()
+            cancelPendingPlaybackResume()
+            shouldResumePlaybackAfterStall = false
+            isPlaying = false
+            isBuffering = false
+            AudioSessionManager.shared.deactivateAudioSession(for: self)
             refreshPlaybackWakeLock()
             refreshNowPlayingInfo()
         }
     }
     @Published public private(set) var lastError: PlayerKitError?
-    @Published public var isMediaReady: Bool = false {
+    @Published public private(set) var isPlaybackErrorTerminal = false
+    @Published public private(set) var isRetryingPlayback = false
+    @Published public internal(set) var isMediaReady: Bool = false {
         didSet {
             if isMediaReady {
                 refreshTrackInfo()
@@ -166,11 +182,13 @@ public class PlayerManager: ObservableObject {
     }()
     
     private var currentProvider: PlayerProvider?
-    public weak var currentPlayer: PlayerProtocol? {
+    public internal(set) weak var currentPlayer: PlayerProtocol? {
         didSet {
             // Bump *before* the other refreshes so anything they trigger already
             // sees the new generation.
             playerGeneration &+= 1
+            gestureManager.refreshCapabilities()
+            gestureManager.refreshAccessibilityState()
             refreshPlaybackWakeLock()
             refreshNowPlayingInfo()
         }
@@ -200,12 +218,16 @@ public class PlayerManager: ObservableObject {
     
     private var stateCancellables = Set<AnyCancellable>()
     private var longLivedCancellables = Set<AnyCancellable>()
+    var activeIntegrationSubscriptionCount: Int { longLivedCancellables.count }
     private var isPlaybackWakeLockHeld = false
     private var nowPlayingEnabledStorage = false
     private var nowPlayingArtworkStorage: PKImage?
     private var backgroundPlaybackEnabledStorage = false
     private var isMutedStorage = false
     private var autoplayStorage = true
+    private var externalPlaybackEnabledStorage = false
+    private var pictureInPictureRestorationHandlerStorage: (((Bool) -> Void) -> Void)?
+    private var voiceControlRunningOverrideStorage: Bool?
     private var shouldResumePlaybackAfterStall: Bool {
         get { isPlaybackRequested }
         set { isPlaybackRequested = newValue }
@@ -213,6 +235,13 @@ public class PlayerManager: ObservableObject {
     private var playbackResumeTask: Task<Void, Never>?
     private var playbackResumeProgressReferenceTime: Double?
     private var externalEpisodeNavigationHandler: (@MainActor (PlayerEpisodeNavigationDirection) async -> Bool)?
+    /// Lets a host refresh an expired or signed media URL before Retry reloads
+    /// the item. Return `nil` (or throw) to leave the current error on screen.
+    public var onPlaybackRetryRequested: (@MainActor (PlayerItem) async throws -> PlayerItem?)?
+    private var playbackRetryTask: Task<Void, Never>?
+    private var playbackRetryGeneration: UInt = 0
+    private var externalEpisodeNavigationTask: Task<Void, Never>?
+    private var externalEpisodeNavigationGeneration = 0
     private struct ExternalEpisodeNavigationSnapshot {
         let canPlayPrevious: Bool
         let canPlayNext: Bool
@@ -245,18 +274,33 @@ public class PlayerManager: ObservableObject {
     func ensurePlayerConfigured(type: PlayerType? = nil) {
         if let type {
             let resolvedType = PlayerType.resolved(type)
-            if selectedPlayerType != resolvedType {
+            if activeBuiltInPlayerType != resolvedType {
                 if currentPlayer != nil || playerItem != nil || !playerItems.isEmpty {
                     switchPlayer(to: resolvedType)
                 } else {
                     setPlayer(type: resolvedType)
                 }
+            } else if currentPlayer == nil {
+                restoreMissingPlayer(type: resolvedType)
             }
             return
         }
 
         if currentPlayer == nil {
-            setPlayer(type: type)
+            restoreMissingPlayer(type: selectedPlayerType)
+        }
+    }
+
+    private func restoreMissingPlayer(type: PlayerType) {
+        let retainedItem = playerItem
+        configurePlayer(type: type, clearMediaContext: retainedItem == nil)
+        if let retainedItem {
+            self.playerItem = retainedItem
+            load(
+                url: retainedItem.url,
+                lastPosition: retainedItem.lastPosition,
+                itemContext: retainedItem
+            )
         }
     }
 
@@ -265,7 +309,11 @@ public class PlayerManager: ObservableObject {
         if resolvedType != type {
             debugLog("Requested unsupported player type=\(type). Falling back to \(resolvedType).")
         }
-        configureIntegrationsIfNeeded()
+        // Passive callbacks do not claim process-global resources; keep them
+        // available as soon as a backend is configured. Controller handlers,
+        // subscriptions, audio activation, and Cast context setup remain lazy.
+        configureAudioSessionCallbacks()
+        configureCastCallbacks()
         debugLog(
             "Setting player type=\(resolvedType) " +
             "clearMediaContext=\(clearMediaContext)"
@@ -278,7 +326,12 @@ public class PlayerManager: ObservableObject {
 
     private func setupPlayer(provider: PlayerProvider) {
         currentProvider = provider
+        activeBuiltInPlayerType = selectedPlayerType
         let player = provider.createPlayer()
+        setupPlayer(player)
+    }
+
+    private func setupPlayer(_ player: PlayerProtocol) {
         debugLog("Created player instance type=\(String(reflecting: type(of: player)))")
         currentPlayer = player
         applyPlaybackPolicies(to: player)
@@ -297,13 +350,36 @@ public class PlayerManager: ObservableObject {
         
         observePlayerState()
     }
+
+    /// Installs a custom backend while rebuilding every manager binding and
+    /// preserving the current media context.
+    public func installPlayerBackend(_ player: PlayerProtocol) {
+        let resumePosition = Self.nonnegativeFinite(currentPlayer?.currentTime ?? currentTime)
+        saveCurrentTracks()
+        let snapshot = makePlaybackSwitchSnapshot(resumePosition: resumePosition)
+        resetPlayer(clearMediaContext: false)
+        currentProvider = nil
+        setupPlayer(player)
+        restorePlaybackSwitchSnapshot(snapshot)
+
+        guard let currentItem = snapshot.currentItem else { return }
+        load(
+            url: currentItem.url,
+            lastPosition: currentItem.lastPosition,
+            itemContext: currentItem,
+            shouldAutoplay: snapshot.shouldResumePlayback
+        )
+        if snapshot.shouldResumePlayback {
+            play()
+        }
+    }
     
     // MARK: - Switch Player at Runtime
     
     public func switchPlayer(to type: PlayerType) {
         let resolvedType = PlayerType.resolved(type)
-        guard selectedPlayerType != resolvedType else { return } // No need to switch if already selected
-        let resumePosition = max(currentPlayer?.currentTime ?? currentTime, 0)
+        guard activeBuiltInPlayerType != resolvedType else { return }
+        let resumePosition = Self.nonnegativeFinite(currentPlayer?.currentTime ?? currentTime)
         lastPosition = resumePosition
         saveCurrentTracks()
         let snapshot = makePlaybackSwitchSnapshot(resumePosition: resumePosition)
@@ -315,10 +391,11 @@ public class PlayerManager: ObservableObject {
             load(
                 url: currentItem.url,
                 lastPosition: currentItem.lastPosition,
-                itemContext: currentItem
+                itemContext: currentItem,
+                shouldAutoplay: snapshot.shouldResumePlayback
             )
-            if !snapshot.shouldResumePlayback {
-                pause()
+            if snapshot.shouldResumePlayback {
+                play()
             }
         }
     }
@@ -409,8 +486,30 @@ public class PlayerManager: ObservableObject {
     }
     
     public func load(playerItem: PlayerItem) {
+        if currentPlayer == nil {
+            configurePlayer(type: selectedPlayerType, clearMediaContext: true)
+        }
+        // A host normally installs external navigation before the first
+        // episode. At that point `contentType` is still `.movie`, so consulting
+        // `hasExternalEpisodeNavigation` would erase the freshly installed
+        // handler while loading that first episode.
+        let preservesExternalNavigation = externalEpisodeNavigationHandler != nil
+            && (isExternalEpisodeNavigationInProgress || playerItem.episodeIndex != nil)
+        playerItems = []
+        currentPlayerItemIndex = 0
+        if preservesExternalNavigation {
+            contentType = .episode
+        } else {
+            clearExternalEpisodeNavigation()
+            contentType = playerItem.episodeIndex == nil ? .movie : .episode
+        }
+        loadPlayerItem(playerItem, preservingQueue: preservesExternalNavigation)
+    }
+
+    private func loadPlayerItem(_ playerItem: PlayerItem, preservingQueue: Bool) {
+        cancelPlaybackRetry()
         self.playerItem = playerItem
-        if playerItems.isEmpty {
+        if !preservingQueue {
             contentType = playerItem.episodeIndex == nil ? .movie : .episode
         }
         // New item means new metadata; the didSet hooks only cover transport
@@ -424,31 +523,44 @@ public class PlayerManager: ObservableObject {
     }
     
     public func loadEpisodes(playerItems: [PlayerItem], currentIndex: Int = 0 ) {
+        guard !playerItems.isEmpty else {
+            // An empty playlist is an explicit transition to no media. Keeping
+            // the previous backend/item alive would play stale content under an
+            // empty episode model.
+            resetPlayer()
+            self.playerItems = []
+            currentPlayerItemIndex = 0
+            contentType = .episode
+            return
+        }
+        if currentPlayer == nil {
+            configurePlayer(type: selectedPlayerType, clearMediaContext: true)
+        }
         self.playerItems = playerItems
         contentType = .episode
         // Clamp rather than store the caller's index verbatim: an out-of-range
         // index used to survive here (the safe subscript below only guarded the
         // *load*), and then playNext()/playPrevious() would step it into a
         // hard array subscript in loadPlayerItem(at:) and trap.
-        guard !playerItems.isEmpty else {
-            currentPlayerItemIndex = 0
-            return
-        }
         currentPlayerItemIndex = min(max(currentIndex, 0), playerItems.count - 1)
         guard let playerItem = playerItems[safe: currentPlayerItemIndex] else { return }
-        load(playerItem: playerItem)
+        loadPlayerItem(playerItem, preservingQueue: true)
     }
     
     // Loads a media URL into the current player
     private func load(
         url: URL,
         lastPosition: Double? = nil,
-        itemContext: PlayerItem
+        itemContext: PlayerItem,
+        shouldAutoplay: Bool? = nil
     ) {
+        let startsPlayback = shouldAutoplay ?? autoplayStorage
+        configureIntegrationsIfNeeded()
         debugLog(
             "Loading media. source_present=true resume=\(lastPosition?.description ?? "nil")"
         )
         cancelPendingPlaybackResume()
+        cancelExternalEpisodeNavigation(clearHandler: false)
         clearError()
         // A seek session that outlives the item it was opened on is anchored to
         // the *previous* playhead, so one further tap would seek the new item
@@ -460,33 +572,45 @@ public class PlayerManager: ObservableObject {
         didNotifyGesturePlaybackStart = false
         isMediaReady = false
         isVideoEnded = false
-        currentTime = max(lastPosition ?? 0, 0)
+        // Track callbacks belong to the item that produced them. Clear the
+        // published snapshot before the new backend can report synchronously,
+        // so menus never offer tracks from the previous video during loading.
+        selectedAudio = nil
+        selectedSubtitle = nil
+        availableAudioTracks = []
+        availableSubtitles = []
+        let resumePosition = lastPosition.map(Self.nonnegativeFinite)
+        currentTime = resumePosition ?? 0
         bufferedDuration = 0
-        isPlaying = autoplayStorage
+        isPlaying = startsPlayback
         isBuffering = true
         // This is what the resume ladder consults, so gating it here is what
         // stops AVFoundation starting on its own once the item becomes ready.
-        shouldResumePlaybackAfterStall = autoplayStorage
+        shouldResumePlaybackAfterStall = startsPlayback
         playbackResumeProgressReferenceTime = currentTime
+        // Player backends begin preparing by playing, so the shared audio
+        // session is acquired at first load rather than when `Player` is merely
+        // constructed.
+        AudioSessionManager.shared.configureAudioSession(for: self)
         #if os(macOS)
         if let avPlayer = currentPlayer as? AVPlayerWrapper {
             endPlaybackDiagnosticsSampling(reason: "player item replaced")
             resetPlaybackDiagnosticsHistory()
             avPlayer.load(
                 url: url,
-                lastPosition: lastPosition,
+                lastPosition: resumePosition,
                 playbackHealthAssetIdentifier: itemContext.playbackHealthAssetIdentifier,
                 playbackHealthMonitoringEnabled: isPlaybackHealthMonitoringEnabled,
                 playbackHealthMonitoringEligible: itemContext.playbackHealthMonitoringEligible
             )
             startPlaybackDiagnosticsSampling()
         } else {
-            currentPlayer?.load(url: url, lastPosition: lastPosition)
+            currentPlayer?.load(url: url, lastPosition: resumePosition)
         }
         #else
-        currentPlayer?.load(url: url, lastPosition: lastPosition)
+        currentPlayer?.load(url: url, lastPosition: resumePosition)
         #endif
-        if !autoplayStorage {
+        if !startsPlayback {
             // Unlike AVFoundation, the iOS VLC backend calls play() inside its
             // own load(), so gating the resume ladder is not enough for it.
             playbackManager?.pause()
@@ -495,17 +619,108 @@ public class PlayerManager: ObservableObject {
     }
     
     public func videoDidEnd() {
-        guard duration != 0, currentTime + 1 > duration else { return }
+        // Backends call this only from their authoritative end event. Timeline
+        // values can still lag that callback (and live/VOD transitions can
+        // report an indefinite duration), so re-validating against duration
+        // here used to discard real completions and strand a black screen.
+        guard !isVideoEnded else { return }
         cancelPendingPlaybackResume()
+        shouldResumePlaybackAfterStall = false
         isPlaying = false
         isBuffering = false
         if contentType == .movie {
-            // Dismiss the player immediately for movies
-            isVideoEnded = true
+            // Keep the finished frame available behind the Replay / Close card.
+            presentPlaybackEndedState()
         } else {
             // Check if there are more episodes to play
-            playNext()
+            if canPlayNextItem {
+                if hasExternalEpisodeNavigation {
+                    _ = handleExternalEpisodeNavigationIfNeeded(
+                        .next,
+                        presentsEndStateOnFailure: true
+                    )
+                } else {
+                    playNext()
+                }
+            } else {
+                presentPlaybackEndedState()
+            }
         }
+    }
+
+    private func presentPlaybackEndedState() {
+        isVideoEnded = true
+        AudioSessionManager.shared.deactivateAudioSession(for: self)
+    }
+
+    /// Reloads the current item from the last known position after a terminal
+    /// backend failure. An explicit Retry is also an explicit request to play,
+    /// regardless of the host's autoplay-on-load preference.
+    public func retryPlayback() {
+        guard let playerItem else {
+            clearError()
+            return
+        }
+        guard playbackRetryTask == nil else { return }
+
+        guard let onPlaybackRetryRequested else {
+            reloadForRetry(playerItem)
+            return
+        }
+
+        isRetryingPlayback = true
+        playbackRetryGeneration &+= 1
+        let retryGeneration = playbackRetryGeneration
+        playbackRetryTask = Task { @MainActor [weak self] in
+            let refreshedItem: PlayerItem?
+            do {
+                refreshedItem = try await onPlaybackRetryRequested(playerItem)
+            } catch {
+                refreshedItem = nil
+            }
+
+            guard let self,
+                  !Task.isCancelled,
+                  self.playbackRetryGeneration == retryGeneration else { return }
+            self.playbackRetryTask = nil
+            self.isRetryingPlayback = false
+            guard let refreshedItem else { return }
+            self.reloadForRetry(refreshedItem)
+        }
+    }
+
+    private func reloadForRetry(_ refreshedItem: PlayerItem) {
+        let resumePosition = Self.nonnegativeFinite(currentPlayer?.currentTime ?? currentTime)
+        playerItem = refreshedItem
+        if playerItems.indices.contains(currentPlayerItemIndex) {
+            playerItems[currentPlayerItemIndex] = refreshedItem
+        }
+        refreshNowPlayingInfo(force: true)
+        if currentPlayer == nil {
+            configurePlayer(type: selectedPlayerType, clearMediaContext: false)
+        }
+        load(
+            url: refreshedItem.url,
+            lastPosition: resumePosition,
+            itemContext: refreshedItem,
+            shouldAutoplay: true
+        )
+        play()
+    }
+
+    /// Starts the finished item again without disturbing its queue position.
+    public func replay() {
+        guard let playerItem else { return }
+        if currentPlayer == nil {
+            configurePlayer(type: selectedPlayerType, clearMediaContext: false)
+        }
+        load(
+            url: playerItem.url,
+            lastPosition: 0,
+            itemContext: playerItem,
+            shouldAutoplay: true
+        )
+        play()
     }
     
     // MARK: - Player Items Navigation
@@ -530,17 +745,7 @@ public class PlayerManager: ObservableObject {
         canPlayNext: Bool = true,
         handler: @escaping @MainActor (PlayerEpisodeNavigationDirection) async -> Bool
     ) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.configureExternalEpisodeNavigation(
-                    canPlayPrevious: canPlayPrevious,
-                    canPlayNext: canPlayNext,
-                    handler: handler
-                )
-            }
-            return
-        }
-
+        cancelExternalEpisodeNavigation(clearHandler: true)
         externalEpisodeNavigationHandler = handler
         externalEpisodeCanPlayPrevious = canPlayPrevious
         externalEpisodeCanPlayNext = canPlayNext
@@ -550,33 +755,13 @@ public class PlayerManager: ObservableObject {
         canPlayPrevious: Bool,
         canPlayNext: Bool
     ) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.updateExternalEpisodeNavigationAvailability(
-                    canPlayPrevious: canPlayPrevious,
-                    canPlayNext: canPlayNext
-                )
-            }
-            return
-        }
-
         guard hasExternalEpisodeNavigation else { return }
         externalEpisodeCanPlayPrevious = canPlayPrevious
         externalEpisodeCanPlayNext = canPlayNext
     }
 
     public func clearExternalEpisodeNavigation() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.clearExternalEpisodeNavigation()
-            }
-            return
-        }
-
-        externalEpisodeNavigationHandler = nil
-        externalEpisodeCanPlayPrevious = false
-        externalEpisodeCanPlayNext = false
-        isExternalEpisodeNavigationInProgress = false
+        cancelExternalEpisodeNavigation(clearHandler: true)
     }
 
     public func playNext() {
@@ -610,7 +795,7 @@ public class PlayerManager: ObservableObject {
             debugLog("Ignoring episode load for out-of-range index=\(index) count=\(playerItems.count)")
             return
         }
-        load(playerItem: playerItem)
+        loadPlayerItem(playerItem, preservingQueue: true)
     }
 
     private var hasExternalEpisodeNavigation: Bool {
@@ -618,7 +803,8 @@ public class PlayerManager: ObservableObject {
     }
 
     private func handleExternalEpisodeNavigationIfNeeded(
-        _ direction: PlayerEpisodeNavigationDirection
+        _ direction: PlayerEpisodeNavigationDirection,
+        presentsEndStateOnFailure: Bool = false
     ) -> Bool {
         guard hasExternalEpisodeNavigation,
               let handler = externalEpisodeNavigationHandler else {
@@ -641,41 +827,71 @@ public class PlayerManager: ObservableObject {
         clearError()
         isExternalEpisodeNavigationInProgress = true
 
-        Task { @MainActor [weak self] in
+        externalEpisodeNavigationGeneration &+= 1
+        let generation = externalEpisodeNavigationGeneration
+        externalEpisodeNavigationTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = await handler(direction)
+            let didNavigate = await handler(direction)
+            guard !Task.isCancelled,
+                  self.externalEpisodeNavigationGeneration == generation else {
+                return
+            }
             self.isExternalEpisodeNavigationInProgress = false
+            self.externalEpisodeNavigationTask = nil
+            if presentsEndStateOnFailure && !didNavigate {
+                self.presentPlaybackEndedState()
+            }
         }
 
         return true
+    }
+
+    private func cancelExternalEpisodeNavigation(clearHandler: Bool) {
+        externalEpisodeNavigationGeneration &+= 1
+        externalEpisodeNavigationTask?.cancel()
+        externalEpisodeNavigationTask = nil
+        isExternalEpisodeNavigationInProgress = false
+        guard clearHandler else { return }
+        externalEpisodeNavigationHandler = nil
+        externalEpisodeCanPlayPrevious = false
+        externalEpisodeCanPlayNext = false
+    }
+
+    private func cancelPlaybackRetry() {
+        playbackRetryGeneration &+= 1
+        playbackRetryTask?.cancel()
+        playbackRetryTask = nil
+        isRetryingPlayback = false
     }
 }
 
 // MARK: - Playback Controls
 extension PlayerManager {
     public func reportError(_ error: PlayerKitError) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.reportError(error)
-            }
-            return
-        }
+        publishError(error, isTerminal: false)
+    }
+
+    private func reportTerminalPlaybackError(_ error: PlayerKitError) {
+        publishError(error, isTerminal: true)
+    }
+
+    private func publishError(_ error: PlayerKitError, isTerminal: Bool) {
         debugLog("Error reported. \(networkErrorDebugDetails(error))")
+        isPlaybackErrorTerminal = isTerminal
         lastError = error
         NotificationCenter.default.post(name: .PlayerKitDidFail, object: error)
     }
 
     public func clearError() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.clearError()
-            }
-            return
-        }
+        isPlaybackErrorTerminal = false
         lastError = nil
     }
 
     public func play() {
+        if currentPlayer == nil {
+            restoreMissingPlayer(type: selectedPlayerType)
+        }
+        configureIntegrationsIfNeeded()
         debugLog(
             "Play requested current=\(debugInterval(currentTime)) " +
             "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false) " +
@@ -683,8 +899,20 @@ extension PlayerManager {
         )
         shouldResumePlaybackAfterStall = true
         cancelPendingPlaybackResume()
-        playbackResumeProgressReferenceTime = max(currentPlayer?.currentTime ?? currentTime, 0)
+        playbackResumeProgressReferenceTime = Self.nonnegativeFinite(
+            currentPlayer?.currentTime ?? currentTime
+        )
+        AudioSessionManager.shared.configureAudioSession(for: self)
         performPlaybackResumeAttempt()
+        #if os(macOS)
+        if let avPlayer = currentPlayer as? AVPlayerWrapper,
+           avPlayer.hasLoadedMedia,
+           playbackDiagnosticsSampleCancellable == nil,
+           avPlayer.restartPlaybackDiagnosticsSession() {
+            resetPlaybackDiagnosticsHistory()
+            startPlaybackDiagnosticsSampling()
+        }
+        #endif
         userInteracted()
     }
     
@@ -713,7 +941,9 @@ extension PlayerManager {
         playbackManager?.stop()
         isPlaying = false
         isBuffering = false
+        currentTime = 0
         shouldResumePlaybackAfterStall = false
+        AudioSessionManager.shared.deactivateAudioSession(for: self)
         userInteracted()
     }
     
@@ -734,7 +964,12 @@ extension PlayerManager {
         return window
     }
 
-    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
+    public func seek(to time: Double, completion: (@MainActor (Bool) -> Void)? = nil) {
+        guard time.isFinite else {
+            debugLog("Seek ignored because target is not finite.")
+            completion?(false)
+            return
+        }
         guard let seekableRange else {
             debugLog(
                 "Seek ignored: no finite duration and no seekable window. " +
@@ -751,32 +986,21 @@ extension PlayerManager {
         )
 
         let shouldResumeAfterSeek = shouldResumePlaybackAfterStall
-        let seekAction: (@escaping (Bool) -> Void) -> Void = { [weak self] completion in
+        guard let playbackManager else {
+            completion?(false)
+            return
+        }
+        playbackManager.seek(to: targetTime) { [weak self] success in
             guard let self else {
-                completion(false)
+                completion?(false)
                 return
             }
-            self.playbackManager?.seek(to: targetTime, completion: completion)
-        }
-
-        seekAction { success in
-            // AVPlayer delivers seek completions on its own queue. Everything
-            // below writes @Published state and touches AVPlayerItem media
-            // selection, both of which must happen on the main thread — the
-            // rest of this class hops explicitly for exactly this reason, but
-            // this callback did not.
-            PlayerManager.onMain { [weak self] in
-                guard let self else {
-                    completion?(false)
-                    return
-                }
-                self.finishSeek(
-                    success: success,
-                    targetTime: targetTime,
-                    shouldResumeAfterSeek: shouldResumeAfterSeek,
-                    completion: completion
-                )
-            }
+            self.finishSeek(
+                success: success,
+                targetTime: targetTime,
+                shouldResumeAfterSeek: shouldResumeAfterSeek,
+                completion: completion
+            )
         }
     }
 
@@ -785,7 +1009,7 @@ extension PlayerManager {
         success: Bool,
         targetTime: Double,
         shouldResumeAfterSeek: Bool,
-        completion: ((Bool) -> Void)?
+        completion: (@MainActor (Bool) -> Void)?
     ) {
         if success {
             currentTime = targetTime
@@ -805,15 +1029,6 @@ extension PlayerManager {
         completion?(success)
     }
 
-    /// Runs `work` on the main thread, synchronously if already there.
-    static func onMain(_ work: @escaping () -> Void) {
-        if Thread.isMainThread {
-            work()
-        } else {
-            DispatchQueue.main.async(execute: work)
-        }
-    }
-
     public func scrubForward(by seconds: TimeInterval) {
         seekRelative(by: seconds)
     }
@@ -831,11 +1046,16 @@ extension PlayerManager {
     /// was clamped by the backend alone and could land outside the DVR window.
     /// One clamping path is the point.
     private func seekRelative(by offset: TimeInterval) {
+        guard offset.isFinite else { return }
         let reference = currentPlayer?.currentTime ?? currentTime
         seek(to: reference + offset)
     }
     
     public func setPlaybackSpeed(_ speed: Float) {
+        guard speed.isFinite, speed > 0 else {
+            debugLog("Ignoring invalid playback speed.")
+            return
+        }
         playbackSpeed = speed
         playbackManager?.setPlaybackSpeed(speed)
         refreshNowPlayingInfo(force: true)
@@ -908,27 +1128,33 @@ extension PlayerManager {
     
     private func saveCurrentTracks() {
         savedAudio = selectedAudio
-        savedSubtitle = selectedSubtitle
+        savedSubtitleSelection = selectedSubtitle.map(SavedSubtitleSelection.selected) ?? .disabled
     }
     
     private func applySavedTrackIdentifiers() {
         if let savedAudio = savedAudio {
-            if let matchedAudio = availableAudioTracks.first(where: { $0.id == savedAudio.id }) {
-                selectAudioTrack(track: matchedAudio)
+            let match = availableAudioTracks.first(where: { $0.id == savedAudio.id })
+                ?? availableAudioTracks.first(where: { $0.languageCode == savedAudio.languageCode })
+            if let match {
+                // Consume before calling the backend: desktop VLC reports track
+                // changes synchronously and therefore re-enters this method.
                 self.savedAudio = nil
-            } else if let matchedAudioByLang = availableAudioTracks.first(where: { $0.languageCode == savedAudio.languageCode }) {
-                selectAudioTrack(track: matchedAudioByLang)
-                self.savedAudio = nil
+                selectAudioTrack(track: match)
             }
         }
         
-        if let savedSubtitle = savedSubtitle {
-            if let matchedSubtitle = availableSubtitles.first(where: { $0.id == savedSubtitle.id }) {
-                selectSubtitle(track: matchedSubtitle)
-                self.savedSubtitle = nil
-            } else if let matchedSubtitleByLang = availableSubtitles.first(where: { $0.languageCode == savedSubtitle.languageCode }) {
-                selectSubtitle(track: matchedSubtitleByLang)
-                self.savedSubtitle = nil
+        switch savedSubtitleSelection {
+        case .unchanged:
+            break
+        case .disabled:
+            savedSubtitleSelection = .unchanged
+            selectSubtitle(track: nil)
+        case .selected(let savedSubtitle):
+            let match = availableSubtitles.first(where: { $0.id == savedSubtitle.id })
+                ?? availableSubtitles.first(where: { $0.languageCode == savedSubtitle.languageCode })
+            if let match {
+                savedSubtitleSelection = .unchanged
+                selectSubtitle(track: match)
             }
         }
     }
@@ -968,6 +1194,10 @@ extension PlayerManager {
         return String(format: "%.3f", value)
     }
 
+    private static func nonnegativeFinite(_ value: Double) -> Double {
+        value.isFinite ? max(value, 0) : 0
+    }
+
     private func logRuntimeStateIfChanged(_ state: PlayerRuntimeState) {
         let summary =
             "playing=\(state.isPlaying) buffering=\(state.isBuffering) " +
@@ -1000,11 +1230,7 @@ extension PlayerManager {
                 installNowPlayingIfNeeded()
                 refreshNowPlayingInfo(force: true)
             } else {
-                let coordinator = NowPlayingCoordinator.shared
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    coordinator.releaseCommands(for: self)
-                }
+                NowPlayingCoordinator.shared.releaseCommands(for: self)
             }
             objectWillChange.send()
         }
@@ -1018,10 +1244,7 @@ extension PlayerManager {
         get { nowPlayingArtworkStorage }
         set {
             nowPlayingArtworkStorage = newValue
-            let coordinator = NowPlayingCoordinator.shared
-            Task { @MainActor in
-                coordinator.setArtwork(newValue)
-            }
+            NowPlayingCoordinator.shared.setArtwork(newValue)
             refreshNowPlayingInfo(force: true)
         }
     }
@@ -1056,8 +1279,11 @@ extension PlayerManager {
     /// at exactly the moment it is set.
     func applyPlaybackPolicies(to player: PlayerProtocol) {
         (player as? PlayerMuteControlling)?.setMuted(isMutedStorage)
+        player.playbackSpeed = playbackSpeed
         guard let avPlayer = player as? AVPlayerWrapper else { return }
         avPlayer.allowsBackgroundPlayback = backgroundPlaybackEnabledStorage
+        avPlayer.allowsExternalPlayback = externalPlaybackEnabledStorage
+        avPlayer.onPictureInPictureRestoreRequested = pictureInPictureRestorationHandlerStorage
     }
 
     func installNowPlayingIfNeeded() {
@@ -1065,19 +1291,12 @@ extension PlayerManager {
         let commands = makeNowPlayingCommands()
         let coordinator = NowPlayingCoordinator.shared
         let artwork = nowPlayingArtworkStorage
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            coordinator.installCommands(for: self, commands: commands)
-            coordinator.setArtwork(artwork)
-        }
+        coordinator.installCommands(for: self, commands: commands)
+        coordinator.setArtwork(artwork)
     }
 
     func releaseNowPlaying() {
-        let coordinator = NowPlayingCoordinator.shared
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            coordinator.releaseCommands(for: self)
-        }
+        NowPlayingCoordinator.shared.releaseCommands(for: self)
     }
 
     private func makeNowPlayingCommands() -> NowPlayingCommands {
@@ -1086,7 +1305,7 @@ extension PlayerManager {
             pause: { [weak self] in self?.pause() },
             toggle: { [weak self] in
                 guard let self else { return }
-                self.isPlaying ? self.pause() : self.play()
+                self.isPlaybackRequested ? self.pause() : self.play()
             },
             skipForward: { [weak self] seconds in self?.scrubForward(by: seconds) },
             skipBackward: { [weak self] seconds in self?.scrubBackward(by: seconds) },
@@ -1111,7 +1330,7 @@ extension PlayerManager {
             title: item.title,
             subtitle: item.description,
             duration: resolvedDuration,
-            elapsed: max(currentPlayer?.currentTime ?? currentTime, 0),
+            elapsed: Self.nonnegativeFinite(currentPlayer?.currentTime ?? currentTime),
             // playbackSpeed keeps its configured value while paused, so the
             // lock screen would animate a stopped playhead without this.
             rate: isPlaying ? Double(playbackSpeed) : 0,
@@ -1133,18 +1352,16 @@ extension PlayerManager {
         let canNext = canPlayNextItem
         let canPrevious = canPlayPreviousItem
         let coordinator = NowPlayingCoordinator.shared
-        Task { @MainActor in
-            coordinator.updateAvailability(
-                canSeek: canSeek,
-                canNext: canNext,
-                canPrevious: canPrevious
-            )
-            guard let snapshot else {
-                coordinator.clearNowPlayingItem()
-                return
-            }
-            coordinator.publish(snapshot)
+        coordinator.updateAvailability(
+            canSeek: canSeek,
+            canNext: canNext,
+            canPrevious: canPrevious
+        )
+        guard let snapshot else {
+            coordinator.clearNowPlayingItem()
+            return
         }
+        coordinator.publish(snapshot)
     }
 }
 
@@ -1181,6 +1398,20 @@ extension PlayerManager {
             objectWillChange.send()
         }
     }
+
+    /// Host-supplied Voice Control state, which UIKit does not publicly report.
+    /// Leave `nil` when it is unknown; PlayerKit still observes the assistive
+    /// technologies UIKit does expose.
+    public var voiceControlRunningOverride: Bool? {
+        get { voiceControlRunningOverrideStorage }
+        set {
+            guard newValue != voiceControlRunningOverrideStorage else { return }
+            voiceControlRunningOverrideStorage = newValue
+            gestureManager.refreshAccessibilityState()
+            controlVisibilityManager.refreshAssistiveTechnologyState()
+            objectWillChange.send()
+        }
+    }
 }
 
 // MARK: - External Playback (AirPlay)
@@ -1192,16 +1423,33 @@ extension PlayerManager {
     /// must opt in explicitly. When this is `false` the AirPlay affordance is
     /// hidden rather than presented as a control that silently does nothing.
     public var isExternalPlaybackEnabled: Bool {
-        get { (currentPlayer as? AVPlayerWrapper)?.allowsExternalPlayback ?? false }
+        get { externalPlaybackEnabledStorage }
         set {
+            guard newValue != externalPlaybackEnabledStorage else { return }
+            externalPlaybackEnabledStorage = newValue
             (currentPlayer as? AVPlayerWrapper)?.allowsExternalPlayback = newValue
             objectWillChange.send()
         }
+    }
+
+    /// Whether the active backend can honor the host's AirPlay opt-in.
+    public var canUseAirPlay: Bool {
+        externalPlaybackEnabledStorage && currentPlayer is AVPlayerWrapper
     }
 }
 
 // MARK: - PiP Controls
 extension PlayerManager {
+    /// Lets the host restore its player presentation when system PiP closes.
+    /// Call the supplied completion with `true` only after restoration succeeds.
+    public var onPictureInPictureRestoreRequested: (((Bool) -> Void) -> Void)? {
+        get { pictureInPictureRestorationHandlerStorage }
+        set {
+            pictureInPictureRestorationHandlerStorage = newValue
+            (currentPlayer as? AVPlayerWrapper)?.onPictureInPictureRestoreRequested = newValue
+        }
+    }
+
     public var isPiPSupported: Bool {
         (currentPlayer as? PlayerPictureInPictureSupporting)?.isPictureInPictureSupported ?? false
     }
@@ -1222,6 +1470,28 @@ extension PlayerManager {
 
 // MARK: - Chromecast Controls
 extension PlayerManager {
+    /// Selects the Cast receiver application before the first Cast interaction.
+    /// Returns `false` for an empty identifier or after Cast is initialized.
+    @discardableResult
+    public func configureChromecast(receiverApplicationID: String) -> Bool {
+        castManager.configure(receiverApplicationID: receiverApplicationID)
+    }
+
+    /// Creates Cast's process-global context before Google's official button.
+    /// The SDK still defers device discovery until that button is tapped.
+    @discardableResult
+    func prepareChromecastButton() -> Bool {
+        configureCastCallbacks()
+        return castManager.prepareForUserInteraction()
+    }
+
+    /// Initializes Cast after user intent and presents the device picker.
+    @discardableResult
+    public func presentChromecastDevicePicker() -> Bool {
+        configureIntegrationsIfNeeded()
+        return castManager.presentCastDialog()
+    }
+
     public func playOnChromecast() {
         configureIntegrationsIfNeeded()
         castManager.playMediaOnCast()
@@ -1300,6 +1570,15 @@ extension PlayerManager {
         gestureManager.isPlayingProvider = { [weak self] in
             self?.isPlaying ?? false
         }
+        gestureManager.isPlaybackRequestedProvider = { [weak self] in
+            self?.isPlaybackRequested ?? false
+        }
+        gestureManager.isZoomAvailableProvider = { [weak self] in
+            self?.isZoomGestureAvailable ?? false
+        }
+        gestureManager.voiceControlRunningProvider = { [weak self] in
+            self?.voiceControlRunningOverride
+        }
         gestureManager.speedProvider = { [weak self] in
             self?.playbackSpeed ?? 1
         }
@@ -1308,8 +1587,12 @@ extension PlayerManager {
         }
         gestureManager.onTogglePlayback = { [weak self] in
             guard let self else { return }
-            self.isPlaying ? self.pause() : self.play()
+            self.isPlaybackRequested ? self.pause() : self.play()
         }
+    }
+
+    private var isZoomGestureAvailable: Bool {
+        currentPlayer?.isZoomSupported == true
     }
 
     /// Fires once per presentation, on the first frame of real playback.
@@ -1403,12 +1686,6 @@ extension PlayerManager {
     }
 
     private func recordPlaybackHealthEvent(_ event: PlaybackHealthEvent) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.recordPlaybackHealthEvent(event)
-            }
-            return
-        }
         guard hasActivePlaybackDiagnosticsItem else {
             // Preserve the existing observer contract while keeping stopped
             // sessions immutable; real monitor callbacks are already session-gated.
@@ -1559,19 +1836,22 @@ extension PlayerManager {
                 
                 self.isPlaying = player.isPlaying
                 self.isBuffering = player.isBuffering
-                self.currentTime = player.currentTime
-                self.duration = player.duration
-                self.bufferedDuration = player.bufferedDuration
+                self.currentTime = Self.nonnegativeFinite(player.currentTime)
+                self.duration = Self.nonnegativeFinite(player.duration)
+                self.bufferedDuration = Self.nonnegativeFinite(player.bufferedDuration)
             }
             .store(in: &stateCancellables)
     }
     
     public func resetPlayer() {
         resetPlayer(clearMediaContext: true)
+        AudioSessionManager.shared.deactivateAudioSession(for: self)
     }
 
     private func resetPlayer(clearMediaContext: Bool) {
         cancelPendingPlaybackResume()
+        cancelPlaybackRetry()
+        cancelExternalEpisodeNavigation(clearHandler: clearMediaContext)
         gestureManager.reset()
         #if os(macOS)
         endPlaybackDiagnosticsSampling(reason: "player reset")
@@ -1589,6 +1869,8 @@ extension PlayerManager {
         
         currentPlayer?.stop()
         currentPlayer = nil
+        currentProvider = nil
+        activeBuiltInPlayerType = nil
         trackManager = nil
         playbackManager = nil
         
@@ -1600,7 +1882,6 @@ extension PlayerManager {
         }
         duration = 0
         bufferedDuration = 0
-        isExternalEpisodeNavigationInProgress = false
         shouldResumePlaybackAfterStall = false
         
         userInteracting = false
@@ -1623,7 +1904,6 @@ extension PlayerManager {
             playerItems = []
             currentPlayerItemIndex = 0
             contentType = .movie
-            clearExternalEpisodeNavigation()
         }
         
         stateCancellables.removeAll()
@@ -1640,28 +1920,16 @@ extension PlayerManager {
         guard shouldHoldWakeLock != isPlaybackWakeLockHeld else { return }
         isPlaybackWakeLockHeld = shouldHoldWakeLock
 
-        if Thread.isMainThread {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                PlaybackWakeLockCoordinator.shared.setPlaybackActive(shouldHoldWakeLock, for: self)
-            }
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    PlaybackWakeLockCoordinator.shared.setPlaybackActive(shouldHoldWakeLock, for: self)
-                }
-            }
-        }
+        PlaybackWakeLockCoordinator.shared.setPlaybackActive(shouldHoldWakeLock, for: self)
     }
 }
 
 extension PlayerManager {
     private func configureIntegrationsIfNeeded() {
         guard !integrationsConfigured else { return }
+        longLivedCancellables.removeAll()
         configureAudioSessionCallbacks()
         configureCastCallbacks()
-        AudioSessionManager.shared.configureAudioSession(for: self)
         GameControllerManager.shared.attachControllerHandlers(for: self)
         installNowPlayingIfNeeded()
         subscribeToCastState()
@@ -1679,6 +1947,11 @@ extension PlayerManager {
         castManager.currentPlayerItemProvider = { [weak self] in
             self?.playerItem
         }
+
+        castManager.currentPlaybackPositionProvider = { [weak self] in
+            guard let self else { return nil }
+            return Self.nonnegativeFinite(self.currentPlayer?.currentTime ?? self.currentTime)
+        }
         
         castManager.onError = { [weak self] error in
             self?.reportError(error)
@@ -1688,7 +1961,6 @@ extension PlayerManager {
             self?.shouldDismiss = true
         }
 
-        castManager.refreshAvailableDevices(force: false)
     }
     
     private func configureAudioSessionCallbacks() {
@@ -1718,13 +1990,6 @@ extension PlayerManager {
     /// `onDisappear`; hosts driving `PlayerManager` directly should call it
     /// themselves. It is idempotent.
     public func tearDown() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.tearDown()
-            }
-            return
-        }
-
         debugLog("Tearing down player manager.")
 
         resetPlayer(clearMediaContext: true)
@@ -1734,11 +1999,17 @@ extension PlayerManager {
         GameControllerManager.shared.releaseControllerHandlers(for: self)
         releaseNowPlaying()
         isPlaybackWakeLockHeld = false
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            PlaybackWakeLockCoordinator.shared.setPlaybackActive(false, for: self)
-        }
+        PlaybackWakeLockCoordinator.shared.setPlaybackActive(false, for: self)
         AudioSessionManager.shared.deactivateAudioSession(for: self)
+        longLivedCancellables.removeAll()
+        castManager.detachPlayerSession()
+        castManager.currentPlayerItemProvider = nil
+        castManager.currentPlaybackPositionProvider = nil
+        castManager.onError = nil
+        castManager.onDismissRequested = nil
+        AudioSessionManager.shared.onPauseRequested = nil
+        AudioSessionManager.shared.onResumeRequested = nil
+        AudioSessionManager.shared.isPlayingProvider = nil
 
         // Let the integrations rebuild on the next play so a torn-down manager
         // can be reused rather than being permanently inert.
@@ -1748,22 +2019,20 @@ extension PlayerManager {
     private func configureOrientationCallbacks() {
         orientationManager.onPortraitOrientation = { [weak self] in
             self?.setGravityToDefault()
+            self?.gestureManager.refreshAccessibilityState()
         }
     }
 
     private func applyRuntimeState(_ state: PlayerRuntimeState) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.applyRuntimeState(state)
-            }
-            return
+        if isPlaying != state.isPlaying {
+            isPlaying = state.isPlaying
         }
-        
-        isPlaying = state.isPlaying
-        isBuffering = state.isBuffering
-        currentTime = state.currentTime
-        duration = state.duration
-        bufferedDuration = state.bufferedDuration
+        if isBuffering != state.isBuffering {
+            isBuffering = state.isBuffering
+        }
+        currentTime = Self.nonnegativeFinite(state.currentTime)
+        duration = Self.nonnegativeFinite(state.duration)
+        bufferedDuration = Self.nonnegativeFinite(state.bufferedDuration)
         logRuntimeStateIfChanged(state)
 
         if hasPlaybackProgressedSinceResumeReference(currentTime: state.currentTime) {
@@ -1773,13 +2042,7 @@ extension PlayerManager {
 }
 
 extension PlayerManager: PlayerLifecycleReporting {
-    func playerDidBecomeReady() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.playerDidBecomeReady()
-            }
-            return
-        }
+    public func playerDidBecomeReady() {
         isMediaReady = true
         debugLog(
             "Player became ready current=\(debugInterval(currentTime)) " +
@@ -1795,22 +2058,31 @@ extension PlayerManager: PlayerLifecycleReporting {
             "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false) " +
             "buffering=\(currentPlayer?.isBuffering ?? false)"
         )
-        if playbackResumeProgressReferenceTime == nil {
-            playbackResumeProgressReferenceTime = max(currentPlayer?.currentTime ?? currentTime, 0)
+        guard currentPlayer != nil, let playbackManager else {
+            shouldResumePlaybackAfterStall = false
+            isPlaying = false
+            isBuffering = false
+            return
         }
-        playbackManager?.play()
+        if let mediaReporter = currentPlayer as? PlayerMediaAvailabilityReporting,
+           !mediaReporter.hasLoadedMedia {
+            shouldResumePlaybackAfterStall = false
+            isPlaying = false
+            isBuffering = false
+            AudioSessionManager.shared.deactivateAudioSession(for: self)
+            return
+        }
+        if playbackResumeProgressReferenceTime == nil {
+            playbackResumeProgressReferenceTime = Self.nonnegativeFinite(
+                currentPlayer?.currentTime ?? currentTime
+            )
+        }
+        playbackManager.play()
         isPlaying = true
         isBuffering = currentPlayer?.isBuffering ?? true
     }
 
     private func schedulePlaybackResumeIfNeeded(trigger: String) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.schedulePlaybackResumeIfNeeded(trigger: trigger)
-            }
-            return
-        }
-
         guard shouldResumePlaybackAfterStall else {
             debugLog("Playback resume skipped because shouldResumePlaybackAfterStall is false. trigger=\(trigger)")
             cancelPendingPlaybackResume()
@@ -1823,7 +2095,7 @@ extension PlayerManager: PlayerLifecycleReporting {
             "buffering=\(currentPlayer?.isBuffering ?? false)"
         )
         let resumeProgressReferenceTime = playbackResumeProgressReferenceTime
-            ?? max(currentPlayer?.currentTime ?? currentTime, 0)
+            ?? Self.nonnegativeFinite(currentPlayer?.currentTime ?? currentTime)
         cancelPendingPlaybackResume()
         playbackResumeProgressReferenceTime = resumeProgressReferenceTime
         playbackResumeTask = Task { @MainActor [weak self] in
@@ -1864,23 +2136,11 @@ extension PlayerManager: PlayerLifecycleReporting {
         return currentTime > playbackResumeProgressReferenceTime + 0.15
     }
     
-    func playerDidUpdateTracks() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.playerDidUpdateTracks()
-            }
-            return
-        }
+    public func playerDidUpdateTracks() {
         refreshTrackInfo()
     }
     
-    func playerDidEndPlayback() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.playerDidEndPlayback()
-            }
-            return
-        }
+    public func playerDidEndPlayback() {
         shouldResumePlaybackAfterStall = false
         #if os(macOS)
         endPlaybackDiagnosticsSampling(reason: "playback ended")
@@ -1888,16 +2148,9 @@ extension PlayerManager: PlayerLifecycleReporting {
         videoDidEnd()
     }
 
-    func playerDidStall() {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.playerDidStall()
-            }
-            return
-        }
-
+    public func playerDidStall() {
         isBuffering = true
-        let stalledTime = max(currentPlayer?.currentTime ?? currentTime, 0)
+        let stalledTime = Self.nonnegativeFinite(currentPlayer?.currentTime ?? currentTime)
         debugLog(
             "Player stalled current=\(debugInterval(stalledTime)) " +
             "buffered=\(debugInterval(bufferedDuration)) shouldResume=\(shouldResumePlaybackAfterStall)"
@@ -1911,30 +2164,31 @@ extension PlayerManager: PlayerLifecycleReporting {
         schedulePlaybackResumeIfNeeded(trigger: "stall")
     }
     
-    func playerDidChangePiPState(isActive: Bool) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.playerDidChangePiPState(isActive: isActive)
-            }
-            return
-        }
+    public func playerDidChangePiPState(isActive: Bool) {
         isPiPActive = isActive
-    }
-    
-    func playerDidFail(with error: PlayerKitError) {
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async { [weak self] in
-                self?.playerDidFail(with: error)
-            }
-            return
+        if isActive,
+           let lastError,
+           case .pictureInPictureFailed = lastError {
+            clearError()
         }
+    }
 
+    public func playerDidEncounterNonfatalError(_ error: PlayerKitError) {
+        reportError(error)
+    }
+
+    public func playerDidFail(with error: PlayerKitError) {
         cancelPendingPlaybackResume()
+        shouldResumePlaybackAfterStall = false
+        isPlaying = false
+        isBuffering = false
+        isMediaReady = false
+        AudioSessionManager.shared.deactivateAudioSession(for: self)
 
         #if os(macOS)
         endPlaybackDiagnosticsSampling(reason: "playback failed")
         #endif
-        reportError(error)
+        reportTerminalPlaybackError(error)
     }
 }
 

@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 public struct CloseButtonView: View {
     @ObservedObject var playerManager: PlayerManager
     

@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 protocol PlayerProvider {
     func createPlayer() -> PlayerProtocol
 }
@@ -23,6 +24,7 @@ class VLCPlayerProvider: PlayerProvider {
     }
 }
 
+@MainActor
 class PlayerFactory {
     static func getProvider(for type: PlayerType) -> PlayerProvider {
         switch PlayerType.resolved(type) {

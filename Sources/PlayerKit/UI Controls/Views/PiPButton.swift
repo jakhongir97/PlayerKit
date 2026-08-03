@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct PiPButton: View {
     @ObservedObject var playerManager: PlayerManager
     

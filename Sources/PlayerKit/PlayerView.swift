@@ -3,10 +3,13 @@ import SwiftUI
 import AppKit
 #endif
 
+@MainActor
 public struct PlayerView: View {
     @ObservedObject var playerManager: PlayerManager
     @Environment(\.presentationMode) var presentationMode
-    @State private var didBootstrapPlayer = false
+    @State private var loadedInput: LoadIdentity?
+    @State private var announcedError: PlayerKitError?
+    @State private var announcedErrorWasTerminal = false
     
     private let loadMode: LoadMode
 
@@ -43,11 +46,36 @@ public struct PlayerView: View {
             GestureSurface(manager: playerManager.gestureManager)
                 .zIndex(0)
                 .edgesIgnoringSafeArea(.all)
+                .accessibilityHidden(hasBlockingStatus)
             
             // Player controls
             PlayerControlsView(playerManager: playerManager)
                 .transition(.opacity)
                 .zIndex(1)
+                .accessibilityHidden(hasBlockingStatus)
+
+            // Buffering is transport state, not chrome. It must remain visible
+            // after controls auto-hide or while the player is locked.
+            if playerManager.isBuffering && !hasBlockingStatus {
+                VStack {
+                    BufferingIndicatorView(playerManager: playerManager)
+                        .padding(.top, 52)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .allowsHitTesting(false)
+                .zIndex(2)
+            }
+
+            if playerManager.isVideoEnded {
+                PlaybackEndedOverlayView(playerManager: playerManager)
+                    .zIndex(3)
+            }
+
+            if let error = playerManager.lastError {
+                PlaybackRecoveryOverlayView(playerManager: playerManager, error: error)
+                    .zIndex(4)
+            }
         }
         .onReceive(playerManager.$shouldDismiss) { shouldDismiss in
             if shouldDismiss {
@@ -59,8 +87,33 @@ public struct PlayerView: View {
         }
         .onAppear {
             debugLog(
-                "Player view onAppear didBootstrap=\(didBootstrapPlayer) loadMode=\(loadMode.debugName)"
+                "Player view onAppear loadedInput=\(loadedInput != nil) loadMode=\(loadMode.debugName)"
             )
+            bootstrapPlayerIfNeeded()
+        }
+        .onReceive(playerManager.$lastError) { error in
+            guard let error else {
+                announcedError = nil
+                announcedErrorWasTerminal = false
+                return
+            }
+            guard announcedError != error
+                    || announcedErrorWasTerminal != playerManager.isPlaybackErrorTerminal else { return }
+            announcedError = error
+            announcedErrorWasTerminal = playerManager.isPlaybackErrorTerminal
+            let presentation = PlaybackErrorPresentation(
+                error,
+                terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal
+            )
+            GestureAnnouncer.announce(
+                "\(presentation.title). \(presentation.message)",
+                state: playerManager.gestureManager.assistiveState
+            )
+        }
+        .compatOnChange(of: loadMode.identity) { _ in
+            // SwiftUI preserves @State while replacing a value-type view at the
+            // same identity. Follow the input rather than the view instance so a
+            // mounted player cannot keep showing the previous item or queue.
             bootstrapPlayerIfNeeded()
         }
         .onDisappear {
@@ -73,17 +126,27 @@ public struct PlayerView: View {
             // and the idle timer / audio session / brightness / controller
             // handlers all still held.
             playerManager.tearDown()
-            didBootstrapPlayer = false
+            loadedInput = nil
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
     }
+
+    private var hasBlockingStatus: Bool {
+        if playerManager.isVideoEnded { return true }
+        guard let error = playerManager.lastError else { return false }
+        return PlaybackErrorPresentation(
+            error,
+            terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal
+        ).blocksPlayback
+    }
     
     private func bootstrapPlayerIfNeeded() {
-        guard !didBootstrapPlayer else {
-            debugLog("Skipping bootstrap because it already ran for this view instance.")
+        let input = loadMode.identity
+        guard loadedInput != input else {
+            debugLog("Skipping bootstrap because this input is already loaded.")
             return
         }
-        didBootstrapPlayer = true
+        loadedInput = input
         debugLog("Bootstrapping player view loadMode=\(loadMode.debugName)")
         
         playerManager.ensurePlayerConfigured()
@@ -126,11 +189,22 @@ public struct PlayerView: View {
     }
 }
 
-private extension PlayerView {
+extension PlayerView {
     enum LoadMode {
         case none
         case single(PlayerItem?)
         case episodes([PlayerItem], Int)
+
+        var identity: LoadIdentity {
+            switch self {
+            case .none:
+                return .none
+            case .single(let item):
+                return .single(item.map(ItemIdentity.init))
+            case .episodes(let items, let index):
+                return .episodes(items.map(ItemIdentity.init), index)
+            }
+        }
 
         var debugName: String {
             switch self {
@@ -141,6 +215,51 @@ private extension PlayerView {
             case .episodes:
                 return "episodes"
             }
+        }
+    }
+
+    enum LoadIdentity: Hashable {
+        case none
+        case single(ItemIdentity?)
+        case episodes([ItemIdentity], Int)
+    }
+
+    /// Value identity for every input that affects a load. URLs alone are not
+    /// sufficient: hosts commonly reuse one URL while changing resume position,
+    /// external-playback metadata, or the episode represented by it.
+    struct ItemIdentity: Hashable {
+        let title: String
+        let titleImageURL: URL?
+        let description: String?
+        let url: URL
+        let posterURL: URL?
+        let castVideoURL: URL?
+        let externalPlaybackURL: URL?
+        let externalPlaybackContentType: String?
+        let externalPlaybackDurationBits: UInt64?
+        let lastPositionBits: UInt64?
+        let episodeIndex: Int?
+        #if os(macOS)
+        let playbackHealthAssetIdentifier: String?
+        let playbackHealthMonitoringEligible: Bool
+        #endif
+
+        init(_ item: PlayerItem) {
+            title = item.title
+            titleImageURL = item.titleImageURL
+            description = item.description
+            url = item.url
+            posterURL = item.posterUrl
+            castVideoURL = item.castVideoUrl
+            externalPlaybackURL = item.externalPlaybackURL
+            externalPlaybackContentType = item.externalPlaybackContentType
+            externalPlaybackDurationBits = item.externalPlaybackDuration?.bitPattern
+            lastPositionBits = item.lastPosition?.bitPattern
+            episodeIndex = item.episodeIndex
+            #if os(macOS)
+            playbackHealthAssetIdentifier = item.playbackHealthAssetIdentifier
+            playbackHealthMonitoringEligible = item.playbackHealthMonitoringEligible
+            #endif
         }
     }
 }

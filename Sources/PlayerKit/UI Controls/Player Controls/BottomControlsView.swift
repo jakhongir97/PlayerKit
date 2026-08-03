@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct BottomControlsView: View {
     @ObservedObject var playerManager: PlayerManager
 
@@ -21,10 +22,25 @@ struct BottomControlsView: View {
         [showsPiP, showsRotate, showsFullscreen].filter { $0 }.count > 1
     }
 
+    @ViewBuilder
     var body: some View {
+        if #available(iOS 16.0, macOS 13.0, *) {
+            ViewThatFits(in: .horizontal) {
+                regularLayout
+                    .fixedSize(horizontal: true, vertical: false)
+                compactLayout
+            }
+        } else {
+            // iOS 15 has no proposal-aware ViewThatFits. Two rows retain every
+            // action and target size without guessing which device owns a
+            // compact embedded player.
+            compactLayout
+        }
+    }
+
+    private var regularLayout: some View {
         HStack(spacing: 12) {
             MediaOptionsMenu(playerManager: playerManager)
-            BufferingIndicatorView(playerManager: playerManager)
             SkipIntroButtonView(playerManager: playerManager)
 
             Spacer()
@@ -37,6 +53,33 @@ struct BottomControlsView: View {
                 } else {
                     ungroupedTrailingIconActions
                 }
+            }
+        }
+    }
+
+    private var compactLayout: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                MediaOptionsMenu(playerManager: playerManager)
+                Spacer(minLength: 8)
+                trailingIconActions
+            }
+
+            HStack(spacing: 8) {
+                SkipIntroButtonView(playerManager: playerManager)
+                Spacer(minLength: 8)
+                SkipOutroButtonView(playerManager: playerManager)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var trailingIconActions: some View {
+        if showsTrailingIconActions {
+            if shouldGroupTrailingIconActions {
+                groupedTrailingIconActions
+            } else {
+                ungroupedTrailingIconActions
             }
         }
     }
@@ -58,6 +101,7 @@ struct BottomControlsView: View {
 
     @ViewBuilder
     private var groupedTrailingIconActions: some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, macOS 26.0, *) {
             GlassEffectContainer {
                 trailingActionsContent
@@ -67,15 +111,19 @@ struct BottomControlsView: View {
             }
             .transaction { $0.animation = nil }
         } else {
-            // The former `iOS 15.0 / macOS 12.0` tier was always true at this
-            // deployment target, so the plain-colour fallback below it could
-            // never run.
-            trailingActionsContent
-                .padding(pillInsets)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
-                .contentShape(Capsule())
+            groupedTrailingFallback
         }
+        #else
+        groupedTrailingFallback
+        #endif
+    }
+
+    private var groupedTrailingFallback: some View {
+        trailingActionsContent
+            .padding(pillInsets)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            .contentShape(Capsule())
     }
 
     @ViewBuilder

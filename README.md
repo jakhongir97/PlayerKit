@@ -1,12 +1,12 @@
 # PlayerKit
 
-PlayerKit is an iOS Swift Package for media playback with a ready-to-use SwiftUI player UI.
+PlayerKit is an Apple-platform Swift Package for media playback with a ready-to-use SwiftUI player UI.
 
 It supports:
 - AVPlayer and VLCKit backends
 - SwiftUI full-screen player controls
-- Picture in Picture (requires the `audio` background mode and an active
-  `.playback` audio session in the host app)
+- Picture in Picture on supported iOS devices/backends (the AVPlayer path is the
+  reference implementation; availability is reported at runtime)
 - Google Cast integration; AirPlay video routing is **opt-in** via
   `PlayerManager.isExternalPlaybackEnabled` (off by default, because PlayerKit
   configures `AVPlayer` for screen-capture protection)
@@ -15,16 +15,24 @@ It supports:
   speed hold, zoom, with on-screen feedback and a first-run walkthrough
 - Accessibility labels, hints and an adjustable action on core playback controls
 
-Not yet supported: localization (all user-facing strings are English; see
-`HeuristicSkipButtonTitles` for the one injection seam), DRM/FairPlay, and
-Dynamic Type in the player chrome.
+PlayerKit currently ships English-only resources; hosts can inject heuristic
+skip titles through `HeuristicSkipButtonTitles`. Core chrome titles and status
+copy follow Dynamic Type, while compact HUD glyphs and dense macOS diagnostics
+remain bounded layouts. DRM/FairPlay is not implemented.
 
 ## Requirements
 
 - iOS 15.0+
 - macOS 14.0+
-- Xcode 15+
+- Xcode 15.3+
 - Swift 5.10
+
+On macOS, AVPlayer is the supported default. The optional VLC backend loads
+libVLC 3.x from `/Applications/VLC.app` only after the entire app validates as
+Apple-backed code signed by VideoLAN (team `75GAHG3SZQ`); incompatible or
+modified installations are rejected. That external-library path is not
+supported for App Sandbox or Hardened Runtime library-validation hosts. Do not
+disable library validation merely to enable VLC—use AVPlayer in those builds.
 
 ## Installation (Swift Package Manager)
 
@@ -58,6 +66,42 @@ struct ContentView: View {
 ```
 
 You can also use `PlayerView(playerItem:)` directly if you prefer a view-first API.
+
+## Google Cast host setup
+
+Cast is iOS-only and initializes after an explicit Cast-button interaction;
+constructing a `Player` does not start local-network discovery. The default
+receiver is Google's Default Media Receiver. Configure a custom receiver before
+the first Cast interaction:
+
+```swift
+let didConfigure = player.playerManager.configureChromecast(
+    receiverApplicationID: "ABCD1234"
+)
+precondition(didConfigure, "Configure Cast before its first use")
+```
+
+PlayerKit cannot add permission strings to the host app. Add both Bonjour
+services and a user-facing local-network reason to the app's `Info.plist`,
+replacing `ABCD1234` with the configured receiver ID:
+
+```xml
+<key>NSBonjourServices</key>
+<array>
+    <string>_googlecast._tcp</string>
+    <string>_ABCD1234._googlecast._tcp</string>
+</array>
+<key>NSLocalNetworkUsageDescription</key>
+<string>$(PRODUCT_NAME) uses the local network to find Cast-enabled displays.</string>
+```
+
+The Cast SDK ships its own privacy manifest, but its accompanying nutrition
+label also describes automatic diagnostics fields that do not map one-for-one
+to that manifest. Hosts must reconcile those vendor disclosures, provide
+accurate App Privacy answers, and accept the
+[Google Cast terms](https://developers.google.com/cast/docs/terms). The package's
+resolved Cast artifact and current release blockers are recorded in
+`THIRD_PARTY_NOTICES.md`.
 
 ## Lock Screen, Control Center and Background Audio
 
@@ -99,9 +143,12 @@ mode in *your app's* `Info.plist`, which a package cannot declare for you:
 </array>
 ```
 
-Note that PlayerKit configures `AVPlayer` to pause in the background as part of
-its capture-protection posture, alongside disabling external playback. Enabling
-background playback is a deliberate relaxation of that posture. It affects the
+Note that PlayerKit configures `AVPlayer` to pause in the background and disables
+external playback by default. During active recording or mirroring, the player
+replaces video with a black shield. The secure-text canvas used for one-frame
+screenshots is an additional best-effort heuristic, not DRM or a security
+boundary; FairPlay is not implemented. Enabling background or external playback
+is a deliberate relaxation of this posture. These policies affect the
 AVFoundation backend only; the VLC backends are unaffected.
 
 ## Versioning and Stability
@@ -113,8 +160,10 @@ PlayerKit follows Semantic Versioning:
 
 Public distribution is validated in CI with:
 - package manifest validation
-- binary artifact checksum verification
-- iOS simulator/device builds
+- debug and release macOS builds and tests
+- oldest-supported-toolchain compilation
+- binary checksum, XCFramework structure, signature, privacy-manifest and notice checks
+- iOS simulator/device builds and simulator tests
 
 Internal architecture hardening includes:
 - callback-based lifecycle/error propagation from player wrappers
@@ -130,6 +179,24 @@ substituting a different manager, and two simultaneous players are not supported
 Playback errors are surfaced through:
 - `PlayerManager.shared.lastError`
 - `Notification.Name.PlayerKitDidFail`, whose `object` is the `PlayerKitError`
+- the stock `PlayerView`, which presents terminal playback failures with
+  Retry/Close and recoverable Cast, AirPlay and PiP failures as dismissible
+  banners without stopping local playback
+
+For custom error UI, present `PlayerKitError.userFacingDescription`. Associated
+string payloads and `localizedDescription` are diagnostic and preserved for
+source compatibility; custom backends must never put credentials, signed URLs,
+or tokens in them.
+
+Retry reloads the current item at its last known position. Hosts using signed
+or expiring URLs can set `onPlaybackRetryRequested`; the async closure receives
+the failed `PlayerItem` and can return a refreshed one. Returning `nil` or
+throwing leaves the error visible, and a result from a superseded retry/item is
+discarded.
+
+Capability/readiness state is public so custom chrome can avoid dead controls:
+`canUseAirPlay`, `isCastingAvailable`, `isPiPSupported`, `canTogglePiP`, and
+`gestureCapabilities`.
 
 ## Gestures
 
@@ -189,11 +256,13 @@ so a host can hide an affordance rather than offer a control that does nothing.
 
 ### Accessibility
 
-The walkthrough is never shown under VoiceOver, Switch Control or Voice Control —
-teaching a swipe to someone who cannot emit one teaches nothing. They get the
-equivalent instead: named actions on the video element, adjustable Volume and
-Brightness rotor elements, visible ±10s buttons in the transport row, and
-auto-hide is suppressed entirely so chrome does not vanish mid-scan.
+The walkthrough is never shown under VoiceOver or Switch Control — teaching a
+swipe to someone who cannot emit one teaches nothing. They get named seek,
+playback, zoom, Volume and Brightness actions on the visible video element plus
+visible ±10s buttons in the transport row; auto-hide is suppressed so chrome
+does not vanish mid-scan. UIKit does not publish Voice Control running state, so
+hosts that know it is active can set `voiceControlRunningOverride` to apply the
+same coach and auto-hide policy without private APIs.
 
 ## Lifecycle
 

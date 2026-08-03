@@ -808,6 +808,7 @@ final class PlaybackHealthClassifierTests: XCTestCase {
     }
 }
 
+@MainActor
 final class PlaybackHealthIntegrationTests: XCTestCase {
     override func setUp() {
         super.setUp()

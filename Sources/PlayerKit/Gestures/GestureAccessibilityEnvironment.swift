@@ -1,7 +1,9 @@
-import Foundation
+@preconcurrency import Foundation
 
 #if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
 #endif
 
 /// Which assistive technologies are running.
@@ -20,7 +22,10 @@ struct AssistiveTechnologyState: Equatable {
 
     /// Chrome that disappears on a timer is unusable when navigating by focus.
     var suppressesAutoHide: Bool {
-        isVoiceOverRunning || isSwitchControlRunning || isGuidedAccessEnabled
+        isVoiceOverRunning
+            || isSwitchControlRunning
+            || isVoiceControlRunning
+            || isGuidedAccessEnabled
     }
 
     /// Teaching a swipe to someone who cannot emit one steals focus and teaches
@@ -36,15 +41,24 @@ struct AssistiveTechnologyState: Equatable {
         isSwitchControlRunning || isAssistiveTouchRunning
     }
 
+    @MainActor
     static var current: AssistiveTechnologyState {
         #if canImport(UIKit)
         return AssistiveTechnologyState(
             isVoiceOverRunning: UIAccessibility.isVoiceOverRunning,
             isSwitchControlRunning: UIAccessibility.isSwitchControlRunning,
+            // UIKit exposes running-state APIs for VoiceOver and Switch
+            // Control, but not Voice Control. GestureManager can merge an
+            // explicit host-provided override without using private API.
             isVoiceControlRunning: false,
             isGuidedAccessEnabled: UIAccessibility.isGuidedAccessEnabled,
             isAssistiveTouchRunning: UIAccessibility.isAssistiveTouchRunning,
             reduceMotion: UIAccessibility.isReduceMotionEnabled
+        )
+        #elseif canImport(AppKit)
+        return AssistiveTechnologyState(
+            isVoiceOverRunning: NSWorkspace.shared.isVoiceOverEnabled,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
         #else
         return AssistiveTechnologyState()
@@ -53,11 +67,15 @@ struct AssistiveTechnologyState: Equatable {
 }
 
 /// Keeps an `AssistiveTechnologyState` current.
+@MainActor
 final class AssistiveTechnologyObserver {
     private(set) var state: AssistiveTechnologyState = .current
     var onChange: ((AssistiveTechnologyState) -> Void)?
 
     private var observers: [NSObjectProtocol] = []
+    #if canImport(AppKit)
+    private var voiceOverObservation: NSKeyValueObservation?
+    #endif
 
     init() {
         #if canImport(UIKit)
@@ -74,14 +92,33 @@ final class AssistiveTechnologyObserver {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                self?.refresh()
+                Task { @MainActor [weak self] in self?.refresh() }
             }
         }
+        #elseif canImport(AppKit)
+        voiceOverObservation = NSWorkspace.shared.observe(
+            \.isVoiceOverEnabled,
+            options: [.new]
+        ) { [weak self] _, _ in
+            Task { @MainActor [weak self] in self?.refresh() }
+        }
+        observers = [
+            NotificationCenter.default.addObserver(
+                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.refresh() }
+            }
+        ]
         #endif
     }
 
     deinit {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
+        #if canImport(AppKit)
+        voiceOverObservation?.invalidate()
+        #endif
     }
 
     private func refresh() {
@@ -96,23 +133,28 @@ final class AssistiveTechnologyObserver {
 ///
 /// A HUD that is `accessibilityHidden` still has to tell VoiceOver what it
 /// changed; announcing from here is what makes a rail usable without sight.
+@MainActor
 enum GestureAnnouncer {
     static func announce(_ text: String, state: AssistiveTechnologyState) {
         guard state.isVoiceOverRunning else { return }
         #if canImport(UIKit)
-        if #available(iOS 17.0, *) {
-            var announcement = AttributedString(text)
-            // High priority interrupts, so a rapid sweep does not queue a dozen
-            // utterances the user then has to sit through.
-            announcement.accessibilitySpeechAnnouncementPriority = .high
-            AccessibilityNotification.Announcement(announcement).post()
-        } else {
-            let attributed = NSAttributedString(
-                string: text,
-                attributes: [.accessibilitySpeechQueueAnnouncement: false]
-            )
-            UIAccessibility.post(notification: .announcement, argument: attributed)
-        }
+        // Keep one implementation across PlayerKit's full iOS range. The
+        // newer AttributedString announcement API currently emits a strict-
+        // concurrency KeyPath warning in device builds.
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [.accessibilitySpeechQueueAnnouncement: false]
+        )
+        UIAccessibility.post(notification: .announcement, argument: attributed)
+        #elseif canImport(AppKit)
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: text,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue
+            ]
+        )
         #endif
     }
 }

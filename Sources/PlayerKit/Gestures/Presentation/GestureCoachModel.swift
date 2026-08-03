@@ -14,6 +14,7 @@ import Foundation
 /// driving the *real* rail. If the user performs the gesture while it is on
 /// screen, the demo drops out from under their finger and the rail goes live
 /// with no visual discontinuity: the lesson completes by being done.
+@MainActor
 final class GestureCoachModel: ObservableObject {
 
     enum Stage: Equatable {
@@ -74,10 +75,6 @@ final class GestureCoachModel: ObservableObject {
 
     init(clock: GestureClock) {
         self.clock = clock
-    }
-
-    deinit {
-        pendingTokens.forEach { $0.cancel() }
     }
 
     var isOnScreen: Bool { stage != nil }
@@ -222,11 +219,11 @@ final class GestureCoachModel: ObservableObject {
     }
 
     func dismiss(_ reason: DismissReason) {
+        cancelPending()
         guard stage != nil else { return }
         let wasWalkthrough: Bool
         if case .walkthrough = stage { wasWalkthrough = true } else { wasWalkthrough = false }
 
-        cancelPending()
         stage = nil
         hud?.clearDemoRails()
 
@@ -234,6 +231,15 @@ final class GestureCoachModel: ObservableObject {
             defaults.set(Self.currentVersion, forKey: DefaultsKey.seenVersion)
         }
         onFinish?(reason)
+    }
+
+    /// Cancels both an on-screen lesson and a delayed lesson that has not
+    /// appeared yet. Unlike `dismiss`, lifecycle reset does not mark coaching as
+    /// completed or emit a user-facing completion event.
+    func reset() {
+        cancelPending()
+        stage = nil
+        hud?.clearDemoRails()
     }
 
     /// A tutorial that was *interrupted* is not a tutorial that was seen. A
@@ -315,7 +321,10 @@ final class GestureCoachModel: ObservableObject {
 
     // MARK: - Scheduling
 
-    private func schedule(after delay: TimeInterval, _ body: @escaping () -> Void) {
+    private func schedule(
+        after delay: TimeInterval,
+        _ body: @escaping @MainActor @Sendable () -> Void
+    ) {
         pendingTokens.append(clock.schedule(after: delay, body))
     }
 

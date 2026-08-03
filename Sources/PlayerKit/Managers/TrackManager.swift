@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 class TrackManager {
     private var player: PlayerProtocol
 

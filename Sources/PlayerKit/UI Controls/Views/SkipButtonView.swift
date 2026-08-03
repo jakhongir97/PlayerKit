@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 /// A visible ±10s control.
 ///
@@ -10,25 +11,58 @@ import SwiftUI
 /// It calls the same `TapSeekMachine` path the double tap uses, so a button
 /// press, a rotor action, a keyboard arrow and a gesture cannot drift apart:
 /// one clamp, one overlay, one accumulated total.
+@MainActor
 struct SkipButtonView: View {
     @ObservedObject var playerManager: PlayerManager
+    @ObservedObject private var gestureManager: GestureManager
     let direction: SeekDirection
 
     private var isForward: Bool { direction == .forward }
+    private var interval: Double {
+        let configured = gestureManager.configuration.skipInterval
+        return configured.isFinite ? configured : 10
+    }
+    private var intervalLabel: String {
+        interval.rounded() == interval ? String(Int(interval)) : String(format: "%.1f", interval)
+    }
+    private var canSkip: Bool {
+        gestureManager.configuration.isEnabled
+            && !playerManager.isLocked
+            && playerManager.seekableRange != nil
+    }
+
+    init(playerManager: PlayerManager, direction: SeekDirection) {
+        self.playerManager = playerManager
+        _gestureManager = ObservedObject(wrappedValue: playerManager.gestureManager)
+        self.direction = direction
+    }
 
     var body: some View {
         Button {
             isForward ? playerManager.skipForward() : playerManager.skipBackward()
         } label: {
-            Image(systemName: isForward ? "goforward.10" : "gobackward.10")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundColor(.white)
-                // 44×44 minimum target, per the HIG accessibility guidance.
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            ZStack {
+                Image(systemName: isForward ? "goforward" : "gobackward")
+                    .font(.system(size: 24, weight: .medium))
+                Text(intervalLabel)
+                    .font(.caption2.bold().monospacedDigit())
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .frame(maxWidth: 24)
+            }
+            .foregroundColor(.white)
+            // 44×44 minimum target, per the HIG accessibility guidance.
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isForward ? "Skip forward 10 seconds" : "Skip back 10 seconds")
+        .disabled(!canSkip)
+        .accessibilityHidden(!canSkip)
+        .accessibilityLabel(
+            isForward
+                ? Text("Skip forward \(intervalLabel) seconds")
+                : Text("Skip back \(intervalLabel) seconds")
+        )
         .accessibilityIdentifier(isForward ? "player.skipForward" : "player.skipBackward")
     }
 }

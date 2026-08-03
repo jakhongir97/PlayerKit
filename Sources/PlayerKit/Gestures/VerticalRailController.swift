@@ -7,6 +7,7 @@ import QuartzCore
 /// Pure arithmetic plus two gates; every platform detail is behind
 /// `OutputLevelControlling`, so the mapping, the quantisation and the haptic
 /// grammar are all assertable without a device.
+@MainActor
 final class VerticalRailController {
 
     struct RailSample: Equatable {

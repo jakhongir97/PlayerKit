@@ -6,6 +6,7 @@ import Foundation
 /// requirement on `PlayerProtocol` because `PlayerProtocol` is public and
 /// conformable by a host's own backend — adding a requirement to it would be a
 /// source break for anyone who has one.
-protocol PlayerMuteControlling: AnyObject {
+@MainActor
+public protocol PlayerMuteControlling: AnyObject {
     func setMuted(_ muted: Bool)
 }

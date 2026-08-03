@@ -1,11 +1,10 @@
 import Combine
 import Foundation
 
+@MainActor
 class PlaybackSpeedViewModel: ObservableObject {
     @Published var playbackSpeed: Float
     private let playerManager: PlayerManager
-
-    private var cancellables = Set<AnyCancellable>()
 
     init(playerManager: PlayerManager = .shared) {
         self.playerManager = playerManager
@@ -13,8 +12,7 @@ class PlaybackSpeedViewModel: ObservableObject {
         
         playerManager.$playbackSpeed
             .receive(on: RunLoop.main)
-            .assign(to: \.playbackSpeed, on: self)
-            .store(in: &cancellables)
+            .assign(to: &$playbackSpeed)
     }
 
     func setPlaybackSpeed(_ speed: Float) {

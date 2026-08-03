@@ -8,10 +8,10 @@ public enum PlayerType: String, CaseIterable, Identifiable, Codable {
     public var id: String { rawValue }
 
     public static var supportedCases: [PlayerType] {
-        #if canImport(VLCKit)
-        [.vlcPlayer, .avPlayer]
-        #elseif os(macOS)
+        #if os(macOS)
         desktopVLCAvailability ? [.vlcPlayer, .avPlayer] : [.avPlayer]
+        #elseif canImport(VLCKit)
+        [.vlcPlayer, .avPlayer]
         #else
         [.avPlayer]
         #endif
@@ -51,10 +51,7 @@ private let desktopVLCAvailability: Bool = {
     guard processInfo.environment["XCTestConfigurationFilePath"] == nil else {
         return false
     }
-    let fileManager = FileManager.default
-    let libDirectory = "/Applications/VLC.app/Contents/MacOS/lib"
-    return fileManager.fileExists(atPath: "\(libDirectory)/libvlc.dylib")
-        && fileManager.fileExists(atPath: "\(libDirectory)/libvlccore.dylib")
+    return DesktopVLCPlayerWrapper.isRuntimeAvailable
 }()
 #endif
 

@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCHEME="PlayerKit"
+DERIVED_DATA_PATH="${PLAYERKIT_DERIVED_DATA_PATH:-$ROOT_DIR/.build/xcode-tests}"
+cd "$ROOT_DIR"
 
 destinations="$(xcodebuild -scheme "$SCHEME" -showdestinations 2>/dev/null || true)"
 
@@ -13,24 +15,30 @@ fi
 
 pick_destination() {
   local preferred_name="$1"
-  local line os
+  local line id
 
   line="$(printf '%s\n' "$destinations" | awk -v target="$preferred_name" '
-    $0 ~ /platform:iOS Simulator/ && $0 ~ ("name:" target) { print; exit }
+    $0 ~ /platform:iOS Simulator/ {
+      name = $0
+      sub(/.*name:/, "", name)
+      sub(/[,}].*/, "", name)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+      if (name == target) { print; exit }
+    }
   ')"
 
   [[ -n "$line" ]] || return 1
 
-  os="$(printf '%s\n' "$line" | sed -n 's/.*OS:\([^,}]*\).*/\1/p' | tr -d ' ')"
-  [[ -n "$os" ]] || return 1
+  id="$(printf '%s\n' "$line" | sed -n 's/.*id:\([^,}]*\).*/\1/p' | tr -d ' ')"
+  [[ -n "$id" ]] || return 1
 
-  printf 'platform=iOS Simulator,name=%s,OS=%s\n' "$preferred_name" "$os"
+  printf 'platform=iOS Simulator,id=%s\n' "$id"
   return 0
 }
 
 destination=""
 
-for preferred in "iPhone 16" "iPhone 15" "iPhone 14"; do
+for preferred in "iPhone 17" "iPhone 16" "iPhone 15" "iPhone 14"; do
   if destination="$(pick_destination "$preferred")"; then
     break
   fi
@@ -45,16 +53,19 @@ if [[ -z "$destination" ]]; then
     exit 1
   fi
 
-  name="$(printf '%s\n' "$line" | sed -n 's/.*name:\([^,}]*\).*/\1/p' | sed 's/^ *//; s/ *$//')"
-  os="$(printf '%s\n' "$line" | sed -n 's/.*OS:\([^,}]*\).*/\1/p' | tr -d ' ')"
+  id="$(printf '%s\n' "$line" | sed -n 's/.*id:\([^,}]*\).*/\1/p' | tr -d ' ')"
 
-  if [[ -z "$name" || -z "$os" ]]; then
+  if [[ -z "$id" ]]; then
     echo "error: failed to parse fallback simulator destination" >&2
     exit 1
   fi
 
-  destination="platform=iOS Simulator,name=$name,OS=$os"
+  destination="platform=iOS Simulator,id=$id"
 fi
 
 echo "Running tests on destination: $destination"
-xcodebuild test -scheme "$SCHEME" -destination "$destination" -quiet
+xcodebuild test \
+  -scheme "$SCHEME" \
+  -destination "$destination" \
+  -derivedDataPath "$DERIVED_DATA_PATH" \
+  -quiet

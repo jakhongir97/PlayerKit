@@ -33,7 +33,6 @@ final class SystemVolumeControl: OutputLevelControlling {
     init() {
         volumeView.alpha = 0.0001
         volumeView.isUserInteractionEnabled = false
-        volumeView.showsRouteButton = false
     }
 
     deinit {
@@ -99,35 +98,11 @@ final class SystemVolumeControl: OutputLevelControlling {
         guard observation == nil else { return }
         observation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] _, change in
             guard let self, let value = change.newValue else { return }
-            self.onExternalChange?(Double(value))
+            Task { @MainActor [weak self] in
+                self?.onExternalChange?(Double(value))
+            }
         }
     }
 }
 
-/// Mounted for as long as the gesture surface is on screen, **whatever** the
-/// volume target, purely so iOS does not draw its own volume HUD over the video
-/// when the hardware buttons are pressed. Nothing writes through it.
-final class SystemVolumeHUDSuppressor {
-    private let volumeView = MPVolumeView(
-        frame: CGRect(x: -4000, y: -4000, width: 1, height: 1)
-    )
-
-    init() {
-        volumeView.alpha = 0.0001
-        volumeView.isUserInteractionEnabled = false
-        volumeView.showsRouteButton = false
-    }
-
-    func mount(in window: PKWindow?) {
-        guard let window, volumeView.superview !== window else { return }
-        volumeView.removeFromSuperview()
-        window.addSubview(volumeView)
-        window.sendSubviewToBack(volumeView)
-        volumeView.layoutIfNeeded()
-    }
-
-    func unmount() {
-        volumeView.removeFromSuperview()
-    }
-}
 #endif

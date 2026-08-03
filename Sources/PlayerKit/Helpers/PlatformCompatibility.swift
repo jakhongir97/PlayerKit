@@ -11,6 +11,7 @@ public typealias PKImage = NSImage
 #endif
 
 enum PlayerKitPlatform {
+    @MainActor
     static var isPhone: Bool {
         #if os(iOS)
         UIDevice.current.userInterfaceIdiom == .phone
@@ -19,7 +20,7 @@ enum PlayerKitPlatform {
         #endif
     }
 
-    static var isDesktop: Bool {
+    nonisolated static var isDesktop: Bool {
         #if os(macOS)
         true
         #else
@@ -27,6 +28,7 @@ enum PlayerKitPlatform {
         #endif
     }
 
+    @MainActor
     static var isPortraitInterface: Bool {
         #if os(iOS)
         UIDevice.current.isPortrait

@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 public protocol PlaybackControlProtocol: AnyObject {
     var isPlaying: Bool { get }
     var playbackSpeed: Float { get set }

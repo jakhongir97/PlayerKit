@@ -1,10 +1,11 @@
 import SwiftUI
 import Combine
 
+@MainActor
 struct StreamingInfoView: View {
     private let playerManager: PlayerManager
     @State var streamingInfo: StreamingInfo = .placeholder
-    private let timer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+    @State private var refreshTimer: AnyCancellable?
     
     init(playerManager: PlayerManager = .shared) {
         self.playerManager = playerManager
@@ -22,12 +23,32 @@ struct StreamingInfoView: View {
         .onAppear {
             playerManager.userInteracted()
             updateStreamingInfo()
+            startTimer()
         }
-        .onReceive(timer) { _ in updateStreamingInfo() }
+        .onReceive(NotificationCenter.default.publisher(for: .PlayerKitControlsHidden)) { notification in
+            if notification.object as? Bool == true {
+                stopTimer()
+            } else {
+                startTimer()
+            }
+        }
+        .onDisappear { stopTimer() }
     }
 
     private func updateStreamingInfo() {
         streamingInfo = playerManager.fetchStreamingInfo()
+    }
+
+    private func startTimer() {
+        guard refreshTimer == nil else { return }
+        refreshTimer = Timer.publish(every: 1.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in updateStreamingInfo() }
+    }
+
+    private func stopTimer() {
+        refreshTimer?.cancel()
+        refreshTimer = nil
     }
 
     // MARK: - UI
@@ -35,13 +56,13 @@ struct StreamingInfoView: View {
     private func infoRow(_ title: String, _ value: String) -> some View {
         HStack {
             Text("\(title):")
-                .font(.caption)                 // smaller text
-                .foregroundColor(.gray)         // gray label
+                .font(.callout)
+                .foregroundStyle(.white.opacity(0.82))
             Spacer(minLength: 12)
             Text(value)
-                .font(.caption)                 // smaller text
-                .foregroundColor(.white)        // white value
-                .monospacedDigitsCompat()           // stable numerics
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(.white)
+                .monospacedDigitsCompat()
         }
     }
 }

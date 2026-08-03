@@ -1,9 +1,11 @@
 import XCTest
+import AVFoundation
 @testable import PlayerKit
 #if os(macOS)
 import AVKit
 #endif
 
+@MainActor
 final class PlayerKitTests: XCTestCase {
     override func setUp() {
         super.setUp()
@@ -288,7 +290,7 @@ final class PlayerKitTests: XCTestCase {
         manager.playerDidFail(with: .castURLMissing)
         
         XCTAssertTrue(manager.isPiPActive)
-        XCTAssertTrue(manager.isMediaReady)
+        XCTAssertFalse(manager.isMediaReady)
         XCTAssertEqual(manager.lastError, .castURLMissing)
     }
 
@@ -382,12 +384,12 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(manager.lastError, .castSessionUnavailable)
     }
     
-    func testAudioSessionCallbacksControlPlaybackState() {
+    func testAudioSessionResumeWithoutMediaDoesNotPublishFakeState() {
         let manager = PlayerManager.shared
         
         AudioSessionManager.shared.onResumeRequested?()
-        XCTAssertTrue(manager.isPlaying)
-        XCTAssertTrue(manager.isPlaybackRequested)
+        XCTAssertFalse(manager.isPlaying)
+        XCTAssertFalse(manager.isPlaybackRequested)
         
         AudioSessionManager.shared.onPauseRequested?()
         XCTAssertFalse(manager.isPlaying)
@@ -516,15 +518,13 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(manager.playerItem?.title, "Episode 2")
     }
 
-    func testPlayerFacadePlayPauseUpdatesPlaybackState() {
+    func testPlayerFacadePlayWithoutMediaDoesNotPublishFakeState() {
         let manager = PlayerManager.shared
         let player = Player(playerManager: manager)
 
         player.play()
-        XCTAssertTrue(manager.isPlaying)
-
-        player.pause()
         XCTAssertFalse(manager.isPlaying)
+        XCTAssertFalse(manager.isPlaybackRequested)
     }
 
     func testPlayerManagerSeekUpdatesTimeAndInvokesCompletion() {
@@ -639,7 +639,10 @@ final class PlayerKitTests: XCTestCase {
         let expectation = expectation(description: "playback failure reported")
 
         reporter.onFail = { error in
-            XCTAssertEqual(error, .mediaLoadFailed("resource unavailable"))
+            XCTAssertEqual(
+                error,
+                .mediaLoadFailed("AVFoundation playback failed (error code -1008).")
+            )
             expectation.fulfill()
         }
 
@@ -659,7 +662,10 @@ final class PlayerKitTests: XCTestCase {
                 AVPlayerItemFailedToPlayToEndTimeErrorKey: NSError(
                     domain: NSURLErrorDomain,
                     code: URLError.resourceUnavailable.rawValue,
-                    userInfo: [NSLocalizedDescriptionKey: "resource unavailable"]
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "resource unavailable: https://example.com/video?token=secret"
+                    ]
                 )
             ]
         )
@@ -755,7 +761,7 @@ private final class MockPlayer: PlayerProtocol {
         isPlaying = false
     }
 
-    func seek(to time: Double, completion: ((Bool) -> Void)?) {
+    func seek(to time: Double, completion: (@MainActor (Bool) -> Void)?) {
         currentTime = time
         if pauseOnSeek {
             isPlaying = false

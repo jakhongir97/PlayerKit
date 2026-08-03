@@ -25,10 +25,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Build (macOS)
         run: swift build
+
+      - name: Build in Swift 6 Language Mode
+        run: swift build -Xswiftc -swift-version -Xswiftc 6
+
+      - name: Build Release (macOS)
+        run: swift build -c release
 
       - name: Test (macOS)
         run: swift test
@@ -38,13 +44,30 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Check Patch Whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git diff --check "$BASE_SHA" HEAD
+          else
+            git show --check --format= HEAD
+          fi
 
       - name: Validate Package Manifest
         run: swift package describe
 
       - name: Verify Binary Target Artifacts
         run: ./scripts/verify_binary_targets.sh
+        env:
+          # A tag may not publish while vendor signatures, privacy manifests,
+          # or license evidence are absent. Pull requests still receive the
+          # detailed warnings so those external artifacts can be replaced.
+          PLAYERKIT_STRICT_BINARY_COMPLIANCE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '0' }}
 
       - name: Verify Third-Party Notices
         run: ./scripts/verify_third_party_notices.sh
@@ -52,8 +75,28 @@ jobs:
       - name: Build for iOS Simulator
         run: xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS Simulator' build -quiet
 
+      - name: Build for iOS Simulator in Swift 6 Language Mode
+        run: xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS Simulator' SWIFT_VERSION=6 build -quiet
+
       - name: Run Unit Tests (iOS Simulator)
         run: ./scripts/run_unit_tests.sh
 
       - name: Build for iOS Device
         run: xcodebuild -scheme PlayerKit -destination 'generic/platform=iOS' build -quiet
+
+  oldest-toolchain:
+    # The manifest requires Swift 5.10. Xcode 15.4 is the oldest broadly
+    # available hosted toolchain that satisfies that contract.
+    runs-on: macos-14
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_15.4.app/Contents/Developer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Report Toolchain
+        run: swift --version
+
+      - name: Build with Oldest Supported Toolchain
+        run: swift build

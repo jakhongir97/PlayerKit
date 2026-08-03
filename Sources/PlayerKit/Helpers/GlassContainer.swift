@@ -14,13 +14,21 @@ struct GlassCapsuleBackground: ViewModifier {
         // making the `else` branch unreachable. Collapsing it also clears the
         // "ViewBuilder does not implement buildLimitedAvailability; this code
         // may crash on earlier versions of the OS" warning the ladder produced.
+        #if compiler(>=6.2)
         if #available(iOS 26.0, macOS 26.0, *) {
             content.glassEffect(.clear, in: .capsule)
         } else {
-            content
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.12)))
+            fallback(content)
         }
+        #else
+        fallback(content)
+        #endif
+    }
+
+    private func fallback(_ content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.12)))
     }
 }
 

@@ -13,6 +13,7 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
     let bufferedColor: Color
     let height: CGFloat
     let onEditingChanged: (Bool) -> Void
+    let onEditingCancelled: () -> Void
 
     // private variables
     @State private var localRealProgress: T = 0
@@ -20,6 +21,7 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
     @State private var isActive = false
     @State private var isHoveringTrack = false
     @State private var hoverLocationX: CGFloat?
+    @GestureState private var scrubGestureIsActive = false
     #if os(macOS)
     @State private var didPushCursor = false
     #endif
@@ -33,7 +35,8 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         emptyColor: Color,
         bufferedColor: Color,
         height: CGFloat,
-        onEditingChanged: @escaping (Bool) -> Void
+        onEditingChanged: @escaping (Bool) -> Void,
+        onEditingCancelled: @escaping () -> Void = {}
     ) {
         self._value = value
         self._bufferedValue = bufferedValue
@@ -44,6 +47,7 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         self.bufferedColor = bufferedColor
         self.height = height
         self.onEditingChanged = onEditingChanged
+        self.onEditingCancelled = onEditingCancelled
     }
 
     private var displayedProgress: T {
@@ -119,7 +123,13 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
                 syncProgress(with: newValue)
             }
         }
+        .compatOnChange(of: scrubGestureIsActive) { isGestureActive in
+            if !isGestureActive {
+                cancelScrubbingIfNeeded()
+            }
+        }
         .onDisappear {
+            cancelScrubbingIfNeeded()
             clearDesktopCursor()
         }
     }
@@ -244,6 +254,9 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
 
     private func scrubGesture(boundsWidth: CGFloat, horizontalInset: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .updating($scrubGestureIsActive) { _, isActive, _ in
+                isActive = true
+            }
             .onChanged { gesture in
                 beginScrubbingIfNeeded()
                 updateProgress(at: gesture.location.x, within: boundsWidth, horizontalInset: horizontalInset)
@@ -253,8 +266,7 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
                     beginScrubbingIfNeeded()
                 }
                 updateProgress(at: gesture.location.x, within: boundsWidth, horizontalInset: horizontalInset)
-                isActive = false
-                onEditingChanged(false)
+                finishScrubbing()
             }
     }
 
@@ -262,6 +274,19 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         guard !isActive else { return }
         isActive = true
         onEditingChanged(true)
+    }
+
+    private func finishScrubbing() {
+        guard isActive else { return }
+        isActive = false
+        onEditingChanged(false)
+    }
+
+    private func cancelScrubbingIfNeeded() {
+        guard isActive else { return }
+        isActive = false
+        syncProgress(with: value)
+        onEditingCancelled()
     }
 
     private func updateProgress(at locationX: CGFloat, within boundsWidth: CGFloat, horizontalInset: CGFloat) {

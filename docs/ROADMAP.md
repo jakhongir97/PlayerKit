@@ -1,10 +1,56 @@
 # PlayerKit Roadmap
 
-**Status:** draft for review · **Basis:** commit `1fe0a49` on branch
-`audit-fixes`, updated after Sprint 1 (`f26cc55`…`7921d5b`)
-· **Method:** nine parallel code investigations against this repository, plus a
-prior full-codebase audit. Every factual claim below cites the code. Claims that
-could not be verified from this repository are marked **[unverified]**.
+**Status:** historical planning baseline · **Basis:** commit `1fe0a49` on branch
+`audit-fixes`, updated after Sprint 1 (`f26cc55`…`7921d5b`) and the August 2026
+remediation pass · **Method:** nine parallel code investigations against this
+repository, plus a prior full-codebase audit. Claims that could not be verified
+from this repository are marked **[unverified]**.
+
+> **August 2026 status.** The control plane is now main-actor isolated; the
+> duplicate controller subscriptions and host-handler restoration defects are
+> fixed; playback state setters are read-only outside the module; empty queues,
+> stopped-player replay, stale async callbacks, Cast handoff failures, PiP
+> restoration, capture shielding, gesture teardown and accessibility defects
+> have regression coverage. Google Cast now resolves from Google's official
+> archive. The custom VLCKit binary remains a release blocker until its source,
+> licenses, privacy manifest, signature and reproducible-build evidence exist.
+> The phase estimates below are retained as historical planning context rather
+> than current defect status.
+
+## Current execution status — 3 August 2026
+
+The August hardening pass closes the actionable playback-state, recovery,
+adaptive-layout, accessibility and platform-input defects found by the code
+audit and the 1,000-persona simulation. It does **not** complete the product
+roadmap: repository consolidation, host integration, multi-instance ownership,
+the timeline model, composable chrome, live-channel modelling and public-release
+evidence remain separate milestones.
+
+| Track | Current state | Remaining exit work |
+|---|---|---|
+| Phase 0 · Consolidate | **Partial / externally blocked** | CI and deterministic package resolution are in place. Obtain the GitLab fork dossier, choose the canonical repository, move both iTV apps to it, and close the custom VLCKit provenance/license/privacy/signature evidence gap. |
+| Phase 1 · Adoptable | **Late-stage** | Public state, background/Now Playing, live-window seeking and stock recovery are done. Add `PlayerConfiguration`, narrow/deprecate accidental API, integrate both real iTV apps, and prove network-drop recovery on production-shaped streams. |
+| Phase 2a · Main actor | **Complete** | The control plane is main-actor isolated and macOS/iOS Swift 6 builds pass. |
+| Phase 2b · Instances | **Not started; foundations landed** | `PlayerManager` remains a singleton. Add the session registry, arbitrate Cast callbacks and screen brightness, expose instance creation, and run the currently skipped multi-backend/multi-player cases. |
+| Phase 3 · Timeline model | **Not started** | Live/DVR clamping defects are fixed, but there is no first-class VOD/live-DVR/pure-live/short-form timeline model. |
+| Phase 4 · Chrome + theming | **Preliminary hardening complete** | Compact widths, Dynamic Type, capability truth and accessibility are hardened. Control slots, content profiles, theming, inline trailer mode and observation fan-out remain. |
+| Phase 5 · Live TV | **Not started** | Requires the Phase 3 timeline and Phase 4 chrome seams plus decisions on DRM, DVR and tvOS scope. |
+| Phase 6 · OSS readiness | **Groundwork only / release blocked** | CI, release checks, security guidance and notices exist. API review, DocC, sample app, migration guides, legal review and reproducible VLCKit evidence remain. |
+| Continuous accessibility/localization | **Code pass complete; validation open** | Run VoiceOver, Voice Control, Switch Control, capture, PiP, AirPlay, Cast, brightness/volume and VLC paused-switch checks on physical devices. Supply target locales and approved translations. |
+
+### Next milestone: primary-player integration candidate
+
+Work in this order:
+
+1. Resolve the two external Phase 0 blockers: the fork dossier/canonical repo and
+   the custom VLCKit release evidence.
+2. Run the physical-device matrix in `RELEASE.md` and integrate the package into
+   both iTV apps across movie, episode, live/DVR and background playback.
+3. Close Phase 1 with `PlayerConfiguration` and a deliberate public-API review;
+   do not add more one-off manager flags while that configuration seam is open.
+4. Start Phase 2b only after the host integration proves simultaneous players
+   are a real requirement; otherwise keep the singleton and proceed to the
+   Phase 3 timeline model.
 
 ---
 
@@ -121,31 +167,16 @@ player.
 > before anyone has acquired. `PlayerManager.init` remains private; making
 > multiple instances possible is still Phase 2b.
 
-### Defects found during Sprint 1 and deliberately not fixed
+### Defects found during Sprint 1 and closed in the remediation pass
 
-Both are real and reproducible. Neither was introduced by the sprint; each is
-left here rather than fixed in passing, because fixing it belongs to a phase
-below.
+**Duplicate game-controller subscriptions.** Session subscriptions are now
+cancelled during teardown, repeated setup is idempotent, and the host's prior
+controller handlers are restored instead of overwritten permanently.
 
-**Duplicate game-controller subscriptions — Phase 2b.**
-`subscribeToGameControllerEvents()` stores its sink into `longLivedCancellables`,
-which nothing ever clears, while `tearDown()` resets `integrationsConfigured` so
-`configureIntegrationsIfNeeded()` re-runs on the next play. After N open/dismiss
-cycles a single gamepad press is handled N times: with two subscribers, button A
-sends one `.playPause` that becomes play-then-pause, so the button appears dead;
-with three it works again by accident. Reproduced at `a39f25e`, so it predates
-the sprint. It belongs with the resource-arbitration work because it is the same
-class of bug — process-global state that is acquired per-session and never
-released.
-
-**`currentTime` and `isMediaReady` are public read-write — Phase 1, needs a
-deprecation cycle.** A host can desync the playhead by assigning `currentTime`,
-or assign `isMediaReady` and trigger its `didSet` (`refreshTrackInfo()` plus a
-`.PlayerKitMediaReady` post). Narrowing either to `internal(set)` is a source
-break for any host that writes them, so it needs the deprecation clock in
-"narrow the accidental API" rather than a quiet change. Every property promoted
-in Sprint 1 is already `internal(set)`; these two are the pre-existing
-exceptions.
+**`currentTime` and `isMediaReady` were public read-write.** Both setters are now
+module-internal, preventing hosts from fabricating readiness notifications or
+desynchronizing the playhead. This is intentionally recorded as a source break
+for the next major release.
 
 ## 3. Phases
 
@@ -171,24 +202,21 @@ two others will not survive.
   `PLAYERKIT_LOCAL_VLCKIT=1` opt-in that fails loudly if the artifact is absent,
   so every clean checkout, CI runner and consumer resolves identically.
 
-  But the claim that it decides *which of two macOS VLC backends compiles* does
-  not hold today. The published `VLCKit.xcframework` ships `ios-arm64` and
-  `ios-arm64_x86_64-simulator` only — **no macOS slice** — so `canImport(VLCKit)`
-  is false on macOS in both configurations and `DesktopVLCPlayerWrapper` compiles
-  either way. Verified by building both and finding
-  `DesktopVLCPlayerWrapper.swift.o` in each. The hazard is *latent*: it needs a
-  locally built xcframework carrying a macOS slice, which nobody publishes.
-  Consequently a CI matrix over "both VLC configurations" is not currently
-  buildable — there is no second configuration to build.
-- **Artifact supply chain.** VLCKit and GoogleCast resolve from release assets on
-  a personal GitHub account even when the package is consumed from GitLab.
+  VLCKit is now conditioned to iOS even when the explicit local override is
+  used. The macOS implementation always uses its separate runtime bridge to a
+  signature-checked `/Applications/VLC.app`; the preparation script no longer
+  downloads or merges an unused macOS XCFramework slice.
+- **Artifact supply chain.** Google Cast now resolves directly from Google's
+  official 4.8.4 archive. VLCKit still resolves from a personal release asset
+  and remains blocked from release by the evidence gaps recorded in
+  `THIRD_PARTY_NOTICES.md`.
 - **CI matrix** on whichever host becomes canonical; **repo hygiene**, including
   the Dubber `.mp4` resources that shipped in every consumer bundle for a
   feature that was switched off — done, 567 KB reclaimed.
 
 **Exit:** one repository both iTV apps build from; CI builds and tests every
-supported platform *and both VLC configurations*; a clean `swift package resolve`
-produces the same graph on any machine.
+supported platform; a clean `swift package resolve` produces the same graph on
+any machine.
 
 ### Phase 1 — Make it adoptable · ~6–8 weeks
 
@@ -210,8 +238,10 @@ mostly API and platform integration, not architecture.*
   finding (d) is closed at every layer.~~ *Done in Sprint 1.* Note this closes
   the *clamping*, not live TV: the timeline model is still Phase 3 and channels
   are still Phase 5.
-- **Error and recovery UX.** A signed-URL refresh hook, retry policy, and a
-  user-visible error state. Today a mid-stream 403 has no recovery path.
+- ~~**Error and recovery UX.**~~ *Done for the stock player.* Terminal failures
+  now present sanitized Retry/Close UI, recoverable external-playback failures
+  remain non-blocking, and an optional async hook lets the host refresh a
+  signed URL before retry. Automatic retry/backoff policy remains host-owned.
 - **Narrow the accidental API** and start the deprecation clock on what has to go.
 
 **Exit:** iTV iOS can drive every playback surface it needs through public API
@@ -224,18 +254,19 @@ DVR window, and recoverable after a network drop.
 *Two workstreams that must run in this order; each investigation independently
 said so.*
 
-1. **`@MainActor` for the control plane.** Recommended firmly over
+1. ~~**`@MainActor` for the control plane.**~~ **Completed in August 2026.** It
+   was recommended firmly over
    actor-per-player: `AVPlayer`, `AVPlayerItem`, `AVPlayerLayer`, `UIView` and
    `NSView` are all `@MainActor` in the current SDK, so an actor-isolated wrapper
-   would hop to main for essentially every property access. This also deletes the
-   ~21 hand-written `Thread.isMainThread` prologues.
+   would hop to main for essentially every property access. CI now includes a
+   Swift 6 language-mode build so new isolation regressions fail the build.
 2. **Instantiable `PlayerManager` + resource arbitration.** `public init` is one
    line. The work is a `PlayerKitSession` registry arbitrating the audio session,
    the wake lock, the broadcast game-controller subject, cast callbacks and
    screen brightness. Sprint 1 already refcounted the first three via
    `SharedResourceOwnership` and fixed `tearDown()` per §2, so what remains here
-   is cast callbacks, screen brightness, and the registry that owns them — plus
-   the duplicate controller-subscription defect noted in §2.
+   is cast callbacks, screen brightness, and the registry that owns them. The
+   duplicate controller-subscription defect noted in §2 is closed.
 
 **Exit:** `-strict-concurrency=complete` is clean or explicitly triaged; two
 players can run simultaneously without corrupting each other's audio session,

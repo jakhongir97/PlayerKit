@@ -3,6 +3,7 @@ import AVFoundation
 import XCTest
 @testable import PlayerKit
 
+@MainActor
 final class PlaybackHealthPrivacyTests: XCTestCase {
     func testOpaqueAssetIdentifierIsNormalizedBeforeMonitorRetention() {
         let wrapper = AVPlayerWrapper()

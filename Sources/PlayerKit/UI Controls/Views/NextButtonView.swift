@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct NextButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
@@ -12,7 +13,7 @@ struct NextButtonView: View {
             playerManager.playNext()
             HapticsManager.shared.triggerImpactFeedback(style: .light)
         }) {
-            Image("next", bundle: .module)
+            Image.fromFramework(named: "next", fallbackSystemName: "forward.end.fill")
                 .circularGlassIcon(frameSize: 40, desktopHoverEnabled: !isDisabled)
                 .opacity(isDisabled ? 0.5 : 1.0)
         }

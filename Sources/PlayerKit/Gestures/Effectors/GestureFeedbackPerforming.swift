@@ -5,6 +5,7 @@ import Foundation
 /// The gesture controllers fire haptics on paths that are otherwise pure value
 /// transforms, so the seam is what lets a test assert "one selection tick per
 /// 1/16 step, suppressed above 600 pt/s" without a device in the room.
+@MainActor
 protocol GestureFeedbackPerforming: AnyObject {
     func prepare(_ style: PKImpactFeedbackStyle)
     func impact(_ style: PKImpactFeedbackStyle)
@@ -41,6 +42,7 @@ enum HapticEvent: Equatable {
 }
 
 /// Test double.
+@MainActor
 final class RecordingFeedback: GestureFeedbackPerforming {
     private(set) var events: [HapticEvent] = []
 

@@ -1,11 +1,11 @@
 import SwiftUI
 
+@MainActor
 struct PlayerControlsView: View {
     @ObservedObject var playerManager: PlayerManager
 
-    private var isIPhone: Bool {
-        PlayerKitPlatform.isPhone
-    }
+    static let sideControlExtent: CGFloat = 50
+    static let middleSpacing: CGFloat = 8
 
     /// The chrome is on screen and not suppressed by the lock.
     private var showsChrome: Bool {
@@ -20,44 +20,102 @@ struct PlayerControlsView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .edgesIgnoringSafeArea(.all)
-                .allowsHitTesting(false)
-                .opacity(playerManager.areControlsVisible ? 1 : 0)
+        GeometryReader { proxy in
+            let padding = Self.contentPadding(for: proxy.size.width)
+            let contentWidth = max(proxy.size.width - (padding * 2), 0)
+            let transportWidth = Self.transportWidth(for: proxy.size.width)
+            let separatesSideControls = Self.separatesSideControls(for: proxy.size.width)
 
-            VStack {
-                TopControlsView(playerManager: playerManager)
-                    .presented(showsChrome)
-
-                Spacer()
-
-                HStack {
-                    InfoButtonView(playerManager: playerManager)
-                        .presented(showsChrome)
-                    Spacer()
-
-                    MiddleControlsView(playerManager: playerManager)
-                        .presented(showsChrome)
-                    Spacer()
-
-                    // The one control that survives the lock — it is how the
-                    // user gets back out.
-                    LockButtonView(playerManager: playerManager)
-                        .presented(playerManager.areControlsVisible)
-                }
-
-                Spacer()
+            ZStack {
+                Color.black.opacity(0.62)
+                    .edgesIgnoringSafeArea(.all)
+                    .allowsHitTesting(false)
+                    .opacity(playerManager.areControlsVisible ? 1 : 0)
 
                 VStack {
-                    BottomControlsView(playerManager: playerManager)
+                    TopControlsView(playerManager: playerManager)
                         .presented(showsChrome)
-                    PlaybackSliderView(playerManager: playerManager)
-                        .presented(showsScrubber)
+
+                    Spacer(minLength: 8)
+
+                    if separatesSideControls {
+                        VStack(spacing: 8) {
+                            MiddleControlsView(
+                                playerManager: playerManager,
+                                availableWidth: contentWidth
+                            )
+                            .presented(showsChrome)
+
+                            sideControls
+                        }
+                    } else {
+                        HStack(spacing: 0) {
+                            InfoButtonView(playerManager: playerManager)
+                                .presented(showsChrome)
+                            Spacer(minLength: 0)
+
+                            MiddleControlsView(
+                                playerManager: playerManager,
+                                availableWidth: transportWidth
+                            )
+                            .padding(.horizontal, Self.middleSpacing)
+                            .presented(showsChrome)
+                            Spacer(minLength: 0)
+
+                            unlockControl
+                        }
+                    }
+
+                    Spacer(minLength: 8)
+
+                    VStack {
+                        BottomControlsView(playerManager: playerManager)
+                            .presented(showsChrome)
+                        PlaybackSliderView(playerManager: playerManager)
+                            .presented(showsScrubber)
+                    }
                 }
+                .padding(padding)
             }
-            .padding(isIPhone ? 16 : 32)
         }
+    }
+
+    private var sideControls: some View {
+        HStack {
+            InfoButtonView(playerManager: playerManager)
+                .presented(showsChrome)
+            Spacer(minLength: 0)
+            unlockControl
+        }
+    }
+
+    /// The one control that survives the lock — it is how the user gets back
+    /// out. Keeping it in one helper avoids the compact and regular layouts
+    /// drifting apart.
+    private var unlockControl: some View {
+        LockButtonView(playerManager: playerManager)
+            .presented(playerManager.areControlsVisible)
+    }
+
+    static func contentPadding(for width: CGFloat) -> CGFloat {
+        min(max(width * 0.04, 12), 32)
+    }
+
+    static func transportWidth(for totalWidth: CGFloat) -> CGFloat {
+        let contentWidth = max(totalWidth - (contentPadding(for: totalWidth) * 2), 0)
+        let sideControlsWidth = (sideControlExtent * 2) + (middleSpacing * 2)
+        return max(contentWidth - sideControlsWidth, 0)
+    }
+
+    static func separatesSideControls(for totalWidth: CGFloat) -> Bool {
+        transportWidth(for: totalWidth) < MiddleControlsView.compactTransportMinimumWidth
+    }
+
+    static func effectiveTransportWidth(for totalWidth: CGFloat) -> CGFloat {
+        if separatesSideControls(for: totalWidth) {
+            return max(totalWidth - (contentPadding(for: totalWidth) * 2), 0)
+        }
+        return transportWidth(for: totalWidth)
     }
 }
 

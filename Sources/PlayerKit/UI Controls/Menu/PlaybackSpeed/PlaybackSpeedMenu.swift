@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct PlaybackSpeedMenu: View {
     @StateObject private var viewModel: PlaybackSpeedViewModel
     

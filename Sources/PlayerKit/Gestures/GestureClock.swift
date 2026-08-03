@@ -1,6 +1,7 @@
 import Foundation
 import QuartzCore
 
+@MainActor
 protocol GestureCancellable: AnyObject {
     func cancel()
 }
@@ -12,10 +13,14 @@ protocol GestureCancellable: AnyObject {
 /// HUD dwell — goes through here, which is what makes them synchronously
 /// testable instead of requiring an `XCTestExpectation` and a real wall-clock
 /// wait per case.
+@MainActor
 protocol GestureClock: AnyObject {
     var now: TimeInterval { get }
     @discardableResult
-    func schedule(after delay: TimeInterval, _ body: @escaping () -> Void) -> GestureCancellable
+    func schedule(
+        after delay: TimeInterval,
+        _ body: @escaping @MainActor @Sendable () -> Void
+    ) -> GestureCancellable
 }
 
 /// Production clock.
@@ -29,10 +34,14 @@ final class RunLoopClock: GestureClock {
     var now: TimeInterval { CACurrentMediaTime() }
 
     @discardableResult
-    func schedule(after delay: TimeInterval, _ body: @escaping () -> Void) -> GestureCancellable {
+    func schedule(
+        after delay: TimeInterval,
+        _ body: @escaping @MainActor @Sendable () -> Void
+    ) -> GestureCancellable {
         let token = TimerToken()
         let timer = Timer(timeInterval: delay, repeats: false) { _ in
-            body()
+            // This timer is installed only on RunLoop.main below.
+            MainActor.assumeIsolated { body() }
         }
         RunLoop.main.add(timer, forMode: .common)
         token.timer = timer
@@ -45,7 +54,6 @@ final class RunLoopClock: GestureClock {
             timer?.invalidate()
             timer = nil
         }
-        deinit { timer?.invalidate() }
     }
 }
 
@@ -58,7 +66,10 @@ final class TestClock: GestureClock {
     private var nextID = 0
 
     @discardableResult
-    func schedule(after delay: TimeInterval, _ body: @escaping () -> Void) -> GestureCancellable {
+    func schedule(
+        after delay: TimeInterval,
+        _ body: @escaping @MainActor @Sendable () -> Void
+    ) -> GestureCancellable {
         nextID += 1
         let scheduled = Scheduled(id: nextID, fireAt: now + delay, body: body, clock: self)
         pending.append(scheduled)
@@ -87,11 +98,16 @@ final class TestClock: GestureClock {
     fileprivate final class Scheduled: GestureCancellable {
         let id: Int
         let fireAt: TimeInterval
-        let body: () -> Void
+        let body: @MainActor @Sendable () -> Void
         private(set) var isCancelled = false
         private weak var clock: TestClock?
 
-        init(id: Int, fireAt: TimeInterval, body: @escaping () -> Void, clock: TestClock) {
+        init(
+            id: Int,
+            fireAt: TimeInterval,
+            body: @escaping @MainActor @Sendable () -> Void,
+            clock: TestClock
+        ) {
             self.id = id
             self.fireAt = fireAt
             self.body = body

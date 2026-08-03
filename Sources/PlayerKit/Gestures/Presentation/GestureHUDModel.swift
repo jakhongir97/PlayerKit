@@ -1,4 +1,5 @@
 import Combine
+import CoreFoundation
 import Foundation
 import QuartzCore
 
@@ -9,6 +10,7 @@ import QuartzCore
 /// gesture state on `GestureManager`, an `ObservableObject` that `GestureView`
 /// observed wholesale, so a value that changes 120 times a second invalidated a
 /// view that sits under the entire player.
+@MainActor
 final class GestureHUDModel: ObservableObject {
 
     @Published private(set) var hud: GestureHUD?
@@ -34,10 +36,6 @@ final class GestureHUDModel: ObservableObject {
 
     init(clock: GestureClock) {
         self.clock = clock
-    }
-
-    deinit {
-        dwellToken?.cancel()
     }
 
     /// The only writer.
@@ -102,9 +100,14 @@ final class GestureHUDModel: ObservableObject {
     private func scheduleFlush() {
         guard !flushScheduled else { return }
         flushScheduled = true
-        RunLoop.main.perform(inModes: [.common]) { [weak self] in
-            self?.flush()
+        CFRunLoopPerformBlock(
+            CFRunLoopGetMain(),
+            CFRunLoopMode.commonModes.rawValue
+        ) { [weak self] in
+            // The block is scheduled on the main run loop above.
+            MainActor.assumeIsolated { self?.flush() }
         }
+        CFRunLoopWakeUp(CFRunLoopGetMain())
     }
 
     private func flush() {

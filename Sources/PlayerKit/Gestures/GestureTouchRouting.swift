@@ -15,7 +15,20 @@ extension GestureManager {
     // MARK: - Touch entry points
 
     func touchesBegan(at location: CGPoint, touchCount: Int, source: PointerSource) {
-        guard configuration.isEnabled else { return }
+        if !configuration.isEnabled {
+            // The master switch disables gestures, not the recovery tap that
+            // brings hidden playback controls back.
+            guard touchCount == 1 else { return }
+            classifier.begin(
+                at: location,
+                touchCount: touchCount,
+                now: clock.now,
+                tuning: tuning(),
+                source: source
+            )
+            cancelTouchTimers()
+            return
+        }
 
         // Resolved once per touch and then held for its whole life, so a
         // backend that finishes loading mid-gesture cannot change what the
@@ -65,7 +78,25 @@ extension GestureManager {
     }
 
     func touchesMoved(to location: CGPoint, touchCount: Int) {
-        guard configuration.isEnabled, classifier.isActive else { return }
+        guard classifier.isActive else { return }
+        if !configuration.isEnabled {
+            let translation = CGSize(
+                width: location.x - classifier.startLocation.x,
+                height: location.y - classifier.startLocation.y
+            )
+            _ = classifier.update(
+                translation: translation,
+                touchCount: touchCount,
+                now: clock.now,
+                context: ClassificationContext(
+                    railAvailability: { _ in .unavailable(.disabledByHost) },
+                    isScrubAvailable: false,
+                    startSide: nil,
+                    isPanEligible: false
+                )
+            )
+            return
+        }
         guard touchCount <= 1 else { return abandonTouch() }
 
         let translation = CGSize(
@@ -266,7 +297,7 @@ extension GestureManager {
     // MARK: - Pinch
 
     func pinchChanged(scale: CGFloat, phase: PinchPhase) {
-        guard configuration.isZoomGestureEnabled else { return }
+        guard isZoomAvailable() else { return }
         switch phase {
         case .began:
             abandonTouch()
@@ -287,29 +318,18 @@ extension GestureManager {
     }
 
     private func applyZoom(fill: Bool) {
-        onZoom?(fill ? 1.5 : 0.5)
-        emit(.zoom(fill: fill))
-        if configuration.isHapticsEnabled { feedbackPerformer.impact(.light) }
-        hudModel.set(
-            GestureHUD(
-                kind: .zoom,
-                slot: .banner,
-                symbol: fill ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left",
-                primary: fill ? "Fill" : "Fit",
-                secondary: nil,
-                tertiary: nil,
-                fraction: nil
-            )
-        )
-        hudModel.beginDwell()
+        applyZoomPublic(fill: fill)
     }
 
     // MARK: - Two-finger tap
 
     func twoFingerTap() {
         guard configuration.isTwoFingerPlayPauseEnabled, !isLocked() else { return }
+        let isPlaybackRequested = isPlaybackRequestedProvider?()
+            ?? isPlayingProvider?()
+            ?? false
+        let willPlay = !isPlaybackRequested
         emit(.togglePlayback)
-        let willPlay = !(isPlayingProvider?() ?? false)
         if configuration.isHapticsEnabled { feedbackPerformer.impact(.light) }
         hudModel.set(
             GestureHUD(
@@ -426,7 +446,9 @@ extension GestureManager {
         guard !isLocked() else { return emit(.blocked(kind)) }
         control.refreshBaseline()
         let step = control.writeQuantum
-        let next = min(max(control.readLevel() + (direction == .increment ? step : -step), 0), 1)
+        let current = control.readLevel()
+        guard current.isFinite else { return }
+        let next = min(max(current + (direction == .increment ? step : -step), 0), 1)
         control.setLevel(next)
         let side = railSide(driving: kind) ?? .trailing
         presentRail(kind: kind, side: side, unit: next, isArmed: false, isPinned: next <= 0 || next >= 1)
@@ -438,6 +460,7 @@ extension GestureManager {
     func setLevel(_ kind: GestureKind, _ value: Double) {
         guard let control = control(for: kind), control.availability.isAvailable else { return }
         guard !isLocked() else { return emit(.blocked(kind)) }
+        guard value.isFinite else { return }
         let clamped = min(max(value, 0), 1)
         control.setLevel(clamped)
         let side = railSide(driving: kind) ?? .trailing
@@ -454,9 +477,8 @@ extension GestureManager {
     }
 
     func toggleZoom() {
-        guard configuration.isZoomGestureEnabled, !isLocked() else { return }
-        isZoomFilled.toggle()
-        applyZoomPublic(fill: isZoomFilled)
+        guard isZoomAvailable(), !isLocked() else { return }
+        applyZoomPublic(fill: !isZoomFilled)
     }
 
     func toggleControls() {
@@ -510,6 +532,8 @@ extension GestureManager {
     }
 
     func applyZoomPublic(fill: Bool) {
+        guard isZoomAvailable(), !isLocked() else { return }
+        isZoomFilled = fill
         onZoom?(fill ? 1.5 : 0.5)
         emit(.zoom(fill: fill))
         if configuration.isHapticsEnabled { feedbackPerformer.impact(.light) }

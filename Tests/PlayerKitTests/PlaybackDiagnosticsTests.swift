@@ -4,6 +4,7 @@ import Foundation
 import XCTest
 @testable import PlayerKit
 
+@MainActor
 final class PlaybackDiagnosticsTests: XCTestCase {
     override func setUp() {
         super.setUp()
@@ -252,6 +253,28 @@ final class PlaybackDiagnosticsTests: XCTestCase {
             PlaybackDiagnosticsSnapshot.unavailable(.unsupportedBackend).session.availability,
             .unsupportedBackend
         )
+    }
+
+    func testStopThenPlayStartsFreshDiagnosticsForTheRetainedItem() {
+        let manager = PlayerManager.shared
+        manager.load(playerItem: PlayerItem(
+            title: "Diagnostics replay",
+            url: URL(string: "https://example.com/replay.m3u8")!,
+            playbackHealthAssetIdentifier: "diagnostics-replay"
+        ))
+
+        let sessionID = manager.fetchPlaybackDiagnostics().session.sessionID
+        XCTAssertNotNil(sessionID)
+        XCTAssertTrue(manager.hasActivePlaybackDiagnosticsItem)
+
+        manager.stop()
+        XCTAssertFalse(manager.hasActivePlaybackDiagnosticsItem)
+
+        manager.play()
+        let resumed = manager.fetchPlaybackDiagnostics()
+        XCTAssertTrue(manager.hasActivePlaybackDiagnosticsItem)
+        XCTAssertNotEqual(resumed.session.sessionID, sessionID)
+        XCTAssertNil(resumed.storyboard.endedAt)
     }
 
     func testBufferStateRejectsInvalidTimeAndRangesWithoutInventingHeadroom() {

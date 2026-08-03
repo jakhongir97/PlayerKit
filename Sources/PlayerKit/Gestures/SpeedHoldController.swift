@@ -6,6 +6,7 @@ import Foundation
 /// cancellation, because the cancel path is the one that actually matters: if a
 /// call banner steals the touch while the finger is down, a player left running
 /// at 2× with no visible reason is worse than one that never had the gesture.
+@MainActor
 final class SpeedHoldController {
 
     var multiplier: Float = 2.0

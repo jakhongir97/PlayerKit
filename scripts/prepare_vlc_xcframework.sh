@@ -7,106 +7,75 @@ FRAMEWORKS_DIR="$ROOT_DIR/Frameworks"
 OUTPUT_XCFRAMEWORK="$FRAMEWORKS_DIR/VLCKit.xcframework"
 
 IOS_VLCKIT_URL="https://github.com/jakhongir97/PlayerKit/releases/download/1.0.7/VLCKit.xcframework.zip"
-MACOS_VLCKIT_URL="https://download.videolan.org/pub/cocoapods/prod/VLCKit-3.7.2-3e42ae47-79128878.tar.xz"
-MACOS_VLCKIT_ARCHIVE_NAME="VLCKit-3.7.2-3e42ae47-79128878.tar.xz"
+IOS_VLCKIT_SHA256="2bb6de2ccd80a972cec24f19a2e1ecd3829eb87c6ea972cb39ca8c7c3968d997"
 
-tmp_dir="$(mktemp -d)"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/playerkit-vlckit.XXXXXX")"
 cleanup() {
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
 
+for command in curl shasum ditto plutil; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "error: $command is required" >&2
+    exit 1
+  fi
+done
+
 info() {
   echo "[prepare_vlc_xcframework] $1"
 }
 
-has_platform_slice() {
-  local xcframework_path="$1"
-  local platform="$2"
+download_verified() {
+  local url="$1"
+  local expected_sha256="$2"
+  local destination="$3"
+  local actual_sha256
 
-  plutil -p "$xcframework_path/Info.plist" | grep -q "SupportedPlatform\" => \"$platform\""
-}
-
-find_existing_ios_xcframework() {
-  local candidate=""
-
-  if [[ -d "$ROOT_DIR/.build/artifacts/playerkit/VLCKit/VLCKit.xcframework" ]]; then
-    candidate="$ROOT_DIR/.build/artifacts/playerkit/VLCKit/VLCKit.xcframework"
-  else
-    candidate="$(find "$ROOT_DIR/.." -path '*/SourcePackages/artifacts/playerkit/VLCKit/VLCKit.xcframework' -o -path '*/.build/artifacts/playerkit/VLCKit/VLCKit.xcframework' | head -n 1 || true)"
-  fi
-
-  if [[ -n "$candidate" ]]; then
-    printf '%s\n' "$candidate"
-  fi
-}
-
-download_ios_xcframework() {
-  local zip_path="$tmp_dir/VLCKit-ios.zip"
-  local extract_dir="$tmp_dir/ios"
-
-  mkdir -p "$extract_dir"
-  info "Downloading iOS VLCKit artifact."
-  curl -L --fail --continue-at - -o "$zip_path" "$IOS_VLCKIT_URL"
-  ditto -x -k "$zip_path" "$extract_dir"
-  printf '%s\n' "$extract_dir/VLCKit.xcframework"
-}
-
-extract_macos_xcframework() {
-  local archive_path="/tmp/$MACOS_VLCKIT_ARCHIVE_NAME"
-  local extract_dir="$tmp_dir/macos"
-
-  mkdir -p "$extract_dir"
-  if [[ ! -f "$archive_path" ]]; then
-    info "Downloading macOS VLCKit artifact."
-    curl -L --fail --continue-at - -o "$archive_path" "$MACOS_VLCKIT_URL"
-  else
-    info "Using cached macOS VLCKit archive at $archive_path."
-  fi
-  xz -dc "$archive_path" | tar -xf - -C "$extract_dir"
-  find "$extract_dir" -type d -name 'VLCKit.xcframework' | head -n 1
-}
-
-build_merged_xcframework() {
-  local ios_xcframework="$1"
-  local macos_xcframework="$2"
-  local output_dir="$3"
-  local framework_args=()
-
-  while IFS= read -r framework_path; do
-    framework_args+=(-framework "$framework_path")
-  done < <(find "$ios_xcframework" "$macos_xcframework" -mindepth 2 -maxdepth 2 -type d -name 'VLCKit.framework')
-
-  if [[ "${#framework_args[@]}" -eq 0 ]]; then
-    echo "Failed to locate VLCKit.framework slices for xcframework creation." >&2
+  curl --fail --location --silent --show-error --retry 3 \
+    --proto '=https' --tlsv1.2 "$url" --output "$destination"
+  actual_sha256="$(shasum -a 256 "$destination" | awk '{ print $1 }')"
+  if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+    echo "error: SHA-256 mismatch for $url" >&2
+    echo "expected: $expected_sha256" >&2
+    echo "actual:   $actual_sha256" >&2
     exit 1
   fi
-
-  xcodebuild -create-xcframework "${framework_args[@]}" -output "$output_dir"
 }
 
-if [[ -d "$OUTPUT_XCFRAMEWORK" ]] && has_platform_slice "$OUTPUT_XCFRAMEWORK" ios && has_platform_slice "$OUTPUT_XCFRAMEWORK" macos; then
-  info "Using existing merged VLCKit.xcframework."
-  exit 0
-fi
+framework_slices() {
+  local xcframework="$1"
+  find "$xcframework" -mindepth 2 -maxdepth 2 -type d -name 'VLCKit.framework' -print | sort
+}
+
+validate_xcframework() {
+  local xcframework="$1"
+  local expected_platform="$2"
+
+  if [[ ! -f "$xcframework/Info.plist" ]]; then
+    echo "error: missing XCFramework Info.plist at $xcframework" >&2
+    exit 1
+  fi
+  if ! plutil -p "$xcframework/Info.plist" | grep -q "SupportedPlatform\" => \"$expected_platform\""; then
+    echo "error: $xcframework has no $expected_platform slice" >&2
+    exit 1
+  fi
+  if [[ -z "$(framework_slices "$xcframework")" ]]; then
+    echo "error: $xcframework contains no VLCKit.framework slices" >&2
+    exit 1
+  fi
+}
+
+info "Downloading pinned iOS VLCKit artifact."
+ios_zip="$tmp_dir/VLCKit-ios.zip"
+ios_extract="$tmp_dir/ios"
+download_verified "$IOS_VLCKIT_URL" "$IOS_VLCKIT_SHA256" "$ios_zip"
+mkdir -p "$ios_extract"
+ditto -x -k "$ios_zip" "$ios_extract"
+ios_xcframework="$(find "$ios_extract" -path '*/__MACOSX/*' -prune -o -type d -name 'VLCKit.xcframework' -print | head -n 1)"
+validate_xcframework "$ios_xcframework" ios
 
 mkdir -p "$FRAMEWORKS_DIR"
-
-ios_xcframework_path="$(find_existing_ios_xcframework || true)"
-if [[ -z "$ios_xcframework_path" ]]; then
-  ios_xcframework_path="$(download_ios_xcframework)"
-else
-  info "Using cached iOS VLCKit artifact at $ios_xcframework_path."
-fi
-
-macos_xcframework_path="$(extract_macos_xcframework)"
-if [[ -z "$macos_xcframework_path" ]]; then
-  echo "Failed to locate the extracted macOS VLCKit.xcframework." >&2
-  exit 1
-fi
-
-build_merged_xcframework "$ios_xcframework_path" "$macos_xcframework_path" "$tmp_dir/VLCKit.xcframework"
-
 rm -rf "$OUTPUT_XCFRAMEWORK"
-ditto "$tmp_dir/VLCKit.xcframework" "$OUTPUT_XCFRAMEWORK"
-info "Prepared $OUTPUT_XCFRAMEWORK."
+ditto "$ios_xcframework" "$OUTPUT_XCFRAMEWORK"
+info "Prepared verified iOS framework at $OUTPUT_XCFRAMEWORK."

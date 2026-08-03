@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct PlayerMenu: View {
     @StateObject private var viewModel: PlayerMenuViewModel
     
@@ -22,17 +23,17 @@ struct PlayerMenu: View {
                 }
             }
         } label: {
-            Label("Player", systemImage: "shippingbox.fill")
-                .padding()
-                .foregroundColor(.white)
+            Image(systemName: "wrench.and.screwdriver.fill")
+                .circularGlassIcon()
         }
-        .accessibilityLabel("Player backend")
+        .accessibilityLabel("Playback engine")
         .accessibilityHint(
             PlayerType.supportedCases.count > 1
-                ? "Selects AVPlayer or VLC backend"
-                : "Shows the active player backend"
+                ? Text("Selects a playback engine for debugging")
+                : Text("Shows the active playback engine")
         )
-        .accessibilityIdentifier("player.backendMenu")
+        .accessibilityIdentifier("player.debug.backendMenu")
+        .buttonStyle(.plain)
         .onTapGesture {
             viewModel.userInteracted()
         }

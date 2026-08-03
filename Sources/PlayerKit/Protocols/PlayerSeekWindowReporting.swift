@@ -1,6 +1,7 @@
 import Foundation
 
-protocol PlayerSeekWindowReporting: AnyObject {
+@MainActor
+public protocol PlayerSeekWindowReporting: AnyObject {
     func canSeekWithinCurrentWindow(to time: Double, tolerance: Double) -> Bool
 
     /// The range the backend can currently seek within.

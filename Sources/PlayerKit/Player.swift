@@ -1,6 +1,7 @@
 import Foundation
 
 /// High-level facade for integrating PlayerKit with minimal setup.
+@MainActor
 public final class Player {
     public let playerManager: PlayerManager
 

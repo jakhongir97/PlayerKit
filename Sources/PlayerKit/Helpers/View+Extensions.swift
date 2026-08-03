@@ -8,8 +8,17 @@ import AppKit
 
 #if canImport(UIKit)
 extension View {
-    func setDeviceOrientation(_ orientation: UIInterfaceOrientation) {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+    func setDeviceOrientation(
+        _ orientation: UIInterfaceOrientation,
+        in scene: UIWindowScene? = nil
+    ) {
+        let windowScene = scene ?? UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { candidate in
+                candidate.activationState == .foregroundActive
+                    && candidate.windows.contains(where: \.isKeyWindow)
+            }
+        guard let windowScene else { return }
 
         DispatchQueue.main.async {
             let orientationMask = orientation.toInterfaceOrientationMask()
@@ -67,6 +76,7 @@ extension View {
 extension View {
     @ViewBuilder
     func glassStyleIfAvailable() -> some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, macOS 26.0, *) {
             self
                 .glassEffect(.clear)
@@ -74,45 +84,57 @@ extension View {
         } else {
             self
         }
+        #else
+        self
+        #endif
     }
 }
 
 public extension View {
     @ViewBuilder
     func glassBackgroundCompat(cornerRadius: CGFloat = 16) -> some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, macOS 26.0, *) {
             self
                 .padding(12)
                 .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius, style: .continuous))
         } else {
-            #if os(macOS)
-            self
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(.regularMaterial)
-                )
-                .background(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color(nsColor: .windowBackgroundColor).opacity(0.22))
-                )
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.10), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 10)
-            #else
-            self
-                .padding(12)
-                .background(.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(.white.opacity(0.12), lineWidth: 1)
-                )
-            #endif
+            glassBackgroundFallback(cornerRadius: cornerRadius)
         }
+        #else
+        glassBackgroundFallback(cornerRadius: cornerRadius)
+        #endif
+    }
+
+    @ViewBuilder
+    private func glassBackgroundFallback(cornerRadius: CGFloat) -> some View {
+        #if os(macOS)
+        self
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(.regularMaterial)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor).opacity(0.22))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.white.opacity(0.10), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.28), radius: 22, x: 0, y: 10)
+        #else
+        self
+            .padding(12)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            )
+        #endif
     }
 }
 

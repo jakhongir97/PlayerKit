@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 public protocol TrackSelectionProtocol: AnyObject {
     var availableAudioTracks: [TrackInfo] { get }
     var availableSubtitles: [TrackInfo] { get }
@@ -17,4 +18,3 @@ public protocol TrackSelectionProtocol: AnyObject {
     func selectAudioTrack(withID id: String)
     func selectSubtitle(withID id: String?)
 }
-

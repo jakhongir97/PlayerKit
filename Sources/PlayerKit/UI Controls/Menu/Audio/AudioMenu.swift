@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct AudioMenu: View {
     @StateObject private var viewModel: AudioMenuViewModel
     
@@ -10,13 +11,13 @@ struct AudioMenu: View {
     var body: some View {
         Menu {
             Section(header: Text("Audio Tracks")) { // Section title
-                ForEach(viewModel.availableAudioTracks.indices, id: \.self) { index in
+                ForEach(viewModel.availableAudioTracks) { track in
                     Button(action: {
-                        viewModel.selectAudioTrack(index: index)
+                        viewModel.selectAudioTrack(track)
                     }) {
                         HStack {
-                            Text(viewModel.availableAudioTracks[index].name)
-                            if viewModel.selectedAudioIndex == index {
+                            Text(track.name)
+                            if viewModel.selectedAudio?.id == track.id {
                                 Image(systemName: "checkmark")
                             }
                         }

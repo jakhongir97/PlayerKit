@@ -60,7 +60,7 @@ enum PlayerKitTimeFormatter {
 
 /// Retained for source compatibility with anything that referenced the old
 /// shared instance. New code should call `PlayerKitTimeFormatter.string(from:style:)`.
-final class TimeFormatter {
+final class TimeFormatter: @unchecked Sendable {
     static let shared = TimeFormatter()
 
     func formatTime(

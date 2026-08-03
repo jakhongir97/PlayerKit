@@ -1955,7 +1955,8 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
     /// Shared because `report()` formats timestamps inside sort comparators and
     /// per-row loops. Allocating one of these per call cost thousands of
     /// formatter constructions per report and ran on the main thread.
-    private static let iso8601Formatter: ISO8601DateFormatter = {
+    private static let iso8601FormatterLock = NSLock()
+    private nonisolated(unsafe) static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
@@ -1964,6 +1965,8 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
 
     private static func iso8601(_ date: Date) -> String {
         guard date.timeIntervalSinceReferenceDate.isFinite else { return "unknown" }
+        iso8601FormatterLock.lock()
+        defer { iso8601FormatterLock.unlock() }
         return iso8601Formatter.string(from: date)
     }
 

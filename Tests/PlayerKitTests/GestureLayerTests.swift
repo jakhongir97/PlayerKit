@@ -31,6 +31,7 @@ private final class FakeLevelControl: OutputLevelControlling {
 
 /// The tap machine's correctness, exercised against a playhead that behaves like
 /// a real backend rather than an idealised one.
+@MainActor
 final class TapSeekMachineTests: XCTestCase {
 
     /// A playhead that does **not** move when a seek is issued.
@@ -195,6 +196,7 @@ final class TapSeekMachineTests: XCTestCase {
 
 // MARK: - Classifier
 
+@MainActor
 final class TouchClassifierTests: XCTestCase {
 
     private func makeClassifier() -> TouchClassifier {
@@ -326,6 +328,7 @@ final class TouchClassifierTests: XCTestCase {
 
 // MARK: - Geometry
 
+@MainActor
 final class GestureGeometryTests: XCTestCase {
 
     private func geometry(
@@ -414,6 +417,7 @@ final class GestureGeometryTests: XCTestCase {
 
 // MARK: - Rail
 
+@MainActor
 final class VerticalRailControllerTests: XCTestCase {
 
     /// Writes are quantised to the control's own resolution and gated to one per
@@ -521,6 +525,7 @@ final class VerticalRailControllerTests: XCTestCase {
 
 // MARK: - Scrub
 
+@MainActor
 final class ScrubControllerTests: XCTestCase {
 
     func testOffsetIsIntegratedSoATierChangeOnlyRatesLaterTravel() {
@@ -566,6 +571,7 @@ final class ScrubControllerTests: XCTestCase {
 
 // MARK: - Coaching
 
+@MainActor
 final class GestureCoachTests: XCTestCase {
 
     private func geometry(usesTouch: Bool = true, size: CGSize = CGSize(width: 852, height: 393)) -> GestureGeometry {
@@ -722,6 +728,7 @@ final class GestureCoachTests: XCTestCase {
 
 // MARK: - Confusion detection
 
+@MainActor
 final class GestureConfusionDetectorTests: XCTestCase {
 
     func testAbandonedSwipeIsNoticed() {
@@ -773,6 +780,7 @@ final class GestureConfusionDetectorTests: XCTestCase {
 
 // MARK: - Clock
 
+@MainActor
 final class GestureClockTests: XCTestCase {
 
     func testAdvanceFiresDueWorkInOrder() {
@@ -815,6 +823,7 @@ final class GestureClockTests: XCTestCase {
 
 /// Capabilities decide which half drives which rail, so a stale snapshot is not
 /// a cosmetic problem — it silently rewires the gesture.
+@MainActor
 final class GestureCapabilityFreshnessTests: XCTestCase {
 
     private final class FakeBackend: PlayerVolumeControlling {

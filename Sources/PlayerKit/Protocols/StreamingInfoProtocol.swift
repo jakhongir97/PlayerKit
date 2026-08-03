@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 public protocol StreamingInfoProtocol: AnyObject {
     func fetchStreamingInfo() -> StreamingInfo
 }

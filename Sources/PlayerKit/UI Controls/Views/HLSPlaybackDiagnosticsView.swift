@@ -165,6 +165,7 @@ private struct DiagnosticsFeedback: Identifiable {
     let succeeded: Bool
 }
 
+@MainActor
 public struct HLSPlaybackDiagnosticsView: View {
     @ObservedObject private var playerManager: PlayerManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -407,7 +408,7 @@ public struct HLSPlaybackDiagnosticsView: View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title.uppercased())
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.caption2.bold())
                     .tracking(0.6)
                     .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
                     .lineLimit(1)
@@ -546,13 +547,13 @@ public struct HLSPlaybackDiagnosticsView: View {
                             ForEach(selectedIncidentEvidence) { evidence in
                                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                                     Text(PlaybackDiagnosticsFormat.shortTime(evidence.occurredAt))
-                                        .font(.system(size: 9, design: .monospaced))
+                                        .font(.system(.caption2, design: .monospaced))
                                         .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
                                     Text(evidence.title)
                                         .font(.system(size: 10))
                                     if let measurement = evidence.measurement {
                                         Text("· \(measurement)")
-                                            .font(.system(size: 9, design: .monospaced))
+                                            .font(.system(.caption2, design: .monospaced))
                                             .foregroundStyle(PlaybackDiagnosticsTheme.secondary)
                                     }
                                 }
@@ -601,7 +602,7 @@ public struct HLSPlaybackDiagnosticsView: View {
             Spacer()
             if let detail {
                 Text(detail)
-                    .font(.system(size: 9, design: .monospaced))
+                    .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
             }
         }
@@ -617,7 +618,7 @@ public struct HLSPlaybackDiagnosticsView: View {
 
     private func analysisLabel(_ text: String) -> some View {
         Text(text.uppercased())
-            .font(.system(size: 9, weight: .bold))
+            .font(.caption2.bold())
             .tracking(0.6)
             .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
     }
@@ -647,7 +648,7 @@ public struct HLSPlaybackDiagnosticsView: View {
             )
             Image(systemName: "hand.raised.fill")
         }
-        .font(.system(size: 9))
+        .font(.caption2)
         .foregroundStyle(PlaybackDiagnosticsTheme.tertiary)
         .padding(.horizontal, 11)
         .frame(height: 24)

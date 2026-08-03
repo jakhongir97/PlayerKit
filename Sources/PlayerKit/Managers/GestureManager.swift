@@ -11,6 +11,7 @@ import QuartzCore
 /// effectors behind `OutputLevelControlling` do the platform work. This type
 /// keeps the name, the callback surface and the two statics that the views and
 /// the test suite already depend on, and translates between them.
+@MainActor
 public class GestureManager: ObservableObject {
 
     // MARK: - Published
@@ -52,18 +53,29 @@ public class GestureManager: ObservableObject {
     /// Playback rate, for the speed-hold gesture.
     var speedProvider: (() -> Float)?
     var onSetSpeed: ((Float) -> Void)?
+    /// Actual decoder output. Speed hold is meaningful only while frames move.
     var isPlayingProvider: (() -> Bool)?
+    /// Durable play/pause intent. Unlike decoder output this remains stable
+    /// while buffering, so toggle actions never invert themselves mid-stall.
+    var isPlaybackRequestedProvider: (() -> Bool)?
     var onTogglePlayback: (() -> Void)?
+    /// Dynamic fit/fill support for the active backend and orientation.
+    var isZoomAvailableProvider: (() -> Bool)?
+    /// UIKit has no public process-wide Voice Control status API. Hosts that
+    /// already know the state can provide it without relying on private API.
+    var voiceControlRunningProvider: (() -> Bool?)? {
+        didSet { refreshAccessibilityState() }
+    }
 
     // MARK: - Zone contract
 
     /// Fraction of the width in the middle where a double tap does not seek.
-    static let centerDeadZoneRatio: CGFloat = GestureGeometry.centerDeadZoneRatio
+    nonisolated static let centerDeadZoneRatio: CGFloat = GestureGeometry.centerDeadZoneRatio
 
     /// How far in from either edge a seek tap can land, as a fraction of the
     /// width. The overlay sizes its tap ring against this so the ring never
     /// reaches across the midline.
-    static var sideZoneWidthRatio: CGFloat { GestureGeometry.sideZoneWidthRatio }
+    nonisolated static var sideZoneWidthRatio: CGFloat { GestureGeometry.sideZoneWidthRatio }
 
     // MARK: - Composition
 
@@ -87,10 +99,16 @@ public class GestureManager: ObservableObject {
     var scrollRailKind: GestureKind?
     var scrollRailSide: RailSide?
     var scrollIdleToken: GestureCancellable?
-    var isZoomFilled = false
+    @Published var isZoomFilled = false
 
     private let assistiveObserver = AssistiveTechnologyObserver()
-    var assistiveState: AssistiveTechnologyState { assistiveObserver.state }
+    var assistiveState: AssistiveTechnologyState {
+        var state = assistiveObserver.state
+        if let isVoiceControlRunning = voiceControlRunningProvider?() {
+            state.isVoiceControlRunning = isVoiceControlRunning
+        }
+        return state
+    }
     var feedbackPerformer: GestureFeedbackPerforming { HapticsManager.shared }
 
     let volumeControl = PlayerVolumeControl()
@@ -98,14 +116,14 @@ public class GestureManager: ObservableObject {
 
     #if os(iOS) && !targetEnvironment(macCatalyst)
     let systemVolumeControl = SystemVolumeControl()
-    private let hudSuppressor = SystemVolumeHUDSuppressor()
     #endif
 
-    var configuration = GestureConfiguration() {
-        didSet { applyConfiguration() }
+    @Published var configuration = GestureConfiguration() {
+        didSet { applyConfiguration(previous: oldValue) }
     }
 
     private(set) var geometry = GestureGeometry()
+    private weak var attachedWindow: PKWindow?
 
     /// Which rail, if any, the in-flight swipe is driving.
     var activeRailKind: GestureKind?
@@ -153,14 +171,31 @@ public class GestureManager: ObservableObject {
             NotificationCenter.default.post(name: .PlayerKitGestureCoachingDidFinish, object: nil)
         }
 
-        applyConfiguration()
+        assistiveObserver.onChange = { [weak self] _ in
+            self?.refreshAccessibilityState()
+        }
+        machine.doubleTapWindow = assistiveState.needsRelaxedTiming ? 0.60 : 0.28
+
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        systemVolumeControl.onExternalChange = { [weak self] value in
+            DispatchQueue.main.async {
+                self?.presentExternalSystemVolume(value)
+            }
+        }
+        #endif
+
+        applyConfiguration(previous: nil)
     }
 
-    deinit {
-        brightnessControl.relinquish(force: false)
-    }
-
-    private func applyConfiguration() {
+    private func applyConfiguration(previous: GestureConfiguration?) {
+        if let previous,
+           previous.brightnessMode == .screen,
+           (configuration.brightnessMode != .screen || !configuration.isEnabled) {
+            // Relinquish while the control still reports `.screen`; changing the
+            // mode first makes its ownership guard fail and strands the panel at
+            // PlayerKit's last value.
+            brightnessControl.relinquish(force: false)
+        }
         machine.skipInterval = configuration.skipInterval
         machine.isHapticsEnabled = configuration.isHapticsEnabled
         hudModel.dwell = configuration.hudDwell
@@ -169,11 +204,19 @@ public class GestureManager: ObservableObject {
         coach.policy = configuration.coachPolicy
         geometry.railMapping = configuration.railMapping
         geometry.capabilities = currentCapabilities()
+        updateSystemVolumeMount()
     }
 
     // MARK: - Capabilities
 
     func currentCapabilities() -> GestureCapabilities {
+        guard configuration.isEnabled else {
+            var capabilities = GestureCapabilities.none
+            #if os(macOS)
+            capabilities.usesTouch = false
+            #endif
+            return capabilities
+        }
         var capabilities = GestureCapabilities()
         capabilities.volume = configuration.isVolumeGestureEnabled
             ? activeVolumeControl.availability
@@ -183,7 +226,9 @@ public class GestureManager: ObservableObject {
             ? (seekableRangeProvider?() != nil ? .available : .unavailable(.notSeekable))
             : .unavailable(.disabledByHost)
         capabilities.speedHold = configuration.isSpeedHoldEnabled ? .available : .unavailable(.disabledByHost)
-        capabilities.zoom = configuration.isZoomGestureEnabled ? .available : .unavailable(.disabledByHost)
+        capabilities.zoom = configuration.isZoomGestureEnabled
+            ? (isZoomAvailable() ? .available : .unavailable(.notSupportedOnPlatform))
+            : .unavailable(.disabledByHost)
         #if os(macOS)
         capabilities.usesTouch = false
         #endif
@@ -244,24 +289,52 @@ public class GestureManager: ObservableObject {
         geometry.capabilities = next
     }
 
+    /// Invalidates the small observed accessibility leaves when external state
+    /// changes without publishing through this object (lock, orientation, or a
+    /// host-provided assistive-technology override).
+    func refreshAccessibilityState() {
+        objectWillChange.send()
+        let state = assistiveState
+        machine.doubleTapWindow = state.needsRelaxedTiming ? 0.60 : 0.28
+        if state.suppressesCoach {
+            coach.dismiss(.suppressed)
+        }
+        refreshCapabilities()
+    }
+
     /// Called when the hosting window becomes known, which is what gives the
     /// brightness control a screen to write and mounts the volume HUD
     /// suppressor.
     func attachWindow(_ window: PKWindow?) {
+        attachedWindow = window
         brightnessControl.window = window
+        updateSystemVolumeMount()
+        refreshCapabilities()
+    }
+
+    private func updateSystemVolumeMount() {
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        if window != nil {
-            hudSuppressor.mount(in: window)
-            if configuration.volumeTarget == .system {
-                systemVolumeControl.mount(in: window)
-            }
+        if configuration.isEnabled,
+           configuration.isVolumeGestureEnabled,
+           configuration.volumeTarget == .system,
+           let attachedWindow {
+            systemVolumeControl.mount(in: attachedWindow)
         } else {
-            hudSuppressor.unmount()
             systemVolumeControl.unmount()
         }
         #endif
-        refreshCapabilities()
     }
+
+    #if os(iOS) && !targetEnvironment(macCatalyst)
+    private func presentExternalSystemVolume(_ value: Double) {
+        guard configuration.isEnabled,
+              configuration.isVolumeGestureEnabled,
+              configuration.volumeTarget == .system else { return }
+        let side = railSide(driving: .volume) ?? .trailing
+        presentRail(kind: .volume, side: side, unit: value, isArmed: false)
+        hudModel.beginDwell()
+    }
+    #endif
 
     // MARK: - Taps
 
@@ -288,10 +361,29 @@ public class GestureManager: ObservableObject {
     /// the previous item's playhead.
     func reset() {
         machine.reset()
+        cancelTouchTimers()
+        _ = classifier.finish(cancelled: true)
         rail.cancel()
+        if scrub.isActive {
+            emit(.scrubEnded(committedTarget: nil))
+        }
         scrub.cancel()
+        _ = speedHold.release(feedback: nil, hapticsEnabled: false)
         activeRailKind = nil
         activeRailSide = nil
+        lastZoomFill = nil
+        if isZoomFilled {
+            // Media and backend replacement restart at aspect-fit. Keep the
+            // published inverse action and the drawable on that same baseline.
+            onZoom?(0.5)
+            isZoomFilled = false
+        }
+        scrollIdleToken?.cancel()
+        scrollIdleToken = nil
+        scrollRailKind = nil
+        scrollRailSide = nil
+        coach.reset()
+        confusion.resetSession()
         hudModel.clearImmediately()
     }
 
@@ -324,7 +416,7 @@ public class GestureManager: ObservableObject {
         return volumeControl.isLimitedByDeviceVolume ? "Device volume is low" : nil
     }
 
-    static func symbol(for kind: GestureKind, unit: Double) -> String {
+    nonisolated static func symbol(for kind: GestureKind, unit: Double) -> String {
         switch kind {
         case .brightness:
             return unit < 0.34 ? "sun.min.fill" : (unit < 0.67 ? "sun.max" : "sun.max.fill")
@@ -409,7 +501,7 @@ public class GestureManager: ObservableObject {
     // MARK: - Pinch
 
     func handlePinch(scale: CGFloat) {
-        guard configuration.isZoomGestureEnabled, !isLocked() else { return }
+        guard isZoomAvailable(), !isLocked() else { return }
         onZoom?(scale)
     }
 
@@ -421,7 +513,6 @@ public class GestureManager: ObservableObject {
         guard configuration.restoresBrightnessOnExit else { return }
         brightnessControl.relinquish(force: false)
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        hudSuppressor.unmount()
         systemVolumeControl.unmount()
         #endif
     }
@@ -497,5 +588,9 @@ public class GestureManager: ObservableObject {
 
     func isLocked() -> Bool {
         isLockedProvider?() ?? false
+    }
+
+    func isZoomAvailable() -> Bool {
+        configuration.isZoomGestureEnabled && (isZoomAvailableProvider?() ?? true)
     }
 }

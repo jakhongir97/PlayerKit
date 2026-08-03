@@ -14,14 +14,9 @@ import PackageDescription
 // runner and every consumer — resolves the published artifact, so the graph is
 // identical everywhere.
 //
-// Note what this does NOT currently do. The published VLCKit.xcframework ships
-// `ios-arm64` and `ios-arm64_x86_64-simulator` only, with no macOS slice, so
-// `canImport(VLCKit)` is false on macOS either way and `DesktopVLCPlayerWrapper`
-// (`#if os(macOS) && !canImport(VLCKit)`) compiles in both configurations —
-// verified by finding DesktopVLCPlayerWrapper.swift.o in both builds. The
-// hazard is latent rather than active: drop in a locally built xcframework that
-// *does* carry a macOS slice and the macOS backend flips, taking the public
-// `VLCPlayerWrapper` typealias with it.
+// VLCKit is intentionally linked on iOS only. The macOS backend uses a separate
+// runtime-checked VLC.app integration, so adding an unused local macOS binary
+// would only add signing, licensing, and attack surface.
 let localVLCKitPath = "Frameworks/VLCKit.xcframework"
 let wantsLocalVLCKit = ProcessInfo.processInfo.environment["PLAYERKIT_LOCAL_VLCKIT"] == "1"
 let hasLocalVLCKit: Bool = {
@@ -59,15 +54,15 @@ let package = Package(
         vlcBinaryTarget,
         .binaryTarget(
             name: "GoogleCast",
-            url: "https://github.com/jakhongir97/PlayerKit/releases/download/1.0.7/GoogleCast.xcframework.zip",
-            checksum: "21090c27acb00c9576e44c4af084c473509ba6b9dd494d23b53f5390b0bcad91"
+            url: "https://dl.google.com/dl/chromecast/sdk/ios/GoogleCastSDK-ios-4.8.4_dynamic.zip",
+            checksum: "c9c3a794e8585198b59c6bb7da5418a3194ffa1ffa6f9a1cbdf4dc0ea26dc6cf"
         ),
         .target(
             name: "PlayerKit",
             dependencies: [
                 .target(
                     name: "VLCKit",
-                    condition: .when(platforms: hasLocalVLCKit ? [.iOS, .macOS] : [.iOS])
+                    condition: .when(platforms: [.iOS])
                 ),
                 .target(name: "GoogleCast", condition: .when(platforms: [.iOS])),
             ],
@@ -75,13 +70,10 @@ let package = Package(
             resources: [
                 .process("Resources")
             ],
-            // Turns on complete concurrency checking as WARNINGS, to stop the
-            // diagnostic count growing while the @MainActor migration is
-            // scheduled. The package is in Swift 5 language mode — there is no
-            // swiftLanguageVersions setting and swift-tools-version is 5.10 —
-            // so these are warnings, not errors. Raising the tools version or
-            // adding .v6 to swiftLanguageVersions would turn all ~291 of them
-            // into build failures.
+            // Keep complete checking enabled for Swift 5.10 consumers while CI
+            // also compiles this target in Swift 6 language mode. The package
+            // itself stays in Swift 5 mode so the documented Xcode 15.3 minimum
+            // remains usable.
             //
             // swiftSettings apply to this target only and are not inherited by
             // anything that depends on PlayerKit, so a consumer sees no new

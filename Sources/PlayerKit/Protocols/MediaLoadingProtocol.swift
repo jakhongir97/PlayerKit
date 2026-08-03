@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 public protocol MediaLoadingProtocol: AnyObject {
     func load(url: URL, lastPosition: Double?)
 }

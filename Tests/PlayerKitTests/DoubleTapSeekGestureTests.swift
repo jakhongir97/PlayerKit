@@ -9,6 +9,7 @@ import XCTest
 /// the same side has to take that toggle back and start skipping, and once a
 /// session is open plain single taps have to keep skipping instead of toggling.
 /// Each of those is pinned down here.
+@MainActor
 final class DoubleTapSeekGestureTests: XCTestCase {
 
     private let size = CGSize(width: 400, height: 200)

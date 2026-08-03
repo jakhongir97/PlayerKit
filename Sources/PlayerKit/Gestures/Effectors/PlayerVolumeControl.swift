@@ -17,6 +17,7 @@ import AVFoundation
 ///
 /// Writing the backend's own level is scoped to this player, needs no private
 /// view, and cannot leave the device quieter than the user found it.
+@MainActor
 final class PlayerVolumeControl: OutputLevelControlling {
 
     var backendProvider: (() -> PlayerVolumeControlling?)?
@@ -38,7 +39,7 @@ final class PlayerVolumeControl: OutputLevelControlling {
     }
 
     func setLevel(_ value: Double) {
-        guard let backend = backendProvider?() else { return }
+        guard value.isFinite, let backend = backendProvider?() else { return }
         backend.setOutputVolume(Float(min(max(value, 0), 1)))
     }
 

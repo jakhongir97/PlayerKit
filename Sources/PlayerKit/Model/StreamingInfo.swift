@@ -1,6 +1,6 @@
 import Foundation
 
-public struct StreamingInfo {
+public struct StreamingInfo: Sendable {
     public let frameRate: String
     public let videoBitrate: String
     public let resolution: String

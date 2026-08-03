@@ -1,9 +1,8 @@
 import SwiftUI
 
+@MainActor
 struct InfoButtonView: View {
     private let playerManager: PlayerManager
-    @Environment(\.horizontalSizeClass) var horizontalSizeClass
-    @Environment(\.verticalSizeClass) var verticalSizeClass
     #if os(macOS)
     @Environment(\.openPlaybackDiagnostics) private var openPlaybackDiagnostics
     #endif
@@ -12,14 +11,6 @@ struct InfoButtonView: View {
     
     init(playerManager: PlayerManager = .shared) {
         self.playerManager = playerManager
-    }
-
-    // Determine landscape orientation based on size classes.
-    // On an iPhone:
-    //  - Portrait: verticalSizeClass = .regular, horizontalSizeClass = .compact
-    //  - Landscape: verticalSizeClass = .compact
-    private var isLandscape: Bool {
-        verticalSizeClass == .compact
     }
 
     var body: some View {
@@ -35,21 +26,14 @@ struct InfoButtonView: View {
         infoButton
             .accessibilityLabel("Streaming information")
             .accessibilityHint("Shows bitrate, buffer, frame rate and resolution")
-            .overlay(
-                Group {
-                    if showPopover {
-                        StreamingInfoView(playerManager: playerManager)
-                            .frame(width: 200)
-                            .offset(
-                                x: isLandscape ? 60 : 0,
-                                y: isLandscape ? 0 : -110
-                            )
-                            .transition(.opacity)
-                            .zIndex(1)
-                    }
-                },
-                alignment: .leading
-            )
+            // The native presentation chooses a popover where space permits
+            // and adapts to a compact presentation on narrow iPhone/Slide Over
+            // surfaces. No orientation or device-class offsets to maintain.
+            .popover(isPresented: $showPopover, arrowEdge: .leading) {
+                StreamingInfoView(playerManager: playerManager)
+                    .frame(minWidth: 240, idealWidth: 300, maxWidth: 360)
+                    .padding(8)
+            }
         #endif
     }
 
@@ -62,9 +46,7 @@ struct InfoButtonView: View {
                 showPopover.toggle()
             }
             #else
-            withAnimation(.spring()) {
-                showPopover.toggle()
-            }
+            showPopover.toggle()
             #endif
         }) {
             Image(systemName: "info")

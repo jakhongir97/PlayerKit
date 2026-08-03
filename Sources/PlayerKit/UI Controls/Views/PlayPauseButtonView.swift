@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct PlayPauseButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
@@ -9,7 +10,10 @@ struct PlayPauseButtonView: View {
                 playerManager.isPlaybackRequested ? playerManager.pause() : playerManager.play()
                 HapticsManager.shared.triggerImpactFeedback(style: .medium)
             }) {
-                Image(playerManager.isPlaybackRequested ? "pause" : "play", bundle: .module)
+                Image.fromFramework(
+                    named: playerManager.isPlaybackRequested ? "pause" : "play",
+                    fallbackSystemName: playerManager.isPlaybackRequested ? "pause.fill" : "play.fill"
+                )
                     .circularGlassIcon(frameSize: PlayerKitPlatform.isDesktop ? 64 : 60)
             }
             .buttonStyle(.plain)

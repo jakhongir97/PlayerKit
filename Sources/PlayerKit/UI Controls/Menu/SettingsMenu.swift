@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct SettingsMenu: View {
     private let playerManager: PlayerManager
     
@@ -7,20 +8,13 @@ struct SettingsMenu: View {
         self.playerManager = playerManager
     }
 
+    @ViewBuilder
     var body: some View {
-        Menu {
-            PlayerMenu(playerManager: playerManager)
-
-        } label: {
-            Image(systemName: "ellipsis")
-                .circularGlassIcon()
-        }
-        .accessibilityLabel("Settings")
-        .accessibilityHint("Opens player settings")
-        .accessibilityIdentifier("player.settingsMenu")
-        .buttonStyle(.plain)
-        .onTapGesture {
-            playerManager.userInteracted()
-        }
+        #if DEBUG
+        // Backend switching is a diagnostics tool, not a user setting. Keep it
+        // available to developers without shipping an ellipsis that opens a
+        // single implementation-detail menu in production.
+        PlayerMenu(playerManager: playerManager)
+        #endif
     }
 }

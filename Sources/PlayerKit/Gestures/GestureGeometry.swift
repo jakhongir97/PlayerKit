@@ -8,7 +8,7 @@ import SwiftUI
 /// Deliberately expressed as leading/trailing rather than left/right: the rails
 /// follow the layout direction, so the brightness rail sits under the thumb that
 /// naturally reaches it in an RTL locale too.
-public enum RailSide: Equatable, Sendable, CaseIterable {
+public enum RailSide: Hashable, Sendable, CaseIterable {
     case leading
     case trailing
 }
@@ -39,7 +39,7 @@ enum TapZone: Equatable {
 
 /// The vocabulary of things a gesture can drive. Not every kind is reachable by
 /// touch on every platform — see `GestureCapabilities`.
-enum GestureKind: Equatable {
+enum GestureKind: Hashable {
     case volume
     case brightness
     case scrub
@@ -123,10 +123,16 @@ struct GestureCapabilities: Equatable {
 struct SurfaceGeometry: Equatable {
     var size: CGSize = .zero
     var insets: EdgeInsets = EdgeInsets()
+    var layoutDirection: LayoutDirection = .leftToRight
 
-    init(size: CGSize = .zero, insets: EdgeInsets = EdgeInsets()) {
+    init(
+        size: CGSize = .zero,
+        insets: EdgeInsets = EdgeInsets(),
+        layoutDirection: LayoutDirection = .leftToRight
+    ) {
         self.size = size
         self.insets = insets
+        self.layoutDirection = layoutDirection
     }
 }
 
@@ -227,7 +233,9 @@ struct GestureGeometry: Equatable {
     /// "backward" to a tap and "trailing" to a rail.
     func railSide(for point: CGPoint) -> RailSide? {
         guard isUsable else { return nil }
-        return point.x < surface.size.width / 2 ? .leading : .trailing
+        let physicalSide: RailSide = point.x < surface.size.width / 2 ? .leading : .trailing
+        guard surface.layoutDirection == .rightToLeft else { return physicalSide }
+        return physicalSide == .leading ? .trailing : .leading
     }
 
     /// What a rail on this side drives, honouring both the host's mapping and
@@ -283,7 +291,13 @@ struct GestureGeometry: Equatable {
         let height = min(0.46 * surface.size.height, 180)
         let width: CGFloat = 6
         let inset: CGFloat
-        switch side {
+        let physicalSide: RailSide
+        if surface.layoutDirection == .rightToLeft {
+            physicalSide = side == .leading ? .trailing : .leading
+        } else {
+            physicalSide = side
+        }
+        switch physicalSide {
         case .leading:
             inset = max(surface.insets.leading, 20)
             return CGRect(

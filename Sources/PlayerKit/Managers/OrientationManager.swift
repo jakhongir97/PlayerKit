@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 
+@MainActor
 class OrientationManager: ObservableObject {
     #if os(iOS)
     @Published var orientation: UIDeviceOrientation = UIDevice.current.orientation
@@ -16,9 +17,13 @@ class OrientationManager: ObservableObject {
         cancellable = NotificationCenter.default
             .publisher(for: UIDevice.orientationDidChangeNotification)
             .sink { [weak self] _ in
-                self?.orientation = UIDevice.current.orientation
-                if UIDevice.current.orientation == .portrait || UIDevice.current.orientation == .portraitUpsideDown || UIDevice.current.isPortrait {
-                    self?.onPortraitOrientation?()
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let current = UIDevice.current.orientation
+                    self.orientation = current
+                    if current == .portrait || current == .portraitUpsideDown || current.isPortrait {
+                        self.onPortraitOrientation?()
+                    }
                 }
             }
         #endif

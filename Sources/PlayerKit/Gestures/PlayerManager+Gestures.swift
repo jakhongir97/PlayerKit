@@ -64,7 +64,10 @@ public extension PlayerManager {
     /// volume buttons and Control Centre are unaffected.
     var volume: Double {
         get { gestureManager.level(of: .volume) }
-        set { gestureManager.setLevel(.volume, newValue) }
+        set {
+            guard newValue.isFinite else { return }
+            gestureManager.setLevel(.volume, newValue)
+        }
     }
 
     /// Replays the first-run gesture walkthrough, ignoring the "already seen"

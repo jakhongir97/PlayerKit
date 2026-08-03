@@ -2,53 +2,75 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MANIFEST="$ROOT_DIR/Package.swift"
 NOTICES="$ROOT_DIR/THIRD_PARTY_NOTICES.md"
+
+for command in swift python3 awk grep; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo "error: $command is required" >&2
+    exit 1
+  fi
+done
 
 if [[ ! -f "$NOTICES" ]]; then
   echo "error: THIRD_PARTY_NOTICES.md is missing" >&2
   exit 1
 fi
 
-if ! command -v awk >/dev/null 2>&1; then
-  echo "error: awk is required" >&2
-  exit 1
-fi
+package_json="$(swift package --package-path "$ROOT_DIR" dump-package)"
+binary_targets="$({ printf '%s' "$package_json" | python3 -c '
+import json, sys
+package = json.load(sys.stdin)
+for target in package.get("targets", []):
+    if target.get("type") != "binary" or not target.get("url"):
+        continue
+    print("\t".join((target["name"], target["url"], target.get("checksum", ""))))
+'; } || true)"
 
-BINARY_TARGETS=()
-while IFS= read -r target; do
-  [[ -n "$target" ]] || continue
-  BINARY_TARGETS+=("$target")
-done < <(
-  awk '
-    /\.binaryTarget\(/ { in_binary = 1; next }
-    in_binary && /name:[[:space:]]*"/ {
-      line = $0
-      sub(/.*name:[[:space:]]*"/, "", line)
-      sub(/".*/, "", line)
-      print line
-      in_binary = 0
-    }
-  ' "$MANIFEST"
-)
-
-if [[ "${#BINARY_TARGETS[@]}" -eq 0 ]]; then
-  echo "error: no binary targets found in Package.swift" >&2
+if [[ -z "$binary_targets" ]]; then
+  echo "error: no resolved remote binary targets found" >&2
   exit 1
 fi
 
 missing=0
-for target in "${BINARY_TARGETS[@]}"; do
-  # grep, not rg: the dependency check above only verifies awk, and ripgrep is
-  # not guaranteed to be installed on a CI runner.
-  if ! grep -qx "## ${target}" "$NOTICES"; then
-    echo "error: THIRD_PARTY_NOTICES.md is missing a section for binary target '${target}'" >&2
+count=0
+while IFS=$'\t' read -r target url checksum; do
+  [[ -n "$target" ]] || continue
+  count=$((count + 1))
+
+  section="$(awk -v heading="## $target" '
+    $0 == heading { found = 1 }
+    found && $0 ~ /^## / && $0 != heading { exit }
+    found { print }
+  ' "$NOTICES")"
+
+  if [[ -z "$section" ]]; then
+    echo "error: missing notice section for binary target '$target'" >&2
     missing=1
+    continue
   fi
-done
+
+  for expected in \
+    "- Artifact URL: \`$url\`" \
+    "- SwiftPM checksum: \`$checksum\`" \
+    "- Resolved version/build:" \
+    "- Upstream and license:" \
+    "- Privacy manifest:" \
+    "- Code signature and provenance:" \
+    "- Release status:"; do
+    if ! grep -Fqx -- "$expected" <<<"$section" && [[ "$expected" == *":" ]]; then
+      if ! grep -Fq -- "$expected" <<<"$section"; then
+        echo "error: '$target' notice is missing field: $expected" >&2
+        missing=1
+      fi
+    elif ! grep -Fqx -- "$expected" <<<"$section"; then
+      echo "error: '$target' notice does not match resolved package value: $expected" >&2
+      missing=1
+    fi
+  done
+done <<<"$binary_targets"
 
 if [[ "$missing" -ne 0 ]]; then
   exit 1
 fi
 
-echo "Verified third-party notice sections for ${#BINARY_TARGETS[@]} binary target(s)."
+echo "Verified structured notices for $count resolved binary target(s)."

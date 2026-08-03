@@ -15,6 +15,7 @@ typealias PKWindow = NSWindow
 /// brightness, a null control for an unavailable capability and a recording fake
 /// all sit behind it, and none of them leak `AVAudioSession` or `UIScreen` into
 /// the gesture logic.
+@MainActor
 protocol OutputLevelControlling: AnyObject {
     var availability: GestureAvailability { get }
     /// True when writing changes something outside this player. Drives whether

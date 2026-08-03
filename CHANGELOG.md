@@ -21,9 +21,20 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - `PlayerManager.gestureConfiguration`, `.gestureCapabilities`, `.volume`,
   `.skipForward()`, `.skipBackward()`, `.nudgeVolume(_:)`, `.nudgeBrightness(_:)`
   and `Notification.Name.PlayerKitGestureCoachingDidFinish`.
-- Visible ±10s buttons in the transport row, and adjustable Volume/Brightness
-  accessibility elements — those gestures previously had no non-gesture path at
-  all.
+- `PlayerManager.installPlayerBackend(_:)` and public optional capability
+  protocols for host-supplied backends: lifecycle events, immediate runtime
+  state, media availability, mute/volume, PiP availability, and live seek
+  windows.
+- Visible ±10s buttons in the transport row, plus named Volume/Brightness
+  actions on the video accessibility element — those gestures previously had
+  no non-gesture path at all.
+- Stock playback recovery and completion UI: sanitized terminal-error
+  Retry/Close, non-blocking external-playback banners, persistent buffering,
+  and Replay/Close at the end of a movie or final episode. Signed-URL hosts can
+  refresh an item through `onPlaybackRetryRequested` before retrying.
+- Public capability/readiness state for custom chrome: `canUseAirPlay` and
+  read-only `isCastingAvailable`; existing PiP and gesture capability surfaces
+  now follow the active backend and orientation.
 
 ### Fixed
 - Reversing a double-tap skip re-read the live playhead, which on every real
@@ -57,8 +68,36 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
   and with autoplay off nothing ever recomputed them, so the volume gesture
   never arrived at all.
 - Auto-hide no longer runs under VoiceOver, Switch Control or Guided Access.
+- Compact and Slide Over transport controls now adapt from one row to a stacked
+  layout without dropping actions or shrinking below 44pt targets. Core chrome
+  uses semantic Dynamic Type styles, diagnostics no longer use sub-10pt text,
+  and chart accessibility is summarized instead of exposing every mark.
+- Lock changes immediately remove gesture accessibility actions; the previous
+  closure-backed state could leave inert Play, Zoom, Volume and Brightness
+  actions in the accessibility tree.
+- Buffering no longer disappears with auto-hidden chrome, stale audio/subtitle
+  tracks are cleared before a new item loads, and backend end events no longer
+  depend on lagging cached timeline values.
+- macOS no longer steals first responder when an embedded player mounts and
+  yields Command/Control/Option-modified shortcuts to the host application.
+- AirPlay, zoom and PiP controls now report backend capability truth; PiP setup
+  failures are non-terminal, and finite seekable VLC media exposes PiP seeking.
+- Screen-capture shielding now gives sighted iOS users a visible, Dynamic Type
+  explanation instead of an unexplained black surface.
 
 ### Changed
+- **Breaking:** the minimum iOS deployment target is now 15.0 (up from 14.0 in
+  1.1.0). Together with the public API removals below, this requires the next
+  release to use a new major version unless the deployment change is reverted.
+- **Breaking:** the player control plane (`Player`, `PlayerManager`, player
+  protocols/backends and the supplied SwiftUI views) is main-actor isolated.
+  Callers outside the main actor must now hop with `await MainActor.run` or an
+  equivalent `@MainActor` context. Seek completion handlers are main-actor
+  isolated as well.
+- **Breaking:** hosts can no longer assign `PlayerManager.currentTime`,
+  `isMediaReady`, or `currentPlayer`, nor `VLCPlayerWrapper.player`; their
+  setters are module-internal. `OpenPlaybackDiagnosticsAction` handlers must be
+  `@Sendable`.
 - **Brightness and volume swap sides**: brightness is now the leading half,
   volume the trailing half, matching VLC, Infuse and MX Player. Set
   `gestureConfiguration.railMapping = .volumeLeading` to keep the old
@@ -86,6 +125,11 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
   `UIBackgroundModes`, which a package cannot declare — see the README.
 
 ### Removed
+- **Breaking:** `VLCPlayerWrapper` no longer publicly conforms to
+  `VLCMediaDelegate` or `VLCMediaPlayerDelegate`. Generation-scoped private
+  delegate proxies now reject callbacks from replaced media; hosts should use
+  `PlayerEventSource` for lifecycle reporting instead of invoking VLCKit
+  delegate callbacks on the wrapper.
 - **Breaking:** the Dubber live-dubbing integration is removed. It had been
   inert behind `PlayerKitFeatureFlags.isDubberEnabled = false`, and that flag
   is removed with it. Gone from the public API: `Player`/`PlayerManager`'s
@@ -147,7 +191,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
   the derived display name was empty for single-word tracks; playback speed
   reset on every load; the resume-position seek was untethered from its media.
 - macOS VLC backend now checks `libvlc_get_version()` before binding symbols
-  declared against the 3.x ABI, and uses `RTLD_LOCAL`.
+  declared against the 3.x ABI, uses `RTLD_LOCAL`, and rejects the external
+  VLC.app unless its full nested signature is Apple-backed and belongs to
+  VideoLAN. The unused local macOS VLCKit slice/preparation path is removed.
 - `MacOSPlaybackHealthMonitor.stop()` captured `self` in a `Task` and is
   reachable from `deinit`, resurrecting a deallocating object.
 - Diagnostics report generation allocated an `ISO8601DateFormatter` per call,
@@ -160,6 +206,33 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - The playback slider is now operable by VoiceOver via an adjustable action.
 - CI builds and tests the macOS target, which compiles the ~9.7k-line
   `#if os(macOS)` diagnostics subsystem and runs its previously-unexercised tests.
+- Player queues no longer retain or replay a stale standalone item after being
+  replaced with an empty queue, and `play()` can rebuild a backend after
+  `stop()` instead of reporting a fabricated playing state.
+- AVPlayer and VLC media callbacks are generation-scoped so a late callback or
+  seek completion from an old item cannot mutate the current item. Terminal
+  failures now clear readiness and requested-playback state.
+- Runtime numeric inputs reject NaN and infinity before clamping or conversion;
+  this covers seeks, speed, volume, resume positions and published time state.
+- Game-controller subscriptions are cancelled on teardown and pre-existing host
+  handlers are restored. External episode-navigation tasks are cancelled when
+  media changes or the player is torn down.
+- Saved subtitle-off state survives backend changes; desktop VLC restores mute
+  and speed, reports buffering honestly, avoids synchronous track-selection
+  recursion, and stops polling when stopped.
+- Cast setup is host-configurable, analytics-disabled and discovery-delayed;
+  handoff dismisses local playback only after the receiver load succeeds and
+  reports failed/aborted requests without losing the local session.
+- PiP capability/state now reflects the active controller and gives hosts an
+  explicit restoration callback. AirPlay policy persists across backend swaps.
+- Now Playing metadata is not republished for unchanged 2 Hz ticks and command
+  ownership is released synchronously without overwriting a new host owner.
+- The unreachable 477-line DLNA implementation was removed instead of being
+  kept behind a permanently false platform path.
+- Binary targets now have checksum, slice, architecture, privacy, license and
+  signature verification; Google Cast resolves from Google's official 4.8.4
+  archive. Release remains blocked on the evidence recorded in
+  `THIRD_PARTY_NOTICES.md`.
 - `verify_third_party_notices.sh` used `rg` while only checking for `awk`.
 
 ### Added

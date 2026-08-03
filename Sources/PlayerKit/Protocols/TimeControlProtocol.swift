@@ -7,6 +7,7 @@
 
 import Foundation
 
+@MainActor
 public protocol TimeControlProtocol: AnyObject {
     var currentTime: Double { get }
     var duration: Double { get }
@@ -14,7 +15,7 @@ public protocol TimeControlProtocol: AnyObject {
     var isBuffering: Bool { get }
     
     /// Updated seek method with optional completion handler
-    func seek(to time: Double, completion: ((Bool) -> Void)?)
+    func seek(to time: Double, completion: (@MainActor (Bool) -> Void)?)
     
     func scrubForward(by seconds: TimeInterval)
     func scrubBackward(by seconds: TimeInterval)

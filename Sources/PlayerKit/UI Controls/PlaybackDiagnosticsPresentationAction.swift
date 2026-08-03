@@ -1,11 +1,11 @@
 #if os(macOS)
 import SwiftUI
 
-public struct OpenPlaybackDiagnosticsAction {
+public struct OpenPlaybackDiagnosticsAction: Sendable {
     public let isAvailable: Bool
-    private let handler: @MainActor () -> Void
+    private let handler: @MainActor @Sendable () -> Void
 
-    public init(_ handler: @escaping @MainActor () -> Void) {
+    public init(_ handler: @escaping @MainActor @Sendable () -> Void) {
         isAvailable = true
         self.handler = handler
     }

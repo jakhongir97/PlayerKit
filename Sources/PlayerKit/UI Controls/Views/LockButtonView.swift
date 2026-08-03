@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct LockButtonView: View {
     @ObservedObject var playerManager: PlayerManager
     

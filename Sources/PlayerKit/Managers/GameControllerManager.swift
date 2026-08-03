@@ -1,11 +1,26 @@
 import Combine
 import GameController
 
+@MainActor
 final class GameControllerManager: ObservableObject {
     static let shared = GameControllerManager()
     
     @Published var isAnyControllerConnected: Bool = false
     private var controllers: [GCController] = []
+    private struct ControllerHandlers {
+        let buttonA: GCControllerButtonValueChangedHandler?
+        let buttonB: GCControllerButtonValueChangedHandler?
+        let buttonX: GCControllerButtonValueChangedHandler?
+        let leftShoulder: GCControllerButtonValueChangedHandler?
+        let rightShoulder: GCControllerButtonValueChangedHandler?
+        let leftTrigger: GCControllerButtonValueChangedHandler?
+        let rightTrigger: GCControllerButtonValueChangedHandler?
+        let dpadLeft: GCControllerButtonValueChangedHandler?
+        let dpadRight: GCControllerButtonValueChangedHandler?
+        let dpadUp: GCControllerButtonValueChangedHandler?
+        let dpadDown: GCControllerButtonValueChangedHandler?
+    }
+    private var previousHandlers: [ObjectIdentifier: ControllerHandlers] = [:]
     let controllerEventPublisher = PassthroughSubject<GameControllerEvent, Never>()
     
     // MARK: - Scrubbing Properties
@@ -33,9 +48,8 @@ final class GameControllerManager: ObservableObject {
         NotificationCenter.default.addObserver(self, selector: #selector(controllerDidConnect(_:)), name: .GCControllerDidConnect, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(controllerDidDisconnect(_:)), name: .GCControllerDidDisconnect, object: nil)
         
-        for controller in GCController.controllers() {
-            configureController(controller)
-        }
+        controllers = GCController.controllers()
+        isAnyControllerConnected = !controllers.isEmpty
     }
     
     deinit {
@@ -44,12 +58,18 @@ final class GameControllerManager: ObservableObject {
     
     @objc private func controllerDidConnect(_ notification: Notification) {
         guard let controller = notification.object as? GCController else { return }
-        configureController(controller)
+        if !controllers.contains(controller) {
+            controllers.append(controller)
+        }
+        if ownership.isHeld {
+            configureController(controller)
+        }
         isAnyControllerConnected = !controllers.isEmpty
     }
     
     @objc private func controllerDidDisconnect(_ notification: Notification) {
         guard let controller = notification.object as? GCController else { return }
+        restoreController(controller)
         if let idx = controllers.firstIndex(of: controller) {
             controllers.remove(at: idx)
         }
@@ -79,16 +99,9 @@ final class GameControllerManager: ObservableObject {
         resourceReleaseCount += 1
 
         for controller in controllers {
-            guard let gamepad = controller.extendedGamepad else { continue }
-            gamepad.buttonA.pressedChangedHandler = nil
-            gamepad.buttonB.pressedChangedHandler = nil
-            gamepad.leftShoulder.pressedChangedHandler = nil
-            gamepad.rightShoulder.pressedChangedHandler = nil
-            gamepad.leftTrigger.valueChangedHandler = nil
-            gamepad.rightTrigger.valueChangedHandler = nil
-            gamepad.dpad.left.pressedChangedHandler = nil
-            gamepad.dpad.right.pressedChangedHandler = nil
+            restoreController(controller)
         }
+        previousHandlers.removeAll()
         stopScrubbing()
         leftBumperScrubEndWorkItem?.cancel()
         leftBumperScrubEndWorkItem = nil
@@ -112,6 +125,21 @@ final class GameControllerManager: ObservableObject {
         
         isAnyControllerConnected = !controllers.isEmpty
         guard let gamepad = controller.extendedGamepad else { return }
+        let identifier = ObjectIdentifier(controller)
+        guard previousHandlers[identifier] == nil else { return }
+        previousHandlers[identifier] = ControllerHandlers(
+            buttonA: gamepad.buttonA.pressedChangedHandler,
+            buttonB: gamepad.buttonB.pressedChangedHandler,
+            buttonX: gamepad.buttonX.pressedChangedHandler,
+            leftShoulder: gamepad.leftShoulder.pressedChangedHandler,
+            rightShoulder: gamepad.rightShoulder.pressedChangedHandler,
+            leftTrigger: gamepad.leftTrigger.valueChangedHandler,
+            rightTrigger: gamepad.rightTrigger.valueChangedHandler,
+            dpadLeft: gamepad.dpad.left.pressedChangedHandler,
+            dpadRight: gamepad.dpad.right.pressedChangedHandler,
+            dpadUp: gamepad.dpad.up.pressedChangedHandler,
+            dpadDown: gamepad.dpad.down.pressedChangedHandler
+        )
         areHandlersAttached = true
 
         // A -> Play/Pause
@@ -192,6 +220,27 @@ final class GameControllerManager: ObservableObject {
         gamepad.buttonX.pressedChangedHandler = { [weak self] _, _, pressed in
             if pressed { self?.controllerEventPublisher.send(.focusSelect) }
         }
+    }
+
+    private func restoreController(_ controller: GCController) {
+        let identifier = ObjectIdentifier(controller)
+        guard let handlers = previousHandlers.removeValue(forKey: identifier),
+              let gamepad = controller.extendedGamepad else {
+            areHandlersAttached = !previousHandlers.isEmpty
+            return
+        }
+        gamepad.buttonA.pressedChangedHandler = handlers.buttonA
+        gamepad.buttonB.pressedChangedHandler = handlers.buttonB
+        gamepad.buttonX.pressedChangedHandler = handlers.buttonX
+        gamepad.leftShoulder.pressedChangedHandler = handlers.leftShoulder
+        gamepad.rightShoulder.pressedChangedHandler = handlers.rightShoulder
+        gamepad.leftTrigger.valueChangedHandler = handlers.leftTrigger
+        gamepad.rightTrigger.valueChangedHandler = handlers.rightTrigger
+        gamepad.dpad.left.pressedChangedHandler = handlers.dpadLeft
+        gamepad.dpad.right.pressedChangedHandler = handlers.dpadRight
+        gamepad.dpad.up.pressedChangedHandler = handlers.dpadUp
+        gamepad.dpad.down.pressedChangedHandler = handlers.dpadDown
+        areHandlersAttached = !previousHandlers.isEmpty
     }
 
     /// Helper to schedule `.scrubEnded` after a small delay.

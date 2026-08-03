@@ -9,7 +9,10 @@
 import UIKit
 import VLCKit
 
-class VLCPlayerDrawableProxy: NSObject {
+/// VLCKit owns and calls this bridge from its media threads. Its only mutable
+/// state is a runtime-managed weak reference; all player/UI access is relayed
+/// to MainActor below.
+final class VLCPlayerDrawableProxy: NSObject, @unchecked Sendable {
     weak var wrapper: VLCPlayerWrapper?
 
     init(wrapper: VLCPlayerWrapper) {
@@ -18,58 +21,109 @@ class VLCPlayerDrawableProxy: NSObject {
     }
 }
 
+private struct VLCUncheckedPiPController: @unchecked Sendable {
+    let value: (any VLCPictureInPictureWindowControlling)?
+}
+
 extension VLCPlayerDrawableProxy: VLCDrawable {
-    func addSubview(_ view: UIView) {
-        wrapper?.getPlayerView().addSubview(view)
+    nonisolated func addSubview(_ view: UIView) {
+        // VLCKit invokes drawable UI callbacks on the main thread. Keep the
+        // Objective-C protocol witness nonisolated, then make that SDK contract
+        // explicit at the UIKit boundary.
+        MainActor.assumeIsolated {
+            wrapper?.getPlayerView().addSubview(view)
+        }
     }
 
-    func bounds() -> CGRect {
-        return wrapper?.getPlayerView().bounds ?? .zero
+    nonisolated func bounds() -> CGRect {
+        MainActor.assumeIsolated {
+            wrapper?.getPlayerView().bounds ?? .zero
+        }
     }
 }
 
 extension VLCPlayerDrawableProxy: VLCPictureInPictureDrawable {
-    func mediaController() -> (any VLCPictureInPictureMediaControlling)! {
+    nonisolated func mediaController() -> (any VLCPictureInPictureMediaControlling)! {
         return self
     }
 
-    func pictureInPictureReady() -> (((any VLCPictureInPictureWindowControlling)?) -> Void)! {
+    nonisolated func pictureInPictureReady() -> (((any VLCPictureInPictureWindowControlling)?) -> Void)! {
         return { [weak self] controller in
-            self?.wrapper?.pipController = controller
+            let target = self?.wrapper
+            let transferredController = VLCUncheckedPiPController(value: controller)
+            MainActor.assumeIsolated {
+                target?.pipController = transferredController.value
+            }
         }
     }
 }
 
 extension VLCPlayerDrawableProxy: VLCPictureInPictureMediaControlling {
-    func play() {
-        wrapper?.player.play()
+    nonisolated func play() {
+        let target = wrapper
+        Task { @MainActor in
+            target?.player.play()
+        }
     }
     
-    func pause() {
-        wrapper?.player.pause()
+    nonisolated func pause() {
+        let target = wrapper
+        Task { @MainActor in
+            target?.player.pause()
+        }
     }
     
-    func mediaTime() -> Int64 {
-        return wrapper?.player.time.value?.int64Value ?? 0
+    nonisolated func mediaTime() -> Int64 {
+        MainActor.assumeIsolated {
+            wrapper?.player.time.value?.int64Value ?? 0
+        }
     }
 
-    func mediaLength() -> Int64 {
-        return wrapper?.player.media?.length.value?.int64Value ?? 0
+    nonisolated func mediaLength() -> Int64 {
+        MainActor.assumeIsolated {
+            let length = wrapper?.player.media?.length.value?.int64Value ?? 0
+            return max(length, 0)
+        }
     }
 
-    func seek(by offset: Int64) async {
-        guard let wrapper = wrapper else { return }
-        let current = wrapper.player.time.value?.int64Value ?? 0
-        let newPosition = current + offset
-        wrapper.player.time = VLCTime(number: NSNumber(value: newPosition))
+    nonisolated func seek(by offset: Int64) async {
+        let target = wrapper
+        await MainActor.run {
+            guard let target else { return }
+            let length = target.player.media?.length.value?.int64Value ?? 0
+            guard Self.isFiniteSeekableMedia(
+                isSeekable: target.player.isSeekable,
+                durationMilliseconds: length
+            ) else { return }
+            let current = target.player.time.value?.int64Value ?? 0
+            let (sum, overflow) = current.addingReportingOverflow(offset)
+            let candidate = overflow ? (offset >= 0 ? length : 0) : sum
+            let newPosition = min(max(candidate, 0), length)
+            target.player.time = VLCTime(number: NSNumber(value: newPosition))
+        }
     }
 
-    func isMediaSeekable() -> Bool {
-        return false
+    nonisolated func isMediaSeekable() -> Bool {
+        MainActor.assumeIsolated {
+            guard let wrapper else { return false }
+            return Self.isFiniteSeekableMedia(
+                isSeekable: wrapper.player.isSeekable,
+                durationMilliseconds: wrapper.player.media?.length.value?.int64Value ?? 0
+            )
+        }
     }
 
-    func isMediaPlaying() -> Bool {
-        return wrapper?.player.isPlaying ?? false
+    nonisolated func isMediaPlaying() -> Bool {
+        MainActor.assumeIsolated {
+            wrapper?.player.isPlaying ?? false
+        }
+    }
+
+    nonisolated static func isFiniteSeekableMedia(
+        isSeekable: Bool,
+        durationMilliseconds: Int64
+    ) -> Bool {
+        isSeekable && durationMilliseconds > 0
     }
 }
 #endif

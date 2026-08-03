@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct SubtitleMenu: View {
     @StateObject private var viewModel: SubtitleMenuViewModel
     
@@ -12,24 +13,24 @@ struct SubtitleMenu: View {
             Section(header: Text("Subtitles")) {
                 // "Turn Off Subtitles" option
                 Button(action: {
-                    viewModel.selectSubtitle(index: nil)
+                    viewModel.selectSubtitle(nil)
                 }) {
                     HStack {
                         Text("Turn Off")
-                        if viewModel.selectedSubtitleIndex == nil {
+                        if viewModel.selectedSubtitle == nil {
                             Image(systemName: "checkmark")
                         }
                     }
                 }
                 
                 // List available subtitle tracks
-                ForEach(viewModel.availableSubtitles.indices, id: \.self) { index in
+                ForEach(viewModel.availableSubtitles) { track in
                     Button(action: {
-                        viewModel.selectSubtitle(index: index)
+                        viewModel.selectSubtitle(track)
                     }) {
                         HStack {
-                            Text(viewModel.availableSubtitles[index].name)
-                            if viewModel.selectedSubtitleIndex == index {
+                            Text(track.name)
+                            if viewModel.selectedSubtitle?.id == track.id {
                                 Image(systemName: "checkmark")
                             }
                         }

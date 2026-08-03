@@ -4,6 +4,7 @@ import SwiftUI
 import AppKit
 #endif
 
+@MainActor
 struct FullscreenButtonView: View {
     @ObservedObject var playerManager: PlayerManager
     @State private var isFullscreen = false
@@ -65,6 +66,7 @@ private extension FullscreenButtonView {
     }
 }
 
+@MainActor
 private enum PlayerKitMacFullscreenSupport {
     static func prepareForFullscreen(_ window: NSWindow) {
         window.collectionBehavior = window.collectionBehavior.union([.fullScreenPrimary])

@@ -1,7 +1,8 @@
-#if os(macOS) && !canImport(VLCKit)
+#if os(macOS)
 import AppKit
 import Darwin
 import Foundation
+import Security
 
 private enum DesktopVLCState: Int32 {
     case nothingSpecial = 0
@@ -15,6 +16,7 @@ private enum DesktopVLCState: Int32 {
 }
 
 private enum DesktopVLCPaths {
+    static let appURL = URL(fileURLWithPath: "/Applications/VLC.app", isDirectory: true)
     static let libDirectory = "/Applications/VLC.app/Contents/MacOS/lib"
     static let pluginsDirectory = "/Applications/VLC.app/Contents/MacOS/plugins"
     static let libvlcPath = "\(libDirectory)/libvlc.dylib"
@@ -25,6 +27,45 @@ private enum DesktopVLCPaths {
         return fileManager.fileExists(atPath: libvlcPath)
             && fileManager.fileExists(atPath: libvlcCorePath)
             && fileManager.fileExists(atPath: pluginsDirectory)
+            && DesktopVLCCodeSignature.isTrustedBundle(at: appURL)
+    }
+}
+
+enum DesktopVLCCodeSignature {
+    private static let videoLANRequirement =
+        #"anchor apple generic and identifier "org.videolan.vlc" and certificate leaf[subject.OU] = "75GAHG3SZQ""#
+
+    static func isTrustedBundle(at bundleURL: URL) -> Bool {
+        var staticCode: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(
+            bundleURL as CFURL,
+            SecCSFlags(),
+            &staticCode
+        ) == errSecSuccess,
+        let staticCode else {
+            return false
+        }
+
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(
+            videoLANRequirement as CFString,
+            SecCSFlags(),
+            &requirement
+        ) == errSecSuccess,
+        let requirement else {
+            return false
+        }
+
+        let validationFlags = SecCSFlags(
+            rawValue: kSecCSCheckAllArchitectures
+                | kSecCSCheckNestedCode
+                | kSecCSStrictValidate
+        )
+        return SecStaticCodeCheckValidity(
+            staticCode,
+            validationFlags,
+            requirement
+        ) == errSecSuccess
     }
 }
 
@@ -34,7 +75,11 @@ private struct DesktopVLCTrackDescription {
     var next: UnsafeMutablePointer<DesktopVLCTrackDescription>?
 }
 
-private final class DesktopVLCLibrary {
+// Every field is immutable after initialization. Calls operate on libvlc-owned
+// handles, whose API provides its own synchronization; deinit runs only after
+// the singleton is unreachable. This makes sharing the resolved C function
+// table safe without forcing a process-wide actor hop for availability checks.
+private final class DesktopVLCLibrary: @unchecked Sendable {
     typealias VLCInstancePointer = OpaquePointer
     typealias VLCMediaPointer = OpaquePointer
     typealias VLCMediaPlayerPointer = OpaquePointer
@@ -393,12 +438,18 @@ private final class DesktopVLCLibrary {
     }
 
     func setOutputVolume(_ value: Float, for player: VLCMediaPlayerPointer?) {
-        guard let player, let audioSetVolumeFn else { return }
+        guard value.isFinite, let player, let audioSetVolumeFn else { return }
         _ = audioSetVolumeFn(player, Int32((min(max(value, 0), 1) * 100).rounded()))
     }
 
     func seek(to seconds: Double, for player: VLCMediaPlayerPointer?) -> Bool {
-        guard let player, let setTimeFn else { return false }
+        guard let player,
+              let setTimeFn,
+              seconds.isFinite,
+              seconds >= 0,
+              seconds <= Double(Int64.max) / 1000 else {
+            return false
+        }
         setTimeFn(player, Int64(seconds * 1000))
         return true
     }
@@ -453,7 +504,7 @@ private final class DesktopVLCLibrary {
         while let currentPointer = current {
             let description = currentPointer.pointee
             let id = String(description.identifier)
-            let name = description.name.flatMap { String(validatingUTF8: $0) } ?? id
+            let name = description.name.flatMap { String(validatingCString: $0) } ?? id
             if description.identifier >= 0 {
                 infos.append(TrackInfo(id: id, name: name, languageCode: nil))
             }
@@ -468,29 +519,54 @@ private final class DesktopVLCLibrary {
     }
 }
 
+/// Owns non-Sendable libvlc handles outside the main-actor wrapper so cleanup
+/// remains valid on macOS 14, where Swift's `isolated deinit` is unavailable.
+private final class DesktopVLCResources {
+    let runtime = DesktopVLCLibrary.shared
+    var instance: DesktopVLCLibrary.VLCInstancePointer?
+    var mediaPlayer: DesktopVLCLibrary.VLCMediaPlayerPointer?
+    var pollTimer: Timer?
+
+    deinit {
+        pollTimer?.invalidate()
+        runtime.releasePlayer(mediaPlayer)
+        runtime.releaseInstance(instance)
+    }
+}
+
+@MainActor
 public final class DesktopVLCPlayerWrapper: NSObject, PlayerProtocol {
-    private let runtime = DesktopVLCLibrary.shared
+    private let resources = DesktopVLCResources()
     private let playerView = VLCPlayerView()
 
-    private var instance: DesktopVLCLibrary.VLCInstancePointer?
-    private var mediaPlayer: DesktopVLCLibrary.VLCMediaPlayerPointer?
-    private var pollTimer: Timer?
+    private var runtime: DesktopVLCLibrary { resources.runtime }
+    private var instance: DesktopVLCLibrary.VLCInstancePointer? {
+        get { resources.instance }
+        set { resources.instance = newValue }
+    }
+    private var mediaPlayer: DesktopVLCLibrary.VLCMediaPlayerPointer? {
+        get { resources.mediaPlayer }
+        set { resources.mediaPlayer = newValue }
+    }
+    private var pollTimer: Timer? {
+        get { resources.pollTimer }
+        set { resources.pollTimer = newValue }
+    }
     private var pendingResumeTime: Double?
     private var hasReportedReady = false
     private var lastState: DesktopVLCState = .nothingSpecial
     private var shouldEmitRuntimeState = false
+    private var desiredPlaybackRate: Float = 1
+    private var desiredMuted = false
 
-    weak var lifecycleReporter: PlayerLifecycleReporting?
-    var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
+    nonisolated static var isRuntimeAvailable: Bool { DesktopVLCLibrary.isAvailable }
+
+    public weak var lifecycleReporter: PlayerLifecycleReporting?
+    public var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
+    public var hasLoadedMedia: Bool { mediaPlayer != nil }
 
     public override init() {
         super.init()
-    }
-
-    deinit {
-        stopPolling()
-        releasePlayer()
-        runtime.releaseInstance(instance)
     }
 
     private var state: DesktopVLCState {
@@ -512,7 +588,9 @@ public final class DesktopVLCPlayerWrapper: NSObject, PlayerProtocol {
     private func startPolling() {
         stopPolling()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.pollPlayer()
+            Task { @MainActor [weak self] in
+                self?.pollPlayer()
+            }
         }
         if let pollTimer {
             RunLoop.main.add(pollTimer, forMode: .common)
@@ -582,12 +660,18 @@ extension DesktopVLCPlayerWrapper: PlaybackControlProtocol {
     }
 
     public var playbackSpeed: Float {
-        get { runtime.rate(for: mediaPlayer) }
-        set { runtime.setRate(newValue, for: mediaPlayer) }
+        get { desiredPlaybackRate }
+        set {
+            guard newValue.isFinite, newValue > 0 else { return }
+            desiredPlaybackRate = newValue
+            runtime.setRate(newValue, for: mediaPlayer)
+        }
     }
 
     public func play() {
         runtime.play(mediaPlayer)
+        runtime.setRate(desiredPlaybackRate, for: mediaPlayer)
+        runtime.setMuted(desiredMuted, for: mediaPlayer)
         startPolling()
         emitRuntimeState()
     }
@@ -599,15 +683,13 @@ extension DesktopVLCPlayerWrapper: PlaybackControlProtocol {
 
     public func stop() {
         runtime.stop(mediaPlayer)
-        // stop() previously left the 0.5s poll timer running and the libvlc
-        // player allocated, so a dismissed player kept waking the main run loop
-        // twice a second for the lifetime of the process.
         stopPolling()
-        releasePlayer()
+        lastState = .stopped
         emitRuntimeState()
     }
 
     public func setMuted(_ muted: Bool) {
+        desiredMuted = muted
         runtime.setMuted(muted, for: mediaPlayer)
     }
 }
@@ -622,15 +704,16 @@ extension DesktopVLCPlayerWrapper: TimeControlProtocol {
     }
 
     public var bufferedDuration: Double {
-        duration * runtime.bufferedPosition(for: mediaPlayer)
+        // libvlc's position is the playhead, not a buffered range.
+        0
     }
 
     public var isBuffering: Bool {
         state == .opening || state == .buffering
     }
 
-    public func seek(to time: Double, completion: ((Bool) -> Void)? = nil) {
-        guard duration > 0 else {
+    public func seek(to time: Double, completion: (@MainActor (Bool) -> Void)? = nil) {
+        guard time.isFinite, time >= 0, duration > 0 else {
             completion?(false)
             return
         }
@@ -688,7 +771,9 @@ extension DesktopVLCPlayerWrapper: MediaLoadingProtocol {
         stopPolling()
         releasePlayer()
 
-        pendingResumeTime = lastPosition
+        pendingResumeTime = lastPosition.flatMap { value in
+            value.isFinite && value >= 0 ? value : nil
+        }
         hasReportedReady = false
         lastState = .nothingSpecial
 
@@ -698,6 +783,8 @@ extension DesktopVLCPlayerWrapper: MediaLoadingProtocol {
             return
         }
 
+        runtime.setRate(desiredPlaybackRate, for: mediaPlayer)
+        runtime.setMuted(desiredMuted, for: mediaPlayer)
         startPolling()
         runtime.play(mediaPlayer)
         emitRuntimeState()
@@ -715,10 +802,9 @@ extension DesktopVLCPlayerWrapper: ViewRenderingProtocol {
 }
 
 extension DesktopVLCPlayerWrapper: GestureHandlingProtocol {
-    public func handlePinchGesture(scale: CGFloat) {
-        scale > 1 ? setGravityToFill() : setGravityToDefault()
-    }
+    public var isZoomSupported: Bool { false }
 
+    public func handlePinchGesture(scale: CGFloat) {}
     public func setGravityToDefault() {}
     public func setGravityToFill() {}
 }
@@ -730,6 +816,7 @@ extension DesktopVLCPlayerWrapper: StreamingInfoProtocol {
 }
 
 extension DesktopVLCPlayerWrapper: PlayerEventSource {}
+extension DesktopVLCPlayerWrapper: PlayerMediaAvailabilityReporting {}
 
 extension DesktopVLCPlayerWrapper: PlayerMuteControlling {}
 
@@ -741,27 +828,28 @@ extension DesktopVLCPlayerWrapper: PlayerMuteControlling {}
 extension DesktopVLCPlayerWrapper: PlayerVolumeControlling {
     var supportsVolumeControl: Bool { runtime.supportsVolumeControl }
 
-    var outputVolume: Float {
+    public var outputVolume: Float {
         runtime.outputVolume(for: mediaPlayer)
     }
 
-    func setOutputVolume(_ value: Float) {
+    public func setOutputVolume(_ value: Float) {
+        guard value.isFinite else { return }
         runtime.setOutputVolume(value, for: mediaPlayer)
     }
 }
 
 extension DesktopVLCPlayerWrapper: PlayerPictureInPictureSupporting {
-    var isPictureInPictureSupported: Bool { false }
-    var isPictureInPicturePossible: Bool { false }
+    public var isPictureInPictureSupported: Bool { false }
+    public var isPictureInPicturePossible: Bool { false }
 }
 
 extension DesktopVLCPlayerWrapper: PlayerStateSource {
-    func startRuntimeStateUpdates() {
+    public func startRuntimeStateUpdates() {
         shouldEmitRuntimeState = true
         emitRuntimeState()
     }
 
-    func stopRuntimeStateUpdates() {
+    public func stopRuntimeStateUpdates() {
         shouldEmitRuntimeState = false
     }
 }

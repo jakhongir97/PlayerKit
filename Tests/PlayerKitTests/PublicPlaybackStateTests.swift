@@ -15,6 +15,7 @@ import PlayerKit
 /// `availableAudioTracks`, `availableSubtitles`, `selectedAudio` and
 /// `selectedSubtitle` were all `internal`, so an application literally could
 /// not ask the library whether it was playing.
+@MainActor
 final class PublicPlaybackStateTests: XCTestCase {
 
     /// Every promoted property is readable from outside the module.
@@ -95,5 +96,79 @@ final class PublicPlaybackStateTests: XCTestCase {
 
         // Reading is public; writing is `internal(set)` and unavailable here.
         XCTAssertFalse(manager.isPlaying)
+    }
+
+    /// A host-installed backend must be able to receive and invoke the same
+    /// lifecycle sink as the built-in backends. Keeping this file non-testable
+    /// catches either protocol accidentally becoming module-internal again.
+    func testCustomBackendLifecycleBridgeIsPublic() {
+        let manager = PlayerManager.shared
+        let backend = AVPlayerWrapper()
+        defer { manager.tearDown() }
+
+        let customSource: PlayerEventSource = PublicLifecycleSourceProbe()
+        customSource.lifecycleReporter = manager
+        XCTAssertTrue(customSource.lifecycleReporter === manager)
+
+        manager.installPlayerBackend(backend)
+        XCTAssertTrue(backend.lifecycleReporter === manager)
+        backend.lifecycleReporter?.playerDidBecomeReady()
+        XCTAssertTrue(manager.isMediaReady)
+    }
+
+    func testCustomBackendOptionalCapabilitiesArePublic() {
+        let backend = PublicCapabilityProbe()
+        var observedState: PlayerRuntimeState?
+        backend.onRuntimeStateChange = { observedState = $0 }
+
+        backend.startRuntimeStateUpdates()
+        backend.setMuted(true)
+        backend.setOutputVolume(0.25)
+
+        XCTAssertEqual(observedState?.currentTime, 12)
+        XCTAssertTrue(backend.hasLoadedMedia)
+        XCTAssertTrue(backend.isMuted)
+        XCTAssertEqual(backend.outputVolume, 0.25)
+        XCTAssertTrue(backend.canSeekWithinCurrentWindow(to: 12, tolerance: 0))
+        XCTAssertFalse(backend.isPictureInPictureSupported)
+    }
+}
+
+@MainActor
+private final class PublicLifecycleSourceProbe: PlayerEventSource {
+    weak var lifecycleReporter: PlayerLifecycleReporting?
+}
+
+@MainActor
+private final class PublicCapabilityProbe: PlayerStateSource,
+                                           PlayerMediaAvailabilityReporting,
+                                           PlayerMuteControlling,
+                                           PlayerVolumeControlling,
+                                           PlayerPictureInPictureSupporting,
+                                           PlayerSeekWindowReporting {
+    var onRuntimeStateChange: ((PlayerRuntimeState) -> Void)?
+    let hasLoadedMedia = true
+    private(set) var isMuted = false
+    private(set) var outputVolume: Float = 1
+    let isPictureInPictureSupported = false
+    let isPictureInPicturePossible = false
+    let seekableTimeWindow: ClosedRange<Double>? = 0 ... 120
+
+    func startRuntimeStateUpdates() {
+        onRuntimeStateChange?(PlayerRuntimeState(
+            isPlaying: true,
+            isBuffering: false,
+            currentTime: 12,
+            duration: 120,
+            bufferedDuration: 30
+        ))
+    }
+
+    func stopRuntimeStateUpdates() {}
+    func setMuted(_ muted: Bool) { isMuted = muted }
+    func setOutputVolume(_ value: Float) { outputVolume = value }
+
+    func canSeekWithinCurrentWindow(to time: Double, tolerance: Double) -> Bool {
+        seekableTimeWindow?.contains(time) == true
     }
 }

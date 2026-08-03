@@ -10,6 +10,7 @@ import Foundation
 /// second tap on the same side has to take that toggle back and start skipping,
 /// and once a session is open plain single taps have to keep skipping instead of
 /// toggling — and each of those is pinned by test.
+@MainActor
 final class TapSeekMachine {
 
     // MARK: - Wiring
@@ -96,11 +97,6 @@ final class TapSeekMachine {
 
     init(clock: GestureClock) {
         self.clock = clock
-    }
-
-    deinit {
-        doubleTapTimer?.cancel()
-        seekSessionTimer?.cancel()
     }
 
     var isSeeking: Bool { currentOverlay != nil }

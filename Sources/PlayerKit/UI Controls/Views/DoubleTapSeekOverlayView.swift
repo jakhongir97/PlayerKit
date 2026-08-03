@@ -97,7 +97,7 @@ struct DoubleTapSeekOverlayView: View {
                 .font(.system(size: 32, weight: .semibold, design: .rounded))
                 .monospacedDigitsCompat()
             Text("SECONDS")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .trackingCompat(1.8)
                 .opacity(0.65)
         }
@@ -150,13 +150,21 @@ private struct SeekMedallionGlass: ViewModifier {
 
     @ViewBuilder
     private func glass(_ content: Content) -> some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, macOS 26.0, *) {
             content.glassEffect(.clear, in: .circle)
         } else {
-            content
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
+            fallback(content)
         }
+        #else
+        fallback(content)
+        #endif
+    }
+
+    private func fallback(_ content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial, in: Circle())
+            .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
     }
 }
 

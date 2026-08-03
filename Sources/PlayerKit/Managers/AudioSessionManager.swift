@@ -3,6 +3,7 @@ import Foundation
 #if os(iOS)
 import AVFoundation
 
+@MainActor
 class AudioSessionManager: NSObject {
     static let shared = AudioSessionManager()
     var onPauseRequested: (() -> Void)?
@@ -15,6 +16,12 @@ class AudioSessionManager: NSObject {
 
     private(set) var isSessionActive = false
     private var wasPlayingWhenInterrupted = false
+    private struct AudioSessionConfiguration {
+        let category: AVAudioSession.Category
+        let mode: AVAudioSession.Mode
+        let options: AVAudioSession.CategoryOptions
+    }
+    private var previousConfiguration: AudioSessionConfiguration?
 
     let ownership = SharedResourceOwnership()
 
@@ -33,15 +40,38 @@ class AudioSessionManager: NSObject {
     /// `AVAudioSession` is process-global, so the session stays active until
     /// every owner has released it — see `deactivateAudioSession(for:)`.
     func configureAudioSession(for owner: AnyObject) {
-        ownership.addOwner(owner)
+        guard ownership.addOwner(owner) else { return }
+        let session = AVAudioSession.sharedInstance()
+        let configurationToRestore = AudioSessionConfiguration(
+            category: session.category,
+            mode: session.mode,
+            options: session.categoryOptions
+        )
+        previousConfiguration = configurationToRestore
         do {
-            let session = AVAudioSession.sharedInstance()
-
             // Configure iOS playback audio session.
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
             try session.setActive(true)
             isSessionActive = true
         } catch {
+            ownership.removeOwner(owner)
+            // `setCategory` may have succeeded before `setActive` failed. Roll
+            // the process-global session back even on a partial acquisition;
+            // otherwise PlayerKit changes the host's audio policy without ever
+            // owning an active session that teardown could restore.
+            do {
+                try session.setCategory(
+                    configurationToRestore.category,
+                    mode: configurationToRestore.mode,
+                    options: configurationToRestore.options
+                )
+            } catch {
+                PlayerKitLog.debug(
+                    "AudioSessionManager",
+                    "Failed to restore audio category after activation failure: \(error)"
+                )
+            }
+            previousConfiguration = nil
             PlayerKitLog.debug("AudioSessionManager", "Failed to configure audio session: \(error)")
         }
     }
@@ -64,13 +94,22 @@ class AudioSessionManager: NSObject {
         isSessionActive = false
         resourceReleaseCount += 1
         do {
-            try AVAudioSession.sharedInstance().setActive(
+            let session = AVAudioSession.sharedInstance()
+            try session.setActive(
                 false,
                 options: [.notifyOthersOnDeactivation]
             )
+            if let previousConfiguration {
+                try session.setCategory(
+                    previousConfiguration.category,
+                    mode: previousConfiguration.mode,
+                    options: previousConfiguration.options
+                )
+            }
         } catch {
             PlayerKitLog.debug("AudioSessionManager", "Failed to deactivate audio session: \(error)")
         }
+        previousConfiguration = nil
     }
 
     private func setupNotifications() {
@@ -89,14 +128,15 @@ class AudioSessionManager: NSObject {
         )
     }
 
-    @objc private func handleInterruption(notification: Notification) {
+    @objc nonisolated private func handleInterruption(notification: Notification) {
         guard let userInfo = notification.userInfo,
               let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+        let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt
 
         // AVAudioSession notifications are not guaranteed to arrive on the main
         // thread, and both callbacks drive @Published state on PlayerManager.
-        dispatchToMain { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             switch type {
             case .began:
@@ -105,7 +145,7 @@ class AudioSessionManager: NSObject {
             case .ended:
                 guard self.wasPlayingWhenInterrupted else { return }
                 self.wasPlayingWhenInterrupted = false
-                if let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt {
+                if let optionsValue {
                     let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
                     if options.contains(.shouldResume) {
                         self.onResumeRequested?()
@@ -117,27 +157,20 @@ class AudioSessionManager: NSObject {
         }
     }
 
-    @objc private func handleRouteChange(notification: Notification) {
+    @objc nonisolated private func handleRouteChange(notification: Notification) {
         guard let userInfo = notification.userInfo,
               let reasonValue = userInfo[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else { return }
 
         guard reason == .oldDeviceUnavailable else { return }
         // Headphones unplugged: pause rather than blasting through the speaker.
-        dispatchToMain { [weak self] in
+        Task { @MainActor [weak self] in
             self?.onPauseRequested?()
-        }
-    }
-
-    private func dispatchToMain(_ work: @escaping () -> Void) {
-        if Thread.isMainThread {
-            work()
-        } else {
-            DispatchQueue.main.async(execute: work)
         }
     }
 }
 #else
+@MainActor
 final class AudioSessionManager {
     static let shared = AudioSessionManager()
     var onPauseRequested: (() -> Void)?

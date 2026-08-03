@@ -1,5 +1,6 @@
 import SwiftUI
 
+@MainActor
 struct MediaOptionsMenu: View {
     @StateObject private var viewModel: MediaOptionsMenuViewModel
     private let playerManager: PlayerManager
@@ -12,6 +13,7 @@ struct MediaOptionsMenu: View {
     }
 
     var body: some View {
+        #if compiler(>=6.2)
         if #available(iOS 26.0, macOS 26.0, *) {
             GlassEffectContainer {
                 HStack {
@@ -33,22 +35,26 @@ struct MediaOptionsMenu: View {
             .buttonStyle(.plain)
             .transaction { $0.animation = nil }
         } else {
-            // The `iOS 15.0 / macOS 12.0` tier this replaces was always true at
-            // the package's deployment target, making the plain-colour fallback
-            // that followed it unreachable.
-            HStack {
-                PlaybackSpeedMenu(playerManager: playerManager)
-
-                if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
-                if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
-            }
-            .padding(insets)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(
-                Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1)
-            )
-            .contentShape(Capsule())
-            .buttonStyle(.plain)
+            fallback
         }
+        #else
+        fallback
+        #endif
+    }
+
+    private var fallback: some View {
+        HStack {
+            PlaybackSpeedMenu(playerManager: playerManager)
+
+            if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
+            if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
+        }
+        .padding(insets)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(
+            Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1)
+        )
+        .contentShape(Capsule())
+        .buttonStyle(.plain)
     }
 }

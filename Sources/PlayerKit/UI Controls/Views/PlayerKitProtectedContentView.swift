@@ -5,8 +5,14 @@ import UIKit
 
 final class PlayerKitProtectedContentView: UIView {
     private let secureTextField = UITextField(frame: .zero)
+    private let captureShieldView = UIView(frame: .zero)
+    private let captureShieldLabel = UILabel(frame: .zero)
     private weak var protectedContentView: UIView?
     private var contentConstraints: [NSLayoutConstraint] = []
+
+    var isContentHiddenForCapture: Bool {
+        !captureShieldView.isHidden
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -18,6 +24,14 @@ final class PlayerKitProtectedContentView: UIView {
         configure()
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIScreen.capturedDidChangeNotification,
+            object: nil
+        )
+    }
+
     func setProtectedContentView(_ contentView: UIView?) {
         guard protectedContentView !== contentView else {
             installProtectedContentIfPossible()
@@ -27,8 +41,13 @@ final class PlayerKitProtectedContentView: UIView {
         NSLayoutConstraint.deactivate(contentConstraints)
         contentConstraints.removeAll()
 
-        if protectedContentView?.superview != nil {
-            protectedContentView?.removeFromSuperview()
+        // Only detach a player view that is inside *our* subtree. SwiftUI builds
+        // the replacement host before dismantling the one it replaces, so the
+        // outgoing host would otherwise pull the video straight back out of the
+        // incoming one. `layoutSubviews` re-installs and hides that here, but
+        // the AppKit branch had no such recovery and went black.
+        if let existing = protectedContentView, existing.isDescendant(of: self) {
+            existing.removeFromSuperview()
         }
 
         protectedContentView = contentView
@@ -38,6 +57,12 @@ final class PlayerKitProtectedContentView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         installProtectedContentIfPossible()
+        bringSubviewToFront(captureShieldView)
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateCaptureState()
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -50,6 +75,11 @@ final class PlayerKitProtectedContentView: UIView {
     }
 
     private func configure() {
+        let captureMessage = NSLocalizedString(
+            "Video hidden while screen sharing is active",
+            bundle: .module,
+            comment: "Shown instead of protected video during active screen capture"
+        )
         backgroundColor = .black
         clipsToBounds = true
 
@@ -70,6 +100,77 @@ final class PlayerKitProtectedContentView: UIView {
             secureTextField.leadingAnchor.constraint(equalTo: leadingAnchor),
             secureTextField.trailingAnchor.constraint(equalTo: trailingAnchor),
         ])
+
+        captureShieldView.translatesAutoresizingMaskIntoConstraints = false
+        captureShieldView.backgroundColor = .black
+        captureShieldView.isUserInteractionEnabled = false
+        captureShieldView.isAccessibilityElement = true
+        captureShieldView.accessibilityLabel = captureMessage
+        addSubview(captureShieldView)
+        NSLayoutConstraint.activate([
+            captureShieldView.topAnchor.constraint(equalTo: topAnchor),
+            captureShieldView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            captureShieldView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            captureShieldView.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+
+        captureShieldLabel.translatesAutoresizingMaskIntoConstraints = false
+        captureShieldLabel.text = captureMessage
+        captureShieldLabel.textColor = .white
+        captureShieldLabel.font = .preferredFont(forTextStyle: .headline)
+        captureShieldLabel.adjustsFontForContentSizeCategory = true
+        captureShieldLabel.numberOfLines = 0
+        captureShieldLabel.textAlignment = .center
+        captureShieldLabel.isAccessibilityElement = false
+        captureShieldView.addSubview(captureShieldLabel)
+        NSLayoutConstraint.activate([
+            captureShieldLabel.centerXAnchor.constraint(equalTo: captureShieldView.centerXAnchor),
+            captureShieldLabel.centerYAnchor.constraint(equalTo: captureShieldView.centerYAnchor),
+            captureShieldLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: captureShieldView.leadingAnchor,
+                constant: 24
+            ),
+            captureShieldLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: captureShieldView.trailingAnchor,
+                constant: -24
+            ),
+        ])
+        applyCaptureState(false)
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(captureStateDidChange),
+            name: UIScreen.capturedDidChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func captureStateDidChange(_ notification: Notification) {
+        guard let changedScreen = notification.object as? UIScreen else {
+            updateCaptureState()
+            return
+        }
+
+        let viewScreen = window?.windowScene?.screen
+        guard viewScreen == nil || viewScreen === changedScreen else { return }
+        updateCaptureState()
+    }
+
+    private func updateCaptureState() {
+        guard let screen = window?.windowScene?.screen else {
+            applyCaptureState(false)
+            return
+        }
+        applyCaptureState(screen.isCaptured)
+    }
+
+    /// Active capture is a supported signal for recording, mirroring and remote
+    /// control. It cannot retroactively hide a one-frame screenshot, so the
+    /// secure-text canvas remains a best-effort additional layer.
+    func applyCaptureState(_ isCaptured: Bool) {
+        captureShieldView.isHidden = !isCaptured
+        captureShieldView.accessibilityElementsHidden = !isCaptured
+        protectedContentView?.accessibilityElementsHidden = isCaptured
     }
 
     private func installProtectedContentIfPossible() {
@@ -92,6 +193,7 @@ final class PlayerKitProtectedContentView: UIView {
             protectedContentView.trailingAnchor.constraint(equalTo: secureContainer.trailingAnchor),
         ]
         NSLayoutConstraint.activate(contentConstraints)
+        protectedContentView.accessibilityElementsHidden = isContentHiddenForCapture
     }
 
     private var secureCanvasView: UIView? {
@@ -138,26 +240,53 @@ final class PlayerKitProtectedContentView: NSView {
         configure()
     }
 
-    deinit {
-        releaseWindowProtection()
-    }
-
     func setProtectedContentView(_ contentView: NSView?) {
-        guard protectedContentView !== contentView else { return }
+        guard protectedContentView !== contentView else {
+            adoptProtectedContentIfOrphaned()
+            return
+        }
 
         NSLayoutConstraint.deactivate(contentConstraints)
         contentConstraints.removeAll()
 
-        if protectedContentView?.superview != nil {
+        // Only ever detach the player view from *our own* hierarchy. SwiftUI
+        // builds the replacement host before dismantling the one it replaces,
+        // so by the time the outgoing host is torn down this same player view
+        // is already a subview of the incoming one. Removing it from whatever
+        // superview it currently has took the video straight back out of the
+        // live host, leaving a `PlayerKitProtectedContentView` whose only
+        // content is its own black backing layer.
+        if protectedContentView?.superview === self {
             protectedContentView?.removeFromSuperview()
         }
 
         protectedContentView = contentView
 
         guard let contentView else { return }
+        install(contentView)
+    }
+
+    override func layout() {
+        super.layout()
+        adoptProtectedContentIfOrphaned()
+    }
+
+    /// Passive recovery: re-adopt the player view only when nothing else owns
+    /// it. Adopting unconditionally here would let a host that SwiftUI has not
+    /// dismantled yet steal the video back out of the one that just took it.
+    private func adoptProtectedContentIfOrphaned() {
+        guard let contentView = protectedContentView, contentView.superview == nil else { return }
+        install(contentView)
+    }
+
+    private func install(_ contentView: NSView) {
+        guard contentView.superview !== self else { return }
+
         contentView.removeFromSuperview()
         contentView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(contentView)
+
+        NSLayoutConstraint.deactivate(contentConstraints)
         contentConstraints = [
             contentView.topAnchor.constraint(equalTo: topAnchor),
             contentView.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -194,6 +323,7 @@ final class PlayerKitProtectedContentView: NSView {
     }
 }
 
+@MainActor
 private final class PlayerKitWindowCaptureProtectionRegistry {
     static let shared = PlayerKitWindowCaptureProtectionRegistry()
 

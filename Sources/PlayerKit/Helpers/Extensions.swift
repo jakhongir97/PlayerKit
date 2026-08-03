@@ -10,6 +10,7 @@ import UIKit
 #elseif canImport(AppKit)
 import AppKit
 #endif
+import SwiftUI
 
 // Add a safe subscript for collections to avoid index out of range errors
 extension Collection {
@@ -32,9 +33,57 @@ extension BinaryFloatingPoint {
 extension PKImage {
     static func fromFramework(named name: String) -> PKImage? {
         #if canImport(UIKit)
-        UIImage(named: name, in: .module, compatibleWith: nil)
+        if let catalogImage = UIImage(named: name, in: .module, compatibleWith: nil) {
+            return catalogImage
+        }
+        guard let url = rawSwiftPMAssetURL(named: name),
+              let image = UIImage(contentsOfFile: url.path) else {
+            return nil
+        }
+        return image.withRenderingMode(.alwaysTemplate)
         #else
-        Bundle.module.image(forResource: NSImage.Name(name))
+        if let catalogImage = Bundle.module.image(forResource: NSImage.Name(name)) {
+            return catalogImage
+        }
+        guard let url = rawSwiftPMAssetURL(named: name),
+              let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        image.isTemplate = true
+        return image
+        #endif
+    }
+
+    /// `swift build` copies asset catalogs verbatim on macOS instead of
+    /// compiling an Assets.car. Xcode builds take the fast catalog path above;
+    /// this fallback keeps command-line SwiftPM consumers functional too.
+    private static func rawSwiftPMAssetURL(named name: String) -> URL? {
+        let directory = Bundle.module.bundleURL
+            .appendingPathComponent("Assets.xcassets/Images", isDirectory: true)
+            .appendingPathComponent("\(name).imageset", isDirectory: true)
+
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        ) else {
+            return nil
+        }
+
+        return files.first { url in
+            url.pathExtension.lowercased() == "png" && !url.deletingPathExtension().lastPathComponent.contains("@")
+        }
+    }
+}
+
+extension Image {
+    static func fromFramework(named name: String, fallbackSystemName: String) -> Image {
+        guard let image = PKImage.fromFramework(named: name) else {
+            return Image(systemName: fallbackSystemName)
+        }
+        #if canImport(UIKit)
+        return Image(uiImage: image)
+        #else
+        return Image(nsImage: image)
         #endif
     }
 }

@@ -6,6 +6,7 @@ import XCTest
 ///
 /// Each test names the behaviour that was wrong before, so a future change that
 /// reintroduces it fails here rather than in a user's hands.
+@MainActor
 final class AuditRegressionTests: XCTestCase {
 
     // MARK: - Time formatting
@@ -784,6 +785,11 @@ final class AuditRegressionTests: XCTestCase {
         XCTAssertFalse(manager.isPlaybackRequested)
     }
 
+    func testOnlyMediaLoadsAreCancelledWhenTheLocalPlayerDetaches() {
+        XCTAssertTrue(CastPendingRequestKind.mediaLoad.cancelsWhenPlayerDetaches)
+        XCTAssertFalse(CastPendingRequestKind.stop.cancelsWhenPlayerDetaches)
+    }
+
     // MARK: - Ordinary playback
 
     /// Kept from the deleted DubberDisabledTests, where it guarded ordinary
@@ -839,7 +845,7 @@ private final class LiveTimelineMockPlayer: PlayerProtocol, PlayerSeekWindowRepo
     func pause() { isPlaying = false }
     func stop() { isPlaying = false }
 
-    func seek(to time: Double, completion: ((Bool) -> Void)?) {
+    func seek(to time: Double, completion: (@MainActor (Bool) -> Void)?) {
         seekRequests.append(time)
         currentTime = time
         completion?(true)

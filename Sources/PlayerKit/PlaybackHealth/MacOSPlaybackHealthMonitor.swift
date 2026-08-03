@@ -1,5 +1,5 @@
 #if os(macOS)
-import AVFoundation
+@preconcurrency import AVFoundation
 import CryptoKit
 import Foundation
 import OSLog
@@ -294,7 +294,12 @@ actor MacOSPlaybackHealthClassifier {
     }
 }
 
-final class MacOSPlaybackHealthMonitor {
+// The monitor is intentionally multi-queue: mutable telemetry is guarded by
+// `stateLock`, error-log parsing is serialized by `errorLogQueue`, and emitted
+// events cross back through an explicitly main-actor callback. AVFoundation's
+// reference types predate Sendable annotations, so this conformance records the
+// synchronization the implementation already enforces.
+final class MacOSPlaybackHealthMonitor: @unchecked Sendable {
     private static let naturalEndResumeThreshold: TimeInterval = 1
     private static let stallDuplicateWindow: TimeInterval = 2
     private static let stallFingerprintCapacity = 8
