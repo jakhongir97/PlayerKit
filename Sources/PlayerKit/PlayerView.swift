@@ -317,6 +317,7 @@ extension PlayerView {
         let titleImageURL: URL?
         let description: String?
         let url: URL
+        let urlAssetIdentifier: ObjectIdentifier?
         let posterURL: URL?
         let thumbnailVTTURL: URL?
         let castVideoURL: URL?
@@ -335,6 +336,7 @@ extension PlayerView {
             titleImageURL = item.titleImageURL
             description = item.description
             url = item.url
+            urlAssetIdentifier = item.urlAsset.map { ObjectIdentifier($0) }
             posterURL = item.posterUrl
             thumbnailVTTURL = item.thumbnailVTTURL
             castVideoURL = item.castVideoUrl

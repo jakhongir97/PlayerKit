@@ -493,6 +493,7 @@ public class PlayerManager: ObservableObject {
             titleImageURL: sourceItem.titleImageURL,
             description: sourceItem.description,
             url: sourceItem.url,
+            urlAsset: sourceItem.urlAsset,
             posterUrl: sourceItem.posterUrl,
             thumbnailVTTURL: sourceItem.thumbnailVTTURL,
             castVideoUrl: sourceItem.castVideoUrl,
@@ -511,6 +512,7 @@ public class PlayerManager: ObservableObject {
             titleImageURL: sourceItem.titleImageURL,
             description: sourceItem.description,
             url: sourceItem.url,
+            urlAsset: sourceItem.urlAsset,
             posterUrl: sourceItem.posterUrl,
             thumbnailVTTURL: sourceItem.thumbnailVTTURL,
             castVideoUrl: sourceItem.castVideoUrl,
@@ -632,24 +634,29 @@ public class PlayerManager: ObservableObject {
         // session is acquired at first load rather than when `Player` is merely
         // constructed.
         AudioSessionManager.shared.configureAudioSession(for: self)
-        #if os(macOS)
         if let avPlayer = currentPlayer as? AVPlayerWrapper {
+            #if os(macOS)
             endPlaybackDiagnosticsSampling(reason: "player item replaced")
             resetPlaybackDiagnosticsHistory()
             avPlayer.load(
                 url: url,
                 lastPosition: resumePosition,
+                urlAsset: itemContext.urlAsset,
                 playbackHealthAssetIdentifier: itemContext.playbackHealthAssetIdentifier,
                 playbackHealthMonitoringEnabled: isPlaybackHealthMonitoringEnabled,
                 playbackHealthMonitoringEligible: itemContext.playbackHealthMonitoringEligible
             )
             startPlaybackDiagnosticsSampling()
+            #else
+            avPlayer.load(
+                url: url,
+                urlAsset: itemContext.urlAsset,
+                lastPosition: resumePosition
+            )
+            #endif
         } else {
             currentPlayer?.load(url: url, lastPosition: resumePosition)
         }
-        #else
-        currentPlayer?.load(url: url, lastPosition: resumePosition)
-        #endif
         if !startsPlayback {
             // Unlike AVFoundation, the iOS VLC backend calls play() inside its
             // own load(), so gating the resume ladder is not enough for it.

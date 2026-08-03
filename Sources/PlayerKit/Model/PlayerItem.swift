@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 public struct PlayerSkipSegment: Hashable, Sendable {
@@ -47,6 +48,9 @@ public struct PlayerItem {
     public let titleImageURL: URL?
     public let description: String?
     public let url: URL
+    /// An app-prepared source for AVFoundation playback. `url` remains the
+    /// fallback for VLC, external playback, and custom backends.
+    public let urlAsset: AVURLAsset?
     public let posterUrl: URL?
     /// A WebVTT index whose cue payloads point to full-frame images or sprite
     /// regions used while scrubbing. PlayerKit loads it only in memory.
@@ -73,6 +77,7 @@ public struct PlayerItem {
                 titleImageURL: URL? = nil,
                 description: String? = nil,
                 url: URL,
+                urlAsset: AVURLAsset? = nil,
                 posterUrl: URL? = nil,
                 thumbnailVTTURL: URL? = nil,
                 castVideoUrl: URL? = nil,
@@ -88,6 +93,7 @@ public struct PlayerItem {
         self.titleImageURL = titleImageURL
         self.description = description
         self.url = url
+        self.urlAsset = urlAsset
         self.posterUrl = posterUrl
         self.thumbnailVTTURL = thumbnailVTTURL
         self.castVideoUrl = castVideoUrl ?? externalPlaybackURL
@@ -105,6 +111,7 @@ public struct PlayerItem {
                 titleImageURL: URL? = nil,
                 description: String? = nil,
                 url: URL,
+                urlAsset: AVURLAsset? = nil,
                 posterUrl: URL? = nil,
                 thumbnailVTTURL: URL? = nil,
                 castVideoUrl: URL? = nil,
@@ -118,6 +125,7 @@ public struct PlayerItem {
         self.titleImageURL = titleImageURL
         self.description = description
         self.url = url
+        self.urlAsset = urlAsset
         self.posterUrl = posterUrl
         self.thumbnailVTTURL = thumbnailVTTURL
         self.castVideoUrl = castVideoUrl ?? externalPlaybackURL

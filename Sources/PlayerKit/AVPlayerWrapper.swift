@@ -305,6 +305,10 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
         player?.currentItem?.preferredPeakBitRate
     }
 
+    var currentItemAsset: AVAsset? {
+        player?.currentItem?.asset
+    }
+
     /// Whether AVPlayer may route video to an external destination (AirPlay).
     ///
     /// Defaults to `false` to preserve the capture-protection posture this
@@ -625,17 +629,22 @@ extension AVPlayerWrapper: TrackSelectionProtocol {
 // MARK: - MediaLoadingProtocol
 extension AVPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
+        load(url: url, urlAsset: nil, lastPosition: lastPosition)
+    }
+
+    func load(url: URL, urlAsset: AVURLAsset?, lastPosition: Double? = nil) {
         #if os(macOS)
         load(
             url: url,
             lastPosition: lastPosition,
+            urlAsset: urlAsset,
             playbackHealthAssetIdentifier: nil,
             playbackHealthMonitoringEnabled: false,
             playbackHealthMonitoringEligible: false
         )
         #else
         install(
-            playerItem: AVPlayerItem(url: url),
+            playerItem: urlAsset.map { AVPlayerItem(asset: $0) } ?? AVPlayerItem(url: url),
             sourceURL: url,
             lastPosition: lastPosition
         )
@@ -646,6 +655,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
     func load(
         url: URL,
         lastPosition: Double? = nil,
+        urlAsset: AVURLAsset? = nil,
         playbackHealthAssetIdentifier: String?,
         playbackHealthMonitoringEnabled: Bool,
         playbackHealthMonitoringEligible: Bool = false
@@ -653,7 +663,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         stopPlaybackHealthMonitoring()
         playbackHealthMonitoringEnabledForItem = playbackHealthMonitoringEnabled
         playbackHealthMonitoringEligibleForItem = playbackHealthMonitoringEligible
-        let playerItem = AVPlayerItem(url: url)
+        let playerItem = urlAsset.map { AVPlayerItem(asset: $0) } ?? AVPlayerItem(url: url)
 
         let normalizedPlaybackHealthAssetIdentifier = playbackHealthAssetIdentifier?
             .trimmingCharacters(in: .whitespacesAndNewlines)

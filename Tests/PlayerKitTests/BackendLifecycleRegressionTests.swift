@@ -210,6 +210,38 @@ final class BackendLifecycleRegressionTests: XCTestCase {
         XCTAssertTrue(wrapper.hasLoadedMedia)
     }
 
+    func testLocalURLAssetSurvivesSwitchAndOnlyAVBackendConsumesIt() throws {
+        let manager = PlayerManager.shared
+        let fallbackURL = URL(string: "https://example.invalid/fallback.m3u8")!
+        let urlAsset = AVURLAsset(url: URL(fileURLWithPath: "/dev/null"))
+        let item = PlayerItem(
+            title: "Offline fixture",
+            url: fallbackURL,
+            urlAsset: urlAsset,
+            lastPosition: 7
+        )
+        let itemWithoutAsset = PlayerItem(
+            title: item.title,
+            url: fallbackURL,
+            lastPosition: item.lastPosition
+        )
+        XCTAssertNotEqual(
+            PlayerView.LoadMode.single(item).identity,
+            PlayerView.LoadMode.single(itemWithoutAsset).identity
+        )
+
+        let fallbackPlayer = BackendLifecycleMockPlayer()
+        install(fallbackPlayer, on: manager)
+        manager.load(playerItem: item)
+        XCTAssertEqual(fallbackPlayer.loadedURL, fallbackURL)
+
+        manager.switchPlayer(to: .avPlayer)
+
+        XCTAssertTrue(manager.playerItem?.urlAsset === urlAsset)
+        let wrapper = try XCTUnwrap(manager.currentPlayer as? AVPlayerWrapper)
+        XCTAssertTrue(wrapper.currentItemAsset === urlAsset)
+    }
+
     func testSwitchingToTheStoredBuiltInTypeReplacesACustomBackend() {
         let manager = PlayerManager.shared
         manager.setPlayer(type: .avPlayer)
@@ -320,6 +352,7 @@ private final class BackendLifecycleMockPlayer: PlayerProtocol, PlayerEventSourc
     var subtitleSelectionCallCount = 0
     var outputVolume: Float = 0.5
     var volumeSetCallCount = 0
+    var loadedURL: URL?
 
     func play() {
         playCallCount += 1
@@ -366,6 +399,7 @@ private final class BackendLifecycleMockPlayer: PlayerProtocol, PlayerEventSourc
     }
 
     func load(url: URL, lastPosition: Double?) {
+        loadedURL = url
         currentTime = lastPosition ?? 0
     }
 
