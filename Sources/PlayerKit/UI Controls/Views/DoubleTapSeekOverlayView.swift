@@ -24,6 +24,7 @@ import SwiftUI
 struct DoubleTapSeekOverlayView: View {
     let state: DoubleTapSeekOverlayState
     let size: CGSize
+    let strings: PlayerStrings
 
     /// Springs the readout on each tap. Driven by `tapID` rather than view
     /// identity so the number is not torn down and rebuilt to animate.
@@ -96,7 +97,7 @@ struct DoubleTapSeekOverlayView: View {
             Text(secondsValue)
                 .font(.system(size: 32, weight: .semibold, design: .rounded))
                 .monospacedDigitsCompat()
-            Text("SECONDS")
+            Text(strings.seconds)
                 .font(.system(size: 10, weight: .semibold))
                 .trackingCompat(1.8)
                 .opacity(0.65)
@@ -113,7 +114,7 @@ struct DoubleTapSeekOverlayView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            isForward ? "Forward \(secondsValue) seconds" : "Back \(secondsValue) seconds"
+            isForward ? strings.forwardSeconds(state.seconds) : strings.backSeconds(state.seconds)
         )
     }
 
@@ -145,7 +146,7 @@ private struct SeekMedallionGlass: ViewModifier {
             // behind. Clear glass alone over a blown-out shot leaves white type
             // on a near-white disc; this floors the contrast whatever is
             // playing. `glassBackgroundCompat` tints the same way on macOS.
-            .background(Color.black.opacity(0.26), in: Circle())
+            .shapeBackgroundCompat(Color.black.opacity(0.26), in: Circle())
     }
 
     @ViewBuilder
@@ -163,7 +164,7 @@ private struct SeekMedallionGlass: ViewModifier {
 
     private func fallback(_ content: Content) -> some View {
         content
-            .background(.ultraThinMaterial, in: Circle())
+            .thinMaterialBackgroundCompat(in: Circle())
             .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
     }
 }

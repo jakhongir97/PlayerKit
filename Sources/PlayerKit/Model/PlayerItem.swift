@@ -1,5 +1,43 @@
 import SwiftUI
 
+public struct PlayerSkipSegment: Hashable, Sendable {
+    public enum Kind: Hashable, Sendable {
+        case intro
+        case credits
+    }
+
+    public let kind: Kind
+    public let startTime: Double
+    public let endTime: Double
+    public let targetTime: Double
+
+    public init?(
+        kind: Kind,
+        startTime: Double,
+        endTime: Double,
+        targetTime: Double? = nil
+    ) {
+        let resolvedTarget = targetTime ?? endTime
+        guard startTime.isFinite,
+              endTime.isFinite,
+              resolvedTarget.isFinite,
+              startTime >= 0,
+              endTime > startTime,
+              resolvedTarget > startTime else {
+            return nil
+        }
+
+        self.kind = kind
+        self.startTime = startTime
+        self.endTime = endTime
+        self.targetTime = resolvedTarget
+    }
+
+    public func contains(_ time: Double) -> Bool {
+        time.isFinite && time >= startTime && time < endTime
+    }
+}
+
 public struct PlayerItem {
     public let title: String
     /// A title treatment — the artwork that spells the title out — to show in
@@ -16,6 +54,7 @@ public struct PlayerItem {
     public let externalPlaybackDuration: Double?
     public var lastPosition: Double? // Optional last playback position
     public let episodeIndex: Int?
+    public let skipSegments: [PlayerSkipSegment]
 
     #if os(macOS)
     /// A non-secret, app-owned opaque identifier used only to derive the
@@ -38,6 +77,7 @@ public struct PlayerItem {
                 externalPlaybackDuration: Double? = nil,
                 lastPosition: Double? = nil,
                 episodeIndex: Int? = nil,
+                skipSegments: [PlayerSkipSegment] = [],
                 playbackHealthAssetIdentifier: String? = nil,
                 playbackHealthMonitoringEligible: Bool = false) {
         self.title = title
@@ -51,6 +91,7 @@ public struct PlayerItem {
         self.externalPlaybackDuration = externalPlaybackDuration
         self.lastPosition = lastPosition
         self.episodeIndex = episodeIndex
+        self.skipSegments = skipSegments
         self.playbackHealthAssetIdentifier = playbackHealthAssetIdentifier
         self.playbackHealthMonitoringEligible = playbackHealthMonitoringEligible
     }
@@ -65,7 +106,8 @@ public struct PlayerItem {
                 externalPlaybackContentType: String? = nil,
                 externalPlaybackDuration: Double? = nil,
                 lastPosition: Double? = nil,
-                episodeIndex: Int? = nil) {
+                episodeIndex: Int? = nil,
+                skipSegments: [PlayerSkipSegment] = []) {
         self.title = title
         self.titleImageURL = titleImageURL
         self.description = description
@@ -77,6 +119,7 @@ public struct PlayerItem {
         self.externalPlaybackDuration = externalPlaybackDuration
         self.lastPosition = lastPosition
         self.episodeIndex = episodeIndex
+        self.skipSegments = skipSegments
     }
     #endif
 }

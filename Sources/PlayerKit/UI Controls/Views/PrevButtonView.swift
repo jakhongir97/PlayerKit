@@ -20,8 +20,8 @@ struct PrevButtonView: View {
         .buttonStyle(.plain)
         .disabled(isDisabled)
         .animation(.easeInOut(duration: 0.2), value: isDisabled) // Smooth transition
-        .accessibilityLabel("Previous episode")
-        .accessibilityHint("Plays the previous episode")
+        .accessibilityLabel(playerManager.strings.previousEpisodeAccessibilityLabel)
+        .accessibilityHint(playerManager.strings.previousEpisodeHint)
         .accessibilityIdentifier("player.previous")
     }
 }

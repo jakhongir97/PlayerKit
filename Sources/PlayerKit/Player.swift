@@ -75,7 +75,7 @@ public final class Player {
     }
 
     private func inferredTitle(from url: URL) -> String {
-        let fallback = "PlayerKit Stream"
+        let fallback = playerManager.strings.defaultStreamTitle
         let lastPath = url.lastPathComponent
         guard !lastPath.isEmpty else { return fallback }
 

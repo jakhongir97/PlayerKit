@@ -13,15 +13,18 @@ struct PlayerRenderingView: View {
         ZStack {
             if hasRenderableMedia,
                let playerView = playerManager.currentPlayer?.getPlayerView() {
-                ProtectedPlayerContentRepresentable(playerView: playerView)
+                ProtectedPlayerContentRepresentable(
+                    playerView: playerView,
+                    captureMessage: playerManager.strings.videoHiddenDuringScreenSharing
+                )
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "play.rectangle")
                         .font(.largeTitle)
                         .accessibilityHidden(true)
-                    Text("No video loaded")
+                    Text(playerManager.strings.noVideoLoaded)
                         .font(.headline)
-                    Text("Choose a video to begin playback.")
+                    Text(playerManager.strings.chooseVideoToBegin)
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
                 }
@@ -47,14 +50,17 @@ struct PlayerRenderingView: View {
 @MainActor
 struct ProtectedPlayerContentRepresentable: UIViewRepresentable {
     let playerView: PKView
+    let captureMessage: String
 
     func makeUIView(context: Context) -> PlayerKitProtectedContentView {
         let protectedView = PlayerKitProtectedContentView()
+        protectedView.setCaptureMessage(captureMessage)
         protectedView.setProtectedContentView(playerView)
         return protectedView
     }
 
     func updateUIView(_ uiView: PlayerKitProtectedContentView, context: Context) {
+        uiView.setCaptureMessage(captureMessage)
         uiView.setProtectedContentView(playerView)
     }
 
@@ -66,6 +72,7 @@ struct ProtectedPlayerContentRepresentable: UIViewRepresentable {
 @MainActor
 struct ProtectedPlayerContentRepresentable: NSViewRepresentable {
     let playerView: PKView
+    let captureMessage: String
 
     func makeNSView(context: Context) -> PlayerKitProtectedContentView {
         let protectedView = PlayerKitProtectedContentView()

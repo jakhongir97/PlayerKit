@@ -22,7 +22,7 @@ struct PlaybackSliderView: View {
         // and made VoiceOver announce every position as "… of 00:00".
         let total = (seekableRange?.upperBound ?? playerManager.duration)
             .asTimeString(style: .positional)
-        return "\(current) of \(total)"
+        return playerManager.strings.playbackPositionValue(current, total)
     }
 
     private var effectiveSliderValue: Double {
@@ -106,9 +106,13 @@ struct PlaybackSliderView: View {
                 .padding(.horizontal, horizontalInset)
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Playback position")
+                .accessibilityLabel(playerManager.strings.playbackPosition)
                 .accessibilityValue(accessibilityValueText)
-                .accessibilityHint(PlayerKitPlatform.isDesktop ? "Click or drag to seek through the media" : "Drag to seek through the media")
+                #if os(macOS)
+                .accessibilityHint("Click or drag to seek through the media")
+                #else
+                .accessibilityHint(playerManager.strings.seekThroughMediaHint)
+                #endif
                 .accessibilityIdentifier("player.timeline")
                 .accessibilityHidden(seekableRange == nil)
                 // The slider previously exposed a label and a value but no way

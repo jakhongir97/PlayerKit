@@ -8,6 +8,25 @@ private enum SkipSegmentHeuristics {
     static let minimumOutroRemainingSeconds = 4.0
 }
 
+enum ExactSkipSegmentState: Equatable {
+    case absent
+    case inactive
+    case active(PlayerSkipSegment)
+
+    static func resolve(
+        kind: PlayerSkipSegment.Kind,
+        segments: [PlayerSkipSegment],
+        currentTime: Double
+    ) -> Self {
+        let matchingSegments = segments.filter { $0.kind == kind }
+        guard !matchingSegments.isEmpty else { return .absent }
+        guard let activeSegment = matchingSegments.first(where: { $0.contains(currentTime) }) else {
+            return .inactive
+        }
+        return .active(activeSegment)
+    }
+}
+
 @MainActor
 struct SkipIntroButtonView: View {
     @ObservedObject var playerManager: PlayerManager
@@ -17,15 +36,14 @@ struct SkipIntroButtonView: View {
     }
 
     var body: some View {
-        if !playerManager.suppressesHeuristicSkipButtons,
-           let introTargetSeconds,
+        if let introTargetSeconds,
            shouldShowButton(targetTime: introTargetSeconds) {
             SkipSegmentButton(title: title, systemImage: "goforward") {
                 playerManager.userInteracted()
                 playerManager.seek(to: introTargetSeconds)
             }
             .accessibilityLabel(title)
-            .accessibilityHint("Skips the opening section of this episode")
+            .accessibilityHint(playerManager.strings.skipIntroHint)
             .accessibilityIdentifier("player.skipIntro")
         }
     }
@@ -35,6 +53,18 @@ struct SkipIntroButtonView: View {
     }
 
     private var introTargetSeconds: Double? {
+        switch exactIntroState {
+        case let .active(segment):
+            return segment.targetTime
+        case .inactive:
+            return nil
+        case .absent:
+            break
+        }
+
+        guard !playerManager.suppressesHeuristicSkipButtons else {
+            return nil
+        }
         guard playerManager.contentType == .episode else {
             return nil
         }
@@ -53,6 +83,14 @@ struct SkipIntroButtonView: View {
             SkipSegmentHeuristics.fallbackIntroTargetSeconds
         )
         return min(inferredTarget, upperBound)
+    }
+
+    private var exactIntroState: ExactSkipSegmentState {
+        ExactSkipSegmentState.resolve(
+            kind: .intro,
+            segments: playerManager.playerItem?.skipSegments ?? [],
+            currentTime: playerManager.currentTime
+        )
     }
 
     private var resolvedDuration: Double {
@@ -81,8 +119,7 @@ struct SkipOutroButtonView: View {
     }
 
     var body: some View {
-        if !playerManager.suppressesHeuristicSkipButtons,
-           let outroStartSeconds,
+        if let outroStartSeconds,
            shouldShowButton(startTime: outroStartSeconds) {
             SkipSegmentButton(title: title, systemImage: "goforward") {
                 playerManager.userInteracted()
@@ -94,7 +131,7 @@ struct SkipOutroButtonView: View {
                 playerManager.seek(to: skipTargetTime)
             }
             .accessibilityLabel(title)
-            .accessibilityHint("Skips the ending section of this episode")
+            .accessibilityHint(playerManager.strings.skipOutroHint)
             .accessibilityIdentifier("player.skipOutro")
         }
     }
@@ -107,6 +144,18 @@ struct SkipOutroButtonView: View {
     }
 
     private var outroStartSeconds: Double? {
+        switch exactOutroState {
+        case let .active(segment):
+            return segment.startTime
+        case .inactive:
+            return nil
+        case .absent:
+            break
+        }
+
+        guard !playerManager.suppressesHeuristicSkipButtons else {
+            return nil
+        }
         guard playerManager.contentType == .episode else {
             return nil
         }
@@ -123,6 +172,14 @@ struct SkipOutroButtonView: View {
         return max(duration - inferredLead, 0)
     }
 
+    private var exactOutroState: ExactSkipSegmentState {
+        ExactSkipSegmentState.resolve(
+            kind: .credits,
+            segments: playerManager.playerItem?.skipSegments ?? [],
+            currentTime: playerManager.currentTime
+        )
+    }
+
     private var resolvedDuration: Double {
         let duration = playerManager.duration
         if duration.isFinite && duration > 0 {
@@ -133,6 +190,10 @@ struct SkipOutroButtonView: View {
     }
 
     private var skipTargetTime: Double {
+        if case let .active(segment) = exactOutroState {
+            return segment.targetTime
+        }
+
         let duration = resolvedDuration
         let currentTime = max(playerManager.currentTime, 0)
         return min(max(duration - 0.5, currentTime), duration)
@@ -149,7 +210,7 @@ struct SkipOutroButtonView: View {
 }
 
 private struct SkipSegmentButton: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.sizeCategory) private var sizeCategory
     let title: String
     let systemImage: String
     let action: () -> Void
@@ -162,10 +223,10 @@ private struct SkipSegmentButton: View {
 
                 Text(title)
                     .font(.callout.weight(.semibold))
-                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                    .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
                     .multilineTextAlignment(.center)
             }
-            .foregroundStyle(.white)
+            .foregroundColor(.white)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .frame(minHeight: 44)

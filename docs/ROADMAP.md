@@ -6,6 +6,11 @@ remediation pass · **Method:** nine parallel code investigations against this
 repository, plus a prior full-codebase audit. Claims that could not be verified
 from this repository are marked **[unverified]**.
 
+> The phase estimates below describe the broader reusable/open-source library.
+> They do not govern the current iTV delivery. The active, scoped execution plan
+> is [iTV primary-player 30-day plan](ITV_PRIMARY_PLAYER_30_DAY_PLAN.md); its
+> release gates come from the [Standard vs PlayerKit parity audit](ITV_STANDARD_VS_PLAYERKIT_PARITY_AUDIT.md).
+
 > **August 2026 status.** The control plane is now main-actor isolated; the
 > duplicate controller subscriptions and host-handler restoration defects are
 > fixed; playback state setters are read-only outside the module; empty queues,

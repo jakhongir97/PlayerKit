@@ -60,8 +60,8 @@ struct SkipButtonView: View {
         .accessibilityHidden(!canSkip)
         .accessibilityLabel(
             isForward
-                ? Text("Skip forward \(intervalLabel) seconds")
-                : Text("Skip back \(intervalLabel) seconds")
+                ? Text(playerManager.strings.skipForwardSeconds(interval))
+                : Text(playerManager.strings.skipBackSeconds(interval))
         )
         .accessibilityIdentifier(isForward ? "player.skipForward" : "player.skipBackward")
     }

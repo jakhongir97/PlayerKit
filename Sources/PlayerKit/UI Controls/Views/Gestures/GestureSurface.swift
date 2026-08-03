@@ -69,18 +69,11 @@ private struct AccessibleGestureTouchHost: View {
         manager.isZoomAvailable() && !manager.isLocked()
     }
 
-    private var skipSeconds: String {
-        let value = manager.configuration.skipInterval
-        return value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
-    }
-
     private var accessibilityHint: Text {
         if manager.isLocked() {
-            return Text("Controls are locked. Use Unlock controls to make playback actions available.")
+            return Text(manager.strings.lockedVideoHint)
         }
-        return Text(
-            "Shows the playback controls. Playback speed is in the controls; seeking, volume, brightness and zoom are available in Actions when supported."
-        )
+        return Text(manager.strings.videoControlsHint)
     }
 
     var body: some View {
@@ -88,30 +81,30 @@ private struct AccessibleGestureTouchHost: View {
 
         GestureTouchHost(manager: manager, surface: surface, onWindow: onWindow)
             .accessibilityElement()
-            .accessibilityLabel("Video")
+            .accessibilityLabel(manager.strings.video)
             .accessibilityAddTraits(.isButton)
             .accessibilityHint(accessibilityHint)
             .accessibilityAction { manager.toggleControls() }
             .accessibilityActionIf(
                 canSkip,
-                named: Text("Skip forward \(skipSeconds) seconds")
+                named: Text(manager.strings.skipForwardSeconds(manager.configuration.skipInterval))
             ) {
                 manager.skipForward()
             }
             .accessibilityActionIf(
                 canSkip,
-                named: Text("Skip back \(skipSeconds) seconds")
+                named: Text(manager.strings.skipBackSeconds(manager.configuration.skipInterval))
             ) {
                 manager.skipBackward()
             }
-            .accessibilityActionIf(canTogglePlayback, named: Text("Play or pause")) {
+            .accessibilityActionIf(canTogglePlayback, named: Text(manager.strings.playOrPause)) {
                 manager.togglePlayback()
             }
             .accessibilityActionIf(
                 canZoom,
                 named: manager.isZoomFilled
-                    ? Text("Fit video to screen")
-                    : Text("Fill screen")
+                    ? Text(manager.strings.fitVideoToScreen)
+                    : Text(manager.strings.fillScreen)
             ) {
                 manager.toggleZoom()
             }
@@ -148,7 +141,7 @@ private struct SeekOverlayHost: View {
     var body: some View {
         ZStack {
             if let overlay = manager.seekOverlay {
-                DoubleTapSeekOverlayView(state: overlay, size: size)
+                DoubleTapSeekOverlayView(state: overlay, size: size, strings: manager.strings)
                     // Identity per side, so turning around swaps one panel for
                     // the other in place. Sharing identity instead made SwiftUI
                     // animate the single overlay across the screen, dragging a

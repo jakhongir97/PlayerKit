@@ -128,7 +128,9 @@ public extension View {
         #else
         self
             .padding(12)
-            .background(.ultraThinMaterial)
+            .thinMaterialBackgroundCompat(
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -141,7 +143,11 @@ public extension View {
 public extension View {
     @ViewBuilder
     func monospacedDigitsCompat() -> some View {
-        self.monospacedDigit()
+        if #available(iOS 15.0, macOS 12.0, *) {
+            self.monospacedDigit()
+        } else {
+            self
+        }
     }
 
     /// Letter spacing where the platform has it, unchanged text where it does
@@ -153,6 +159,31 @@ public extension View {
             self.tracking(amount)
         } else {
             self
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func thinMaterialBackgroundCompat<S: Shape>(
+        in shape: S,
+        fallbackColor: Color = Color.black.opacity(0.52)
+    ) -> some View {
+        if #available(iOS 15.0, macOS 12.0, *) {
+            self.background(.ultraThinMaterial, in: shape)
+        } else {
+            // ponytail: iOS 14 has no SwiftUI Material; a stable dark fill keeps
+            // controls legible without introducing a UIKit blur wrapper.
+            self.background(shape.fill(fallbackColor))
+        }
+    }
+
+    @ViewBuilder
+    func shapeBackgroundCompat<S: Shape>(_ color: Color, in shape: S) -> some View {
+        if #available(iOS 15.0, macOS 12.0, *) {
+            self.background(color, in: shape)
+        } else {
+            self.background(shape.fill(color))
         }
     }
 }

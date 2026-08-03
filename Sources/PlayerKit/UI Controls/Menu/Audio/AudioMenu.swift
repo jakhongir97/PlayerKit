@@ -2,15 +2,17 @@ import SwiftUI
 
 @MainActor
 struct AudioMenu: View {
+    @ObservedObject private var playerManager: PlayerManager
     @StateObject private var viewModel: AudioMenuViewModel
     
     init(playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
         _viewModel = StateObject(wrappedValue: AudioMenuViewModel(playerManager: playerManager))
     }
     
     var body: some View {
         Menu {
-            Section(header: Text("Audio Tracks")) { // Section title
+            Section(header: Text(playerManager.strings.audioTracksTitle)) {
                 ForEach(viewModel.availableAudioTracks) { track in
                     Button(action: {
                         viewModel.selectAudioTrack(track)
@@ -30,8 +32,8 @@ struct AudioMenu: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
-        .accessibilityLabel("Audio tracks")
-        .accessibilityHint("Opens audio track options")
+        .accessibilityLabel(playerManager.strings.audioTracksAccessibilityLabel)
+        .accessibilityHint(playerManager.strings.audioTracksHint)
         .accessibilityIdentifier("player.audioMenu")
         .buttonStyle(.plain)
         .onTapGesture {

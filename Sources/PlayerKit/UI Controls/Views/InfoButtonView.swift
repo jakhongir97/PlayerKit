@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct InfoButtonView: View {
-    private let playerManager: PlayerManager
+    @ObservedObject private var playerManager: PlayerManager
     #if os(macOS)
     @Environment(\.openPlaybackDiagnostics) private var openPlaybackDiagnostics
     #endif
@@ -10,7 +10,7 @@ struct InfoButtonView: View {
     @State private var showPopover = false
     
     init(playerManager: PlayerManager = .shared) {
-        self.playerManager = playerManager
+        _playerManager = ObservedObject(wrappedValue: playerManager)
     }
 
     var body: some View {
@@ -24,8 +24,8 @@ struct InfoButtonView: View {
             }
         #else
         infoButton
-            .accessibilityLabel("Streaming information")
-            .accessibilityHint("Shows bitrate, buffer, frame rate and resolution")
+            .accessibilityLabel(playerManager.strings.streamingInformation)
+            .accessibilityHint(playerManager.strings.streamingInformationHint)
             // The native presentation chooses a popover where space permits
             // and adapts to a compact presentation on narrow iPhone/Slide Over
             // surfaces. No orientation or device-class offsets to maintain.

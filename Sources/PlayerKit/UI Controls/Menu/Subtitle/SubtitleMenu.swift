@@ -2,21 +2,23 @@ import SwiftUI
 
 @MainActor
 struct SubtitleMenu: View {
+    @ObservedObject private var playerManager: PlayerManager
     @StateObject private var viewModel: SubtitleMenuViewModel
     
     init(playerManager: PlayerManager = .shared) {
+        _playerManager = ObservedObject(wrappedValue: playerManager)
         _viewModel = StateObject(wrappedValue: SubtitleMenuViewModel(playerManager: playerManager))
     }
     
     var body: some View {
         Menu {
-            Section(header: Text("Subtitles")) {
+            Section(header: Text(playerManager.strings.subtitles)) {
                 // "Turn Off Subtitles" option
                 Button(action: {
                     viewModel.selectSubtitle(nil)
                 }) {
                     HStack {
-                        Text("Turn Off")
+                        Text(playerManager.strings.turnOffSubtitles)
                         if viewModel.selectedSubtitle == nil {
                             Image(systemName: "checkmark")
                         }
@@ -43,8 +45,8 @@ struct SubtitleMenu: View {
                 .foregroundColor(.white)
                 .padding(10)
         }
-        .accessibilityLabel("Subtitles")
-        .accessibilityHint("Opens subtitle options")
+        .accessibilityLabel(playerManager.strings.subtitles)
+        .accessibilityHint(playerManager.strings.subtitlesHint)
         .accessibilityIdentifier("player.subtitleMenu")
         .buttonStyle(.plain)
         .onTapGesture {

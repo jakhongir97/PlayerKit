@@ -12,20 +12,38 @@ public struct PlayerView: View {
     @State private var announcedErrorWasTerminal = false
     
     private let loadMode: LoadMode
+    /// Disable only when the embedding host pauses temporary disappearances and
+    /// calls `PlayerManager.tearDown()` when its presentation actually exits.
+    let automaticallyTearsDownOnDisappear: Bool
 
-    public init(playerItem: PlayerItem? = nil, playerManager: PlayerManager = .shared) {
+    public init(
+        playerItem: PlayerItem? = nil,
+        playerManager: PlayerManager = .shared,
+        automaticallyTearsDownOnDisappear: Bool = true
+    ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .single(playerItem)
+        self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
     }
     
-    public init(playerManager: PlayerManager = .shared) {
+    public init(
+        playerManager: PlayerManager = .shared,
+        automaticallyTearsDownOnDisappear: Bool = true
+    ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .none
+        self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
     }
     
-    public init(playerItems: [PlayerItem], currentIndex: Int = 0, playerManager: PlayerManager = .shared) {
+    public init(
+        playerItems: [PlayerItem],
+        currentIndex: Int = 0,
+        playerManager: PlayerManager = .shared,
+        automaticallyTearsDownOnDisappear: Bool = true
+    ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .episodes(playerItems, currentIndex)
+        self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
     }
 
     public var body: some View {
@@ -103,7 +121,8 @@ public struct PlayerView: View {
             announcedErrorWasTerminal = playerManager.isPlaybackErrorTerminal
             let presentation = PlaybackErrorPresentation(
                 error,
-                terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal
+                terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal,
+                strings: playerManager.strings
             )
             GestureAnnouncer.announce(
                 "\(presentation.title). \(presentation.message)",
@@ -121,6 +140,10 @@ public struct PlayerView: View {
                 "Player view onDisappear loadMode=\(loadMode.debugName) " +
                 "isPlaying=\(playerManager.isPlaying) current=\(playerManager.currentTime)"
             )
+            guard automaticallyTearsDownOnDisappear else {
+                debugLog("Host owns player teardown; preserving the active session.")
+                return
+            }
             // Dismissing the player used to leave playback running, the
             // periodic time observer firing, the diagnostics sampler ticking,
             // and the idle timer / audio session / brightness / controller
@@ -136,7 +159,8 @@ public struct PlayerView: View {
         guard let error = playerManager.lastError else { return false }
         return PlaybackErrorPresentation(
             error,
-            terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal
+            terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal,
+            strings: playerManager.strings
         ).blocksPlayback
     }
     

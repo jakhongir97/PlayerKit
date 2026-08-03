@@ -1,6 +1,43 @@
 import CoreGraphics
 import Foundation
 
+/// AVFoundation's adaptive HLS quality policy.
+///
+/// `automatic` leaves rendition selection entirely to AVPlayer. A cap keeps
+/// adaptation enabled but prevents AVPlayer from selecting variants above the
+/// supplied peak bitrate; it does not pin one rendition.
+public struct PlaybackQualityPolicy: Equatable, Sendable {
+    public let maximumBitRate: Double?
+
+    public static let automatic = PlaybackQualityPolicy(maximumBitRate: nil)
+
+    /// Creates a bitrate cap in bits per second.
+    ///
+    /// Invalid and non-positive caps are rejected instead of being forwarded
+    /// to AVFoundation, where `0` has the separate meaning "automatic".
+    public static func capped(at bitsPerSecond: Double) -> PlaybackQualityPolicy? {
+        guard bitsPerSecond.isFinite, bitsPerSecond > 0 else { return nil }
+        return PlaybackQualityPolicy(maximumBitRate: bitsPerSecond)
+    }
+
+    private init(maximumBitRate: Double?) {
+        self.maximumBitRate = maximumBitRate
+    }
+
+    var preferredPeakBitRate: Double {
+        maximumBitRate ?? 0
+    }
+}
+
+enum PlaybackQualityPreset: String, CaseIterable, Identifiable, Sendable {
+    case automatic
+    case maximum
+    case optimal
+    case minimum
+
+    var id: String { rawValue }
+}
+
 public enum PlayerType: String, CaseIterable, Identifiable, Codable {
     case vlcPlayer
     case avPlayer

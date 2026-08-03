@@ -14,9 +14,10 @@ public enum PlayerEpisodeNavigationDirection: Equatable {
     case next
 }
 
-/// Titles for the heuristic skip controls. PlayerKit ships no string tables, so a
-/// localized host injects its own copy here; the English defaults keep every other
-/// host rendering exactly what it rendered before this seam existed.
+/// Titles for the heuristic skip controls.
+///
+/// This remains source-compatible with the original narrow injection seam.
+/// New integrations can configure the same values through ``PlayerStrings``.
 public struct HeuristicSkipButtonTitles: Equatable {
     public var skipIntro: String
     public var skipOutro: String
@@ -73,8 +74,31 @@ public class PlayerManager: ObservableObject {
     @Published public internal(set) var duration: Double = 0
     @Published public internal(set) var bufferedDuration: Double = 0
     @Published public private(set) var playbackSpeed: Float = 1.0
+    /// Retained across item loads and backend recreation. AVPlayer honors the
+    /// policy; VLC continues using its own adaptive selection.
+    @Published public var playbackQualityPolicy: PlaybackQualityPolicy = .automatic {
+        didSet {
+            guard oldValue != playbackQualityPolicy else { return }
+            (currentPlayer as? AVPlayerWrapper)?.setPreferredPeakBitRate(
+                playbackQualityPolicy.preferredPeakBitRate
+            )
+        }
+    }
+    @Published private(set) var availablePlaybackQualityPresets: [PlaybackQualityPreset] = []
+    @Published private(set) var selectedPlaybackQualityPreset: PlaybackQualityPreset = .automatic
+    private var playbackQualityBitRates: [Double] = []
+    /// Host-supplied user-visible copy. PlayerKit does not select a locale or
+    /// read localized strings from its own resource bundle.
+    @Published public var strings = PlayerStrings() {
+        didSet {
+            gestureManager.strings = strings
+        }
+    }
     @Published public var suppressesHeuristicSkipButtons: Bool = false
-    @Published public var heuristicSkipButtonTitles = HeuristicSkipButtonTitles()
+    public var heuristicSkipButtonTitles: HeuristicSkipButtonTitles {
+        get { strings.heuristicSkipButtonTitles }
+        set { strings.heuristicSkipButtonTitles = newValue }
+    }
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
     @Published public internal(set) var isPiPActive: Bool = false
@@ -238,6 +262,10 @@ public class PlayerManager: ObservableObject {
     /// Lets a host refresh an expired or signed media URL before Retry reloads
     /// the item. Return `nil` (or throw) to leave the current error on screen.
     public var onPlaybackRetryRequested: (@MainActor (PlayerItem) async throws -> PlayerItem?)?
+    /// Receives privacy-safe lifecycle facts synchronously on the main actor.
+    /// Configure this before loading media; PlayerKit does not replay earlier events.
+    public var onQoEEvent: ((PlayerQoEEvent) -> Void)?
+    private var qoeEventReducer = PlayerQoEEventReducer()
     private var playbackRetryTask: Task<Void, Never>?
     private var playbackRetryGeneration: UInt = 0
     private var externalEpisodeNavigationTask: Task<Void, Never>?
@@ -260,8 +288,15 @@ public class PlayerManager: ObservableObject {
     }
 
     private init() {
+        gestureManager.strings = strings
         setupGestureHandling()
         configureOrientationCallbacks()
+    }
+
+    private func emitQoEEvents(_ events: [PlayerQoEEvent]) {
+        for event in events {
+            onQoEEvent?(event)
+        }
     }
     
     // MARK: - Player Setup
@@ -465,6 +500,7 @@ public class PlayerManager: ObservableObject {
             externalPlaybackDuration: sourceItem.externalPlaybackDuration,
             lastPosition: resumePosition,
             episodeIndex: sourceItem.episodeIndex,
+            skipSegments: sourceItem.skipSegments,
             playbackHealthAssetIdentifier: sourceItem.playbackHealthAssetIdentifier,
             playbackHealthMonitoringEligible: sourceItem.playbackHealthMonitoringEligible
         )
@@ -480,7 +516,8 @@ public class PlayerManager: ObservableObject {
             externalPlaybackContentType: sourceItem.externalPlaybackContentType,
             externalPlaybackDuration: sourceItem.externalPlaybackDuration,
             lastPosition: resumePosition,
-            episodeIndex: sourceItem.episodeIndex
+            episodeIndex: sourceItem.episodeIndex,
+            skipSegments: sourceItem.skipSegments
         )
         #endif
     }
@@ -555,6 +592,7 @@ public class PlayerManager: ObservableObject {
         shouldAutoplay: Bool? = nil
     ) {
         let startsPlayback = shouldAutoplay ?? autoplayStorage
+        emitQoEEvents(qoeEventReducer.loadRequested(autoplay: startsPlayback))
         configureIntegrationsIfNeeded()
         debugLog(
             "Loading media. source_present=true resume=\(lastPosition?.description ?? "nil")"
@@ -888,6 +926,7 @@ extension PlayerManager {
     }
 
     public func play() {
+        emitQoEEvents(qoeEventReducer.playRequested())
         if currentPlayer == nil {
             restoreMissingPlayer(type: selectedPlayerType)
         }
@@ -917,6 +956,7 @@ extension PlayerManager {
     }
     
     public func pause() {
+        emitQoEEvents(qoeEventReducer.pauseRequested())
         debugLog(
             "Pause requested current=\(debugInterval(currentTime)) " +
             "mediaReady=\(isMediaReady) playerIsPlaying=\(currentPlayer?.isPlaying ?? false)"
@@ -975,6 +1015,7 @@ extension PlayerManager {
                 "Seek ignored: no finite duration and no seekable window. " +
                 "target=\(debugInterval(time))"
             )
+            emitQoEEvents(qoeEventReducer.seekCompleted(targetTime: max(time, 0), succeeded: false))
             completion?(false)
             return
         }
@@ -987,6 +1028,7 @@ extension PlayerManager {
 
         let shouldResumeAfterSeek = shouldResumePlaybackAfterStall
         guard let playbackManager else {
+            emitQoEEvents(qoeEventReducer.seekCompleted(targetTime: targetTime, succeeded: false))
             completion?(false)
             return
         }
@@ -1026,6 +1068,7 @@ extension PlayerManager {
                 "Seek failed. target=\(debugInterval(targetTime)) current=\(debugInterval(currentTime))"
             )
         }
+        emitQoEEvents(qoeEventReducer.seekCompleted(targetTime: targetTime, succeeded: success))
         completion?(success)
     }
 
@@ -1059,6 +1102,57 @@ extension PlayerManager {
         playbackSpeed = speed
         playbackManager?.setPlaybackSpeed(speed)
         refreshNowPlayingInfo(force: true)
+    }
+
+    /// Supplies the current HLS master's rendition bitrates in bits per second.
+    /// PlayerKit owns only selection and AVFoundation's adaptive cap; the host
+    /// remains responsible for authenticated manifest discovery.
+    public func configurePlaybackQualityBitRates(_ bitRates: [Double]) {
+        playbackQualityBitRates = Array(
+            Set(bitRates.filter { $0.isFinite && $0 > 0 })
+        ).sorted()
+
+        guard playbackQualityBitRates.count > 1 else {
+            availablePlaybackQualityPresets = []
+            playbackQualityPolicy = .automatic
+            return
+        }
+
+        availablePlaybackQualityPresets = PlaybackQualityPreset.allCases
+        applySelectedPlaybackQualityPreset()
+    }
+
+    /// Restores the host's new presentation to adaptive automatic quality.
+    public func resetPlaybackQualitySelection() {
+        selectedPlaybackQualityPreset = .automatic
+        applySelectedPlaybackQualityPreset()
+    }
+
+    func selectPlaybackQualityPreset(_ preset: PlaybackQualityPreset) {
+        guard availablePlaybackQualityPresets.contains(preset) else { return }
+        selectedPlaybackQualityPreset = preset
+        applySelectedPlaybackQualityPreset()
+        userInteracted()
+    }
+
+    private func applySelectedPlaybackQualityPreset() {
+        let maximumBitRate: Double?
+        switch selectedPlaybackQualityPreset {
+        case .automatic:
+            maximumBitRate = nil
+        case .maximum:
+            maximumBitRate = playbackQualityBitRates.last
+        case .optimal:
+            maximumBitRate = playbackQualityBitRates.isEmpty
+                ? nil
+                : playbackQualityBitRates[(playbackQualityBitRates.count - 1) / 2]
+        case .minimum:
+            maximumBitRate = playbackQualityBitRates.first
+        }
+
+        playbackQualityPolicy = maximumBitRate
+            .flatMap(PlaybackQualityPolicy.capped(at:))
+            ?? .automatic
     }
 }
 
@@ -1281,6 +1375,7 @@ extension PlayerManager {
         (player as? PlayerMuteControlling)?.setMuted(isMutedStorage)
         player.playbackSpeed = playbackSpeed
         guard let avPlayer = player as? AVPlayerWrapper else { return }
+        avPlayer.setPreferredPeakBitRate(playbackQualityPolicy.preferredPeakBitRate)
         avPlayer.allowsBackgroundPlayback = backgroundPlaybackEnabledStorage
         avPlayer.allowsExternalPlayback = externalPlaybackEnabledStorage
         avPlayer.onPictureInPictureRestoreRequested = pictureInPictureRestorationHandlerStorage
@@ -1839,6 +1934,12 @@ extension PlayerManager {
                 self.currentTime = Self.nonnegativeFinite(player.currentTime)
                 self.duration = Self.nonnegativeFinite(player.duration)
                 self.bufferedDuration = Self.nonnegativeFinite(player.bufferedDuration)
+                self.emitQoEEvents(
+                    self.qoeEventReducer.runtimeChanged(
+                        isPlaying: player.isPlaying,
+                        isBuffering: player.isBuffering
+                    )
+                )
             }
             .store(in: &stateCancellables)
     }
@@ -1991,6 +2092,7 @@ extension PlayerManager {
     /// themselves. It is idempotent.
     public func tearDown() {
         debugLog("Tearing down player manager.")
+        emitQoEEvents(qoeEventReducer.exited())
 
         resetPlayer(clearMediaContext: true)
 
@@ -2034,6 +2136,12 @@ extension PlayerManager {
         duration = Self.nonnegativeFinite(state.duration)
         bufferedDuration = Self.nonnegativeFinite(state.bufferedDuration)
         logRuntimeStateIfChanged(state)
+        emitQoEEvents(
+            qoeEventReducer.runtimeChanged(
+                isPlaying: state.isPlaying,
+                isBuffering: state.isBuffering
+            )
+        )
 
         if hasPlaybackProgressedSinceResumeReference(currentTime: state.currentTime) {
             cancelPendingPlaybackResume()
@@ -2044,6 +2152,7 @@ extension PlayerManager {
 extension PlayerManager: PlayerLifecycleReporting {
     public func playerDidBecomeReady() {
         isMediaReady = true
+        emitQoEEvents(qoeEventReducer.ready())
         debugLog(
             "Player became ready current=\(debugInterval(currentTime)) " +
             "duration=\(debugInterval(duration)) shouldResume=\(shouldResumePlaybackAfterStall)"
@@ -2142,6 +2251,7 @@ extension PlayerManager: PlayerLifecycleReporting {
     
     public func playerDidEndPlayback() {
         shouldResumePlaybackAfterStall = false
+        emitQoEEvents(qoeEventReducer.completed())
         #if os(macOS)
         endPlaybackDiagnosticsSampling(reason: "playback ended")
         #endif
@@ -2161,6 +2271,7 @@ extension PlayerManager: PlayerLifecycleReporting {
             return
         }
 
+        emitQoEEvents(qoeEventReducer.stallStarted())
         schedulePlaybackResumeIfNeeded(trigger: "stall")
     }
     
@@ -2188,6 +2299,7 @@ extension PlayerManager: PlayerLifecycleReporting {
         #if os(macOS)
         endPlaybackDiagnosticsSampling(reason: "playback failed")
         #endif
+        emitQoEEvents(qoeEventReducer.fatalError())
         reportTerminalPlaybackError(error)
     }
 }

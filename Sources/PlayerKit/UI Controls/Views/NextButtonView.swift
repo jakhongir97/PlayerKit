@@ -20,8 +20,8 @@ struct NextButtonView: View {
         .buttonStyle(.plain)
         .disabled(isDisabled)
         .animation(.easeInOut(duration: 0.2), value: isDisabled) // Smooth transition
-        .accessibilityLabel("Next episode")
-        .accessibilityHint("Plays the next episode")
+        .accessibilityLabel(playerManager.strings.nextEpisodeAccessibilityLabel)
+        .accessibilityHint(playerManager.strings.nextEpisodeHint)
         .accessibilityIdentifier("player.next")
     }
 }

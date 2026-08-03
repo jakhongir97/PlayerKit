@@ -17,20 +17,25 @@ public enum PlayerKitError: Error, Equatable, LocalizedError {
     /// `errorDescription` for source compatibility. Treat those strings as
     /// private diagnostics: never put credentials, signed URLs, or tokens in them.
     public var userFacingDescription: String {
+        userFacingDescription(using: PlayerStrings())
+    }
+
+    /// Returns the safe product message from host-supplied player copy.
+    public func userFacingDescription(using strings: PlayerStrings) -> String {
         switch self {
         case .mediaLoadFailed:
-            return "The video couldn’t be loaded. Check your connection and try again."
+            return strings.mediaLoadFailedDescription
         case .pictureInPictureFailed:
-            return "Picture in Picture couldn’t start."
+            return strings.pictureInPictureFailedDescription
         case .castSessionUnavailable, .castURLMissing:
-            return "Casting isn’t available right now."
+            return strings.castingFailedDescription
         case .externalPlaybackDeviceUnavailable,
              .externalPlaybackURLMissing,
              .externalPlaybackRequiresReachableURL,
              .externalPlaybackFailed:
-            return "External playback isn’t available right now."
+            return strings.externalPlaybackFailedDescription
         case .unknown:
-            return "The action couldn’t be completed."
+            return strings.actionFailedDescription
         }
     }
 

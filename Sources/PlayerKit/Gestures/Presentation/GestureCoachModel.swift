@@ -57,6 +57,7 @@ final class GestureCoachModel: ObservableObject {
     // MARK: - State
 
     @Published private(set) var stage: Stage?
+    @Published var strings = PlayerStrings()
     /// When the walkthrough appeared, so a dismissal in the first moment can be
     /// told from a considered one.
     private var shownAt: TimeInterval = 0
@@ -168,7 +169,7 @@ final class GestureCoachModel: ObservableObject {
             kind: kind == .brightness ? .brightness : .volume,
             slot: .rail(side),
             symbol: GestureManager.symbol(for: kind, unit: fraction),
-            primary: "\(Int((fraction * 100).rounded()))%",
+            primary: strings.levelPercentage(fraction),
             secondary: nil,
             tertiary: nil,
             fraction: fraction,
@@ -184,22 +185,22 @@ final class GestureCoachModel: ObservableObject {
     func copy(for side: RailSide, sides: [RailSide], isAccessibilitySize: Bool) -> String {
         let kind = kindForSide(side) ?? .volume
         if isAccessibilitySize {
-            return kind == .brightness ? "Brightness" : "Volume"
+            return kind == .brightness ? strings.brightness : strings.volume
         }
         let bothSidesSameKind = sides.count == 2
             && kindForSide(.leading) == kindForSide(.trailing)
         if bothSidesSameKind {
             return kind == .brightness
-                ? "Swipe up or down for brightness"
-                : "Swipe up or down for volume"
+                ? strings.swipeForBrightness
+                : strings.swipeForVolume
         }
-        return kind == .brightness ? "Swipe here for brightness" : "Swipe here for volume"
+        return kind == .brightness ? strings.swipeHereForBrightness : strings.swipeHereForVolume
     }
 
-    static func nudgeText(for kind: GestureKind) -> String {
+    static func nudgeText(for kind: GestureKind, strings: PlayerStrings = PlayerStrings()) -> String {
         kind == .brightness
-            ? "Swipe up and down here for brightness"
-            : "Swipe up and down here for volume"
+            ? strings.swipeUpAndDownHereForBrightness
+            : strings.swipeUpAndDownHereForVolume
     }
 
     // MARK: - Dismissal
@@ -269,7 +270,7 @@ final class GestureCoachModel: ObservableObject {
         defaults.set(count + 1, forKey: DefaultsKey.nudgeCount)
 
         cancelPending()
-        stage = .nudge(side: side, text: Self.nudgeText(for: kind))
+        stage = .nudge(side: side, text: Self.nudgeText(for: kind, strings: strings))
         schedule(after: Self.nudgeDuration) { [weak self] in
             guard let self, case .nudge = self.stage else { return }
             self.cancelPending()

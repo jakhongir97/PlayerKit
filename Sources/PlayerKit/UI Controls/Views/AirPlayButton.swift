@@ -1,7 +1,10 @@
 import SwiftUI
 import AVKit
 
+@MainActor
 struct AirPlayButton: View {
+    @ObservedObject var playerManager: PlayerManager
+
     var body: some View {
         #if canImport(AppKit)
         ZStack {
@@ -14,7 +17,10 @@ struct AirPlayButton: View {
         }
         .frame(width: 50, height: 50)
         #else
-        AirPlayRoutePickerView()
+        AirPlayRoutePickerView(
+            accessibilityLabel: playerManager.strings.airPlay,
+            accessibilityHint: playerManager.strings.airPlayHint
+        )
             .circularGlassIcon()
         #endif
     }
@@ -22,6 +28,9 @@ struct AirPlayButton: View {
 
 #if canImport(UIKit)
 struct AirPlayRoutePickerView: UIViewRepresentable {
+    let accessibilityLabel: String
+    let accessibilityHint: String
+
     func makeUIView(context: Context) -> AVRoutePickerView {
         let routePickerView = AVRoutePickerView()
         routePickerView.activeTintColor = .blue
@@ -39,8 +48,8 @@ struct AirPlayRoutePickerView: UIViewRepresentable {
     }
 
     private func configure(_ view: AVRoutePickerView) {
-        view.accessibilityLabel = "AirPlay"
-        view.accessibilityHint = "Opens the AirPlay device picker"
+        view.accessibilityLabel = accessibilityLabel
+        view.accessibilityHint = accessibilityHint
         view.accessibilityIdentifier = "player.airPlay"
     }
 }

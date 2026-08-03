@@ -17,7 +17,7 @@ struct GestureCoachView: View {
     let geometry: GestureGeometry
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.sizeCategory) private var sizeCategory
 
     var body: some View {
         ZStack {
@@ -95,7 +95,7 @@ struct GestureCoachView: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Skip gesture tips")
+                .accessibilityLabel(model.strings.skipGestureTips)
             }
             Spacer()
         }
@@ -126,7 +126,7 @@ struct GestureCoachView: View {
     /// is unavailable in an app extension — a package cannot assume it is
     /// hosted by a full application.
     private var isAccessibilitySize: Bool {
-        dynamicTypeSize.isAccessibilitySize
+        sizeCategory.isAccessibilityCategory
     }
 }
 

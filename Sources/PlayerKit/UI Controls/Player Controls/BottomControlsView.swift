@@ -121,7 +121,7 @@ struct BottomControlsView: View {
     private var groupedTrailingFallback: some View {
         trailingActionsContent
             .padding(pillInsets)
-            .background(.ultraThinMaterial, in: Capsule())
+            .thinMaterialBackgroundCompat(in: Capsule())
             .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
             .contentShape(Capsule())
     }

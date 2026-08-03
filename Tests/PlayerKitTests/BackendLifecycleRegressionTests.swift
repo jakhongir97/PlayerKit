@@ -13,6 +13,7 @@ final class BackendLifecycleRegressionTests: XCTestCase {
         PlayerManager.shared.autoplay = true
         PlayerManager.shared.isMuted = false
         PlayerManager.shared.isExternalPlaybackEnabled = false
+        PlayerManager.shared.setPlaybackSpeed(1)
         PlayerManager.shared.tearDown()
         super.tearDown()
     }
@@ -94,6 +95,22 @@ final class BackendLifecycleRegressionTests: XCTestCase {
         XCTAssertTrue(player.seekTargets.isEmpty)
         XCTAssertEqual(manager.playbackSpeed, 1.5, accuracy: 0.001)
         XCTAssertEqual(player.playbackSpeed, 1.5, accuracy: 0.001)
+    }
+
+    func testStandardQuarterStepRatesReachAndSurviveBackendReplacement() {
+        let manager = PlayerManager.shared
+        let first = BackendLifecycleMockPlayer()
+        install(first, on: manager)
+
+        manager.setPlaybackSpeed(0.75)
+        XCTAssertEqual(first.playbackSpeed, 0.75, accuracy: 0.001)
+        manager.setPlaybackSpeed(1.75)
+        XCTAssertEqual(first.playbackSpeed, 1.75, accuracy: 0.001)
+
+        let replacement = BackendLifecycleMockPlayer()
+        install(replacement, on: manager)
+        XCTAssertEqual(manager.playbackSpeed, 1.75, accuracy: 0.001)
+        XCTAssertEqual(replacement.playbackSpeed, 1.75, accuracy: 0.001)
     }
 
     func testInvalidVolumeNeverReachesBackend() {

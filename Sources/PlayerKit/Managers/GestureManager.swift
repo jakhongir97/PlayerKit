@@ -122,6 +122,10 @@ public class GestureManager: ObservableObject {
         didSet { applyConfiguration(previous: oldValue) }
     }
 
+    @Published var strings = PlayerStrings() {
+        didSet { coach.strings = strings }
+    }
+
     private(set) var geometry = GestureGeometry()
     private weak var attachedWindow: PKWindow?
 
@@ -401,7 +405,7 @@ public class GestureManager: ObservableObject {
                 kind: kind == .volume ? .volume : .brightness,
                 slot: .rail(side),
                 symbol: Self.symbol(for: kind, unit: unit),
-                primary: "\(Int((unit * 100).rounded()))%",
+                primary: strings.levelPercentage(unit),
                 secondary: secondaryLine(for: kind),
                 tertiary: nil,
                 fraction: unit,
@@ -413,7 +417,7 @@ public class GestureManager: ObservableObject {
 
     private func secondaryLine(for kind: GestureKind) -> String? {
         guard kind == .volume, configuration.volumeTarget == .player else { return nil }
-        return volumeControl.isLimitedByDeviceVolume ? "Device volume is low" : nil
+        return volumeControl.isLimitedByDeviceVolume ? strings.deviceVolumeIsLow : nil
     }
 
     nonisolated static func symbol(for kind: GestureKind, unit: Double) -> String {
@@ -435,15 +439,16 @@ public class GestureManager: ObservableObject {
     func presentScrub(_ sample: ScrubController.ScrubSample) {
         let signedDelta = sample.delta
         let sign = signedDelta < 0 ? "−" : "+"
+        let tierLabel = sample.tier.label(using: strings)
         hudModel.set(
             GestureHUD(
                 kind: .scrub,
                 slot: .banner,
                 symbol: signedDelta < 0 ? "backward.fill" : "forward.fill",
                 primary: PlayerKitTimeFormatter.string(from: sample.target),
-                secondary: sample.tier.label
+                secondary: tierLabel
                     ?? "\(sign)\(PlayerKitTimeFormatter.string(from: abs(signedDelta)))",
-                tertiary: sample.tier.label == nil
+                tertiary: tierLabel == nil
                     ? nil
                     : "\(sign)\(PlayerKitTimeFormatter.string(from: abs(signedDelta)))",
                 fraction: sample.unit
@@ -539,8 +544,8 @@ public class GestureManager: ObservableObject {
             if let overlay {
                 GestureAnnouncer.announce(
                     overlay.direction == .forward
-                        ? "Forward \(Int(overlay.seconds.rounded())) seconds"
-                        : "Back \(Int(overlay.seconds.rounded())) seconds",
+                        ? strings.forwardSeconds(overlay.seconds)
+                        : strings.backSeconds(overlay.seconds),
                     state: assistiveState
                 )
             }
@@ -557,7 +562,7 @@ public class GestureManager: ObservableObject {
                     kind: .blocked,
                     slot: .center,
                     symbol: "lock.fill",
-                    primary: "Locked",
+                    primary: strings.locked,
                     secondary: nil,
                     tertiary: nil,
                     fraction: nil

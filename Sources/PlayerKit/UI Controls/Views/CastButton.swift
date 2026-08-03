@@ -23,8 +23,8 @@ struct CastButton: UIViewRepresentable {
 
     private func configure(_ button: GCKUICastButton) {
         button.tintColor = .white
-        button.accessibilityLabel = "Chromecast"
-        button.accessibilityHint = "Opens the Chromecast device picker"
+        button.accessibilityLabel = playerManager.strings.chromecast
+        button.accessibilityHint = playerManager.strings.chromecastHint
         button.accessibilityIdentifier = "player.cast"
     }
 

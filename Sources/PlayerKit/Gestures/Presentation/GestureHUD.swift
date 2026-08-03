@@ -52,13 +52,17 @@ struct GestureHUD: Equatable {
     var pulse: Int = 0
 
     var accessibilityAnnouncement: String {
+        accessibilityAnnouncement(using: PlayerStrings())
+    }
+
+    func accessibilityAnnouncement(using strings: PlayerStrings) -> String {
         switch kind {
-        case .volume: return "Volume \(primary)"
-        case .brightness: return "Brightness \(primary)"
-        case .scrub: return secondary.map { "\(primary), \($0)" } ?? primary
-        case .speed: return "Playback speed \(primary)"
+        case .volume: return strings.volumeAnnouncement(primary)
+        case .brightness: return strings.brightnessAnnouncement(primary)
+        case .scrub: return strings.scrubAnnouncement(primary, secondary)
+        case .speed: return strings.playbackSpeedAnnouncement(primary)
         case .zoom, .playPause: return primary
-        case .blocked: return "Controls are locked"
+        case .blocked: return strings.controlsAreLocked
         }
     }
 }

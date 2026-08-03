@@ -22,19 +22,19 @@ struct GestureAdjustmentAccessibilityActions: ViewModifier {
         content
             .accessibilityActionIf(
                 canAdjust(.volume),
-                named: Text("Increase volume")
+                named: Text(manager.strings.increaseVolume)
             ) { manager.nudge(.volume, .increment) }
             .accessibilityActionIf(
                 canAdjust(.volume),
-                named: Text("Decrease volume")
+                named: Text(manager.strings.decreaseVolume)
             ) { manager.nudge(.volume, .decrement) }
             .accessibilityActionIf(
                 canAdjust(.brightness),
-                named: Text("Increase brightness")
+                named: Text(manager.strings.increaseBrightness)
             ) { manager.nudge(.brightness, .increment) }
             .accessibilityActionIf(
                 canAdjust(.brightness),
-                named: Text("Decrease brightness")
+                named: Text(manager.strings.decreaseBrightness)
             ) { manager.nudge(.brightness, .decrement) }
     }
 }

@@ -54,6 +54,11 @@ final class PlayerKitProtectedContentView: UIView {
         installProtectedContentIfPossible()
     }
 
+    func setCaptureMessage(_ message: String) {
+        captureShieldLabel.text = message
+        captureShieldView.accessibilityLabel = message
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         installProtectedContentIfPossible()
@@ -75,11 +80,7 @@ final class PlayerKitProtectedContentView: UIView {
     }
 
     private func configure() {
-        let captureMessage = NSLocalizedString(
-            "Video hidden while screen sharing is active",
-            bundle: .module,
-            comment: "Shown instead of protected video during active screen capture"
-        )
+        let captureMessage = PlayerStrings().videoHiddenDuringScreenSharing
         backgroundColor = .black
         clipsToBounds = true
 

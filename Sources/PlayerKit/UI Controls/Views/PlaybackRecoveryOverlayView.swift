@@ -3,13 +3,14 @@ import SwiftUI
 @MainActor
 struct PlaybackRecoveryOverlayView: View {
     @ObservedObject var playerManager: PlayerManager
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.sizeCategory) private var sizeCategory
     let error: PlayerKitError
 
     private var presentation: PlaybackErrorPresentation {
         PlaybackErrorPresentation(
             error,
-            terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal
+            terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal,
+            strings: playerManager.strings
         )
     }
 
@@ -46,25 +47,23 @@ struct PlaybackRecoveryOverlayView: View {
                 .foregroundColor(.white.opacity(0.9))
                 .fixedSize(horizontal: false, vertical: true)
 
-            if Self.stacksActions(for: dynamicTypeSize) {
+            if Self.stacksActions(for: sizeCategory) {
                 VStack(alignment: .leading, spacing: 12) {
                     actionButtons
                 }
-                .controlSize(.large)
             } else {
                 HStack(spacing: 12) {
                     actionButtons
                 }
-                .controlSize(.large)
             }
         }
         .padding(20)
         .frame(maxWidth: 520, alignment: .leading)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-        .overlay {
+        .thinMaterialBackgroundCompat(in: RoundedRectangle(cornerRadius: 20))
+        .overlay(
             RoundedRectangle(cornerRadius: 20)
                 .strokeBorder(.white.opacity(0.16), lineWidth: 1)
-        }
+        )
         .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
     }
 
@@ -75,39 +74,43 @@ struct PlaybackRecoveryOverlayView: View {
                 if playerManager.isRetryingPlayback {
                     HStack(spacing: 8) {
                         ProgressView()
-                        Text("Refreshing…")
+                        Text(playerManager.strings.refreshing)
                     }
                 } else {
-                    Text("Retry")
+                    Text(playerManager.strings.retry)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .playbackActionButtonStyleCompat(prominent: true)
             .disabled(playerManager.isRetryingPlayback)
             .accessibilityIdentifier("player.errorRetry")
         }
 
-        Button(presentation.blocksPlayback ? "Close" : "Dismiss") {
+        Button(
+            presentation.blocksPlayback
+                ? playerManager.strings.close
+                : playerManager.strings.dismiss
+        ) {
             if presentation.blocksPlayback {
                 playerManager.shouldDismiss = true
             } else {
                 playerManager.clearError()
             }
         }
-        .buttonStyle(.bordered)
+        .playbackActionButtonStyleCompat(prominent: false)
         .accessibilityIdentifier(
             presentation.blocksPlayback ? "player.errorClose" : "player.errorDismiss"
         )
     }
 
-    static func stacksActions(for size: DynamicTypeSize) -> Bool {
-        size.isAccessibilitySize
+    static func stacksActions(for size: ContentSizeCategory) -> Bool {
+        size.isAccessibilityCategory
     }
 }
 
 @MainActor
 struct PlaybackEndedOverlayView: View {
     @ObservedObject var playerManager: PlayerManager
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.sizeCategory) private var sizeCategory
 
     var body: some View {
         ZStack {
@@ -120,28 +123,26 @@ struct PlaybackEndedOverlayView: View {
                     .foregroundColor(.white)
                     .accessibilityHidden(true)
 
-                Text("Playback finished")
+                Text(playerManager.strings.playbackFinished)
                     .font(.title2.weight(.semibold))
                     .foregroundColor(.white)
 
-                if PlaybackRecoveryOverlayView.stacksActions(for: dynamicTypeSize) {
+                if PlaybackRecoveryOverlayView.stacksActions(for: sizeCategory) {
                     VStack(spacing: 12) {
                         endButtons
                     }
-                    .controlSize(.large)
                 } else {
                     HStack(spacing: 12) {
                         endButtons
                     }
-                    .controlSize(.large)
                 }
             }
             .padding(24)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
-            .overlay {
+            .thinMaterialBackgroundCompat(in: RoundedRectangle(cornerRadius: 20))
+            .overlay(
                 RoundedRectangle(cornerRadius: 20)
                     .strokeBorder(.white.opacity(0.16), lineWidth: 1)
-            }
+            )
             .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
             .padding(24)
         }
@@ -151,15 +152,51 @@ struct PlaybackEndedOverlayView: View {
 
     @ViewBuilder
     private var endButtons: some View {
-        Button("Replay", action: playerManager.replay)
-            .buttonStyle(.borderedProminent)
+        Button(playerManager.strings.replay, action: playerManager.replay)
+            .playbackActionButtonStyleCompat(prominent: true)
             .accessibilityIdentifier("player.replay")
 
-        Button("Close") {
+        Button(playerManager.strings.close) {
             playerManager.shouldDismiss = true
         }
-        .buttonStyle(.bordered)
+        .playbackActionButtonStyleCompat(prominent: false)
         .accessibilityIdentifier("player.endClose")
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func playbackActionButtonStyleCompat(prominent: Bool) -> some View {
+        if #available(iOS 15.0, macOS 12.0, *) {
+            if prominent {
+                self.buttonStyle(.borderedProminent).controlSize(.large)
+            } else {
+                self.buttonStyle(.bordered).controlSize(.large)
+            }
+        } else {
+            self.buttonStyle(PlaybackActionFallbackButtonStyle(prominent: prominent))
+        }
+    }
+}
+
+private struct PlaybackActionFallbackButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.body.weight(.semibold))
+            .foregroundColor(prominent ? .white : .accentColor)
+            .padding(.horizontal, 16)
+            .frame(minHeight: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(prominent ? Color.accentColor : Color.white.opacity(0.12))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .strokeBorder(Color.white.opacity(prominent ? 0 : 0.18), lineWidth: 1)
+            )
+            .opacity(configuration.isPressed ? 0.78 : 1)
     }
 }
 
@@ -169,29 +206,33 @@ struct PlaybackErrorPresentation: Equatable {
     let blocksPlayback: Bool
     let isRetryable: Bool
 
-    init(_ error: PlayerKitError, terminalPlaybackFailure: Bool = false) {
+    init(
+        _ error: PlayerKitError,
+        terminalPlaybackFailure: Bool = false,
+        strings: PlayerStrings = PlayerStrings()
+    ) {
         switch error {
         case .mediaLoadFailed:
-            title = "Playback unavailable"
-            message = "We couldn’t load this video. Check your connection and try again."
+            title = strings.playbackUnavailableTitle
+            message = strings.playbackUnavailableMessage
             blocksPlayback = true
             isRetryable = true
 
         case .unknown:
-            title = "Action unavailable"
-            message = "That action couldn’t be completed. You can keep watching here."
+            title = strings.actionUnavailableTitle
+            message = strings.actionUnavailableMessage
             blocksPlayback = terminalPlaybackFailure
             isRetryable = terminalPlaybackFailure
 
         case .pictureInPictureFailed:
-            title = "Picture in Picture unavailable"
-            message = "Picture in Picture couldn’t start. You can keep watching here."
+            title = strings.pictureInPictureUnavailableTitle
+            message = strings.pictureInPictureUnavailableMessage
             blocksPlayback = terminalPlaybackFailure
             isRetryable = terminalPlaybackFailure
 
         case .castSessionUnavailable, .castURLMissing:
-            title = "Casting unavailable"
-            message = "Casting isn’t available right now. You can keep watching on this device."
+            title = strings.castingUnavailableTitle
+            message = strings.castingUnavailableMessage
             blocksPlayback = terminalPlaybackFailure
             isRetryable = terminalPlaybackFailure
 
@@ -199,8 +240,8 @@ struct PlaybackErrorPresentation: Equatable {
              .externalPlaybackURLMissing,
              .externalPlaybackRequiresReachableURL,
              .externalPlaybackFailed:
-            title = "External playback unavailable"
-            message = "This video can’t play on the selected device. You can keep watching here."
+            title = strings.externalPlaybackUnavailableTitle
+            message = strings.externalPlaybackUnavailableMessage
             blocksPlayback = terminalPlaybackFailure
             isRetryable = terminalPlaybackFailure
         }

@@ -3,20 +3,20 @@ import Combine
 
 @MainActor
 struct StreamingInfoView: View {
-    private let playerManager: PlayerManager
+    @ObservedObject private var playerManager: PlayerManager
     @State var streamingInfo: StreamingInfo = .placeholder
     @State private var refreshTimer: AnyCancellable?
     
     init(playerManager: PlayerManager = .shared) {
-        self.playerManager = playerManager
+        _playerManager = ObservedObject(wrappedValue: playerManager)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            infoRow("Bitrate", streamingInfo.videoBitrate)
-            infoRow("Buffer", streamingInfo.bufferDuration)
-            infoRow("Frame Rate", streamingInfo.frameRate)
-            infoRow("Resolution", streamingInfo.resolution)
+            infoRow(playerManager.strings.bitrate, streamingInfo.videoBitrate)
+            infoRow(playerManager.strings.buffer, streamingInfo.bufferDuration)
+            infoRow(playerManager.strings.frameRate, streamingInfo.frameRate)
+            infoRow(playerManager.strings.resolution, streamingInfo.resolution)
         }
         .padding(12)
         .glassBackgroundCompat(cornerRadius: 16)
@@ -57,11 +57,11 @@ struct StreamingInfoView: View {
         HStack {
             Text("\(title):")
                 .font(.callout)
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundColor(.white.opacity(0.82))
             Spacer(minLength: 12)
             Text(value)
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundColor(.white)
                 .monospacedDigitsCompat()
         }
     }

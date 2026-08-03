@@ -183,7 +183,7 @@ final class PlaybackRecoveryRegressionTests: XCTestCase {
 
     func testRecoveryActionsStackAtAccessibilityTextSizes() {
         XCTAssertFalse(PlaybackRecoveryOverlayView.stacksActions(for: .large))
-        XCTAssertTrue(PlaybackRecoveryOverlayView.stacksActions(for: .accessibility1))
+        XCTAssertTrue(PlaybackRecoveryOverlayView.stacksActions(for: .accessibilityMedium))
     }
 
     private func item(_ name: String) -> PlayerItem {

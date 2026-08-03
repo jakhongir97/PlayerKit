@@ -3,12 +3,12 @@ import SwiftUI
 @MainActor
 struct MediaOptionsMenu: View {
     @StateObject private var viewModel: MediaOptionsMenuViewModel
-    private let playerManager: PlayerManager
+    @ObservedObject private var playerManager: PlayerManager
 
     private let insets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
     
     init(playerManager: PlayerManager = .shared) {
-        self.playerManager = playerManager
+        _playerManager = ObservedObject(wrappedValue: playerManager)
         _viewModel = StateObject(wrappedValue: MediaOptionsMenuViewModel(playerManager: playerManager))
     }
 
@@ -17,6 +17,10 @@ struct MediaOptionsMenu: View {
         if #available(iOS 26.0, macOS 26.0, *) {
             GlassEffectContainer {
                 HStack {
+                    if !playerManager.availablePlaybackQualityPresets.isEmpty {
+                        PlaybackQualityMenu(playerManager: playerManager)
+                    }
+
                     PlaybackSpeedMenu(playerManager: playerManager)
 
                     if viewModel.hasSubtitles {
@@ -44,17 +48,66 @@ struct MediaOptionsMenu: View {
 
     private var fallback: some View {
         HStack {
+            if !playerManager.availablePlaybackQualityPresets.isEmpty {
+                PlaybackQualityMenu(playerManager: playerManager)
+            }
+
             PlaybackSpeedMenu(playerManager: playerManager)
 
             if viewModel.hasSubtitles { SubtitleMenu(playerManager: playerManager) }
             if viewModel.hasAudioTracks { AudioMenu(playerManager: playerManager) }
         }
         .padding(insets)
-        .background(.ultraThinMaterial, in: Capsule())
+        .thinMaterialBackgroundCompat(in: Capsule())
         .overlay(
             Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1)
         )
         .contentShape(Capsule())
         .buttonStyle(.plain)
+    }
+}
+
+@MainActor
+private struct PlaybackQualityMenu: View {
+    @ObservedObject var playerManager: PlayerManager
+
+    var body: some View {
+        Menu {
+            Section(header: Text(playerManager.strings.playbackQualityTitle)) {
+                ForEach(playerManager.availablePlaybackQualityPresets) { preset in
+                    Button {
+                        playerManager.selectPlaybackQualityPreset(preset)
+                    } label: {
+                        HStack {
+                            Text(title(for: preset))
+                            if playerManager.selectedPlaybackQualityPreset == preset {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(10)
+        }
+        .accessibilityLabel(playerManager.strings.playbackQualityAccessibilityLabel)
+        .accessibilityHint(playerManager.strings.playbackQualityHint)
+        .accessibilityIdentifier("player.qualityMenu")
+        .buttonStyle(.plain)
+        .onTapGesture {
+            playerManager.userInteracted()
+        }
+    }
+
+    private func title(for preset: PlaybackQualityPreset) -> String {
+        switch preset {
+        case .automatic: return playerManager.strings.automaticQuality
+        case .maximum: return playerManager.strings.maximumQuality
+        case .optimal: return playerManager.strings.optimalQuality
+        case .minimum: return playerManager.strings.minimumQuality
+        }
     }
 }

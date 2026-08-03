@@ -17,8 +17,8 @@ struct RotateButtonView: View {
                 .circularGlassIcon()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Rotate player")
-        .accessibilityHint("Toggles between portrait and landscape")
+        .accessibilityLabel(playerManager.strings.rotatePlayer)
+        .accessibilityHint(playerManager.strings.rotatePlayerHint)
         .accessibilityIdentifier("player.rotate")
         #if canImport(UIKit)
         .background(WindowSceneReader(scene: $windowScene).frame(width: 0, height: 0))

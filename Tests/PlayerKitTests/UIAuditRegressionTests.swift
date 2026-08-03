@@ -4,6 +4,24 @@ import XCTest
 
 @MainActor
 final class UIAuditRegressionTests: XCTestCase {
+    func testPlaybackSpeedMenuMatchesStandardRateSet() {
+        XCTAssertEqual(
+            PlaybackSpeedMenu.supportedSpeeds,
+            [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+        )
+    }
+
+    func testPlayerViewDefaultsToAutomaticTeardownAndAllowsHostOwnership() {
+        let automatic = PlayerView(playerManager: .shared)
+        let hostManaged = PlayerView(
+            playerManager: .shared,
+            automaticallyTearsDownOnDisappear: false
+        )
+
+        XCTAssertTrue(automatic.automaticallyTearsDownOnDisappear)
+        XCTAssertFalse(hostManaged.automaticallyTearsDownOnDisappear)
+    }
+
     func testPlayerViewLoadIdentityFollowsEveryInputAndIsStableForNaN() {
         let url = URL(string: "https://example.com/video.m3u8")!
         let first = PlayerItem(title: "One", url: url, lastPosition: .nan, episodeIndex: 1)

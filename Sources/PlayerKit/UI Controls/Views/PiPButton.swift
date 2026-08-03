@@ -22,8 +22,12 @@ struct PiPButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!playerManager.canTogglePiP)
-        .accessibilityLabel(playerManager.isPiPActive ? "Stop Picture in Picture" : "Start Picture in Picture")
-        .accessibilityHint("Toggles Picture in Picture mode")
+        .accessibilityLabel(
+            playerManager.isPiPActive
+                ? playerManager.strings.stopPictureInPicture
+                : playerManager.strings.startPictureInPicture
+        )
+        .accessibilityHint(playerManager.strings.pictureInPictureHint)
         .accessibilityIdentifier("player.pip")
     }
 }

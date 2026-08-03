@@ -16,7 +16,7 @@ struct SharingMenuView: View {
             #endif
 
             if isAirPlayEnabled {
-                AirPlayButton()
+                AirPlayButton(playerManager: playerManager)
             }
         }
         #if os(macOS)

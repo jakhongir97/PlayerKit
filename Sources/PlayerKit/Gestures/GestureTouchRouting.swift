@@ -336,7 +336,7 @@ extension GestureManager {
                 kind: .playPause,
                 slot: .banner,
                 symbol: willPlay ? "play.fill" : "pause.fill",
-                primary: willPlay ? "Play" : "Pause",
+                primary: willPlay ? strings.play : strings.pause,
                 secondary: nil,
                 tertiary: nil,
                 fraction: nil
@@ -355,7 +355,7 @@ extension GestureManager {
                 kind: .speed,
                 slot: .banner,
                 symbol: "forward.fill",
-                primary: Self.speedLabel(speedHold.engagedSpeed),
+                primary: strings.gestureSpeedValue(speedHold.engagedSpeed),
                 secondary: nil,
                 tertiary: nil,
                 fraction: nil
@@ -388,7 +388,10 @@ extension GestureManager {
 
     private func announceRail(kind: GestureKind) {
         guard let hud = hudModel.hud else { return }
-        GestureAnnouncer.announce(hud.accessibilityAnnouncement, state: assistiveState)
+        GestureAnnouncer.announce(
+            hud.accessibilityAnnouncement(using: strings),
+            state: assistiveState
+        )
     }
 
     private func blockGesture(_ kind: GestureKind) {
@@ -454,7 +457,10 @@ extension GestureManager {
         presentRail(kind: kind, side: side, unit: next, isArmed: false, isPinned: next <= 0 || next >= 1)
         hudModel.beginDwell()
         if configuration.isHapticsEnabled { feedbackPerformer.selection() }
-        GestureAnnouncer.announce(hudModel.hud?.accessibilityAnnouncement ?? "", state: assistiveState)
+        GestureAnnouncer.announce(
+            hudModel.hud?.accessibilityAnnouncement(using: strings) ?? "",
+            state: assistiveState
+        )
     }
 
     func setLevel(_ kind: GestureKind, _ value: Double) {
@@ -542,7 +548,7 @@ extension GestureManager {
                 kind: .zoom,
                 slot: .banner,
                 symbol: fill ? "arrow.up.left.and.arrow.down.right" : "arrow.down.right.and.arrow.up.left",
-                primary: fill ? "Fill" : "Fit",
+                primary: fill ? strings.fill : strings.fit,
                 secondary: nil,
                 tertiary: nil,
                 fraction: nil

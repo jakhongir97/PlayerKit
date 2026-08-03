@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct TopControlsView: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.sizeCategory) private var sizeCategory
     @ObservedObject var playerManager: PlayerManager
 
     var body: some View {
@@ -15,8 +15,8 @@ struct TopControlsView: View {
                     if let description = item.description {
                         Text(description)
                             .font(.callout.weight(.medium))
-                            .foregroundStyle(.white)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                            .foregroundColor(.white)
+                            .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
                     }
                 }
             }
@@ -45,7 +45,7 @@ struct TopControlsView: View {
 /// arrives, and keeps rendering it if the fetch fails — so no cache or
 /// network policy has to move into PlayerKit for this to degrade well.
 private struct PlayerTitleView: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.sizeCategory) private var sizeCategory
     let title: String
     let imageURL: URL?
 
@@ -57,28 +57,34 @@ private struct PlayerTitleView: View {
 
     var body: some View {
         if let imageURL {
-            AsyncImage(
-                url: imageURL,
-                // Crossfade, so a cold fetch resolving into the artwork does
-                // not read as a glitch.
-                transaction: Transaction(animation: .easeInOut(duration: 0.2))
-            ) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        .frame(
-                            maxWidth: Self.maxImageWidth,
-                            maxHeight: Self.maxImageHeight,
-                            alignment: .leading
-                        )
-                        .accessibilityLabel(Text(title))
-                default:
-                    // Only the artwork is boxed: the fallback keeps the width
-                    // the text title has always had.
-                    titleText
+            if #available(iOS 15.0, macOS 12.0, *) {
+                AsyncImage(
+                    url: imageURL,
+                    // Crossfade, so a cold fetch resolving into the artwork does
+                    // not read as a glitch.
+                    transaction: Transaction(animation: .easeInOut(duration: 0.2))
+                ) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(
+                                maxWidth: Self.maxImageWidth,
+                                maxHeight: Self.maxImageHeight,
+                                alignment: .leading
+                            )
+                            .accessibilityLabel(Text(title))
+                    default:
+                        // Only the artwork is boxed: the fallback keeps the width
+                        // the text title has always had.
+                        titleText
+                    }
                 }
+            } else {
+                // ponytail: iOS 14 keeps the reliable text title; native async
+                // image loading begins on iOS 15 without adding a loader/cache.
+                titleText
             }
         } else {
             titleText
@@ -88,7 +94,7 @@ private struct PlayerTitleView: View {
     private var titleText: some View {
         Text(title)
             .font(.title2.weight(.semibold))
-            .foregroundStyle(.white)
-            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .foregroundColor(.white)
+            .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
     }
 }

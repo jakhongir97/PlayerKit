@@ -16,8 +16,8 @@ public struct CloseButtonView: View {
                 .circularGlassIcon()
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Close player")
-        .accessibilityHint("Dismisses the player screen")
+        .accessibilityLabel(playerManager.strings.closePlayer)
+        .accessibilityHint(playerManager.strings.closePlayerHint)
         .accessibilityIdentifier("player.close")
     }
 }

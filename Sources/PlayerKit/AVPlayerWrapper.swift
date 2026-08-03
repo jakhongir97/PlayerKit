@@ -299,6 +299,11 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     private var shouldEmitRuntimeState = false
     /// Survives pause/resume and item replacement, unlike `AVPlayer.rate`.
     private var desiredPlaybackRate: Float = 1.0
+    private(set) var preferredPeakBitRate: Double = 0
+
+    var currentItemPreferredPeakBitRate: Double? {
+        player?.currentItem?.preferredPeakBitRate
+    }
 
     /// Whether AVPlayer may route video to an external destination (AirPlay).
     ///
@@ -464,6 +469,12 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
 
     public func setMuted(_ muted: Bool) {
         isMuted = muted
+    }
+
+    func setPreferredPeakBitRate(_ bitsPerSecond: Double) {
+        guard bitsPerSecond.isFinite, bitsPerSecond >= 0 else { return }
+        preferredPeakBitRate = bitsPerSecond
+        player?.currentItem?.preferredPeakBitRate = bitsPerSecond
     }
 }
 
@@ -681,6 +692,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         invalidateInstalledItemObservation()
         timeControlStatusObserver = nil
         currentSourceURL = sourceURL
+        playerItem.preferredPeakBitRate = preferredPeakBitRate
         debugLog("Loading AVPlayer item. resume=\(lastPosition?.description ?? "nil")")
         // Automatic stall-waiting must stay enabled: with it disabled AVPlayer
         // renders straight through HLS buffer underruns, which is audible as
@@ -1925,12 +1937,11 @@ extension AVPlayerWrapper {
     private func loadMediaSelectionGroups(for item: AVPlayerItem) {
         mediaSelectionLoadTask?.cancel()
         mediaSelectionLoadTask = Task { @MainActor [weak self, weak item] in
-            guard let item else { return }
-            let audioGroup = try? await item.asset.loadMediaSelectionGroup(for: .audible)
-            guard !Task.isCancelled, self?.player?.currentItem === item else { return }
-            let subtitleGroup = try? await item.asset.loadMediaSelectionGroup(for: .legible)
+            guard let self, let item else { return }
+            let audioGroup = await self.mediaSelectionGroup(for: .audible, in: item.asset)
+            guard !Task.isCancelled, self.player?.currentItem === item else { return }
+            let subtitleGroup = await self.mediaSelectionGroup(for: .legible, in: item.asset)
             guard !Task.isCancelled,
-                  let self,
                   self.player?.currentItem === item else { return }
 
             self.audioSelectionGroup = audioGroup
@@ -1946,6 +1957,23 @@ extension AVPlayerWrapper {
             self.lifecycleReporter?.playerDidUpdateTracks()
             self.mediaSelectionLoadTask = nil
         }
+    }
+
+    private func mediaSelectionGroup(
+        for characteristic: AVMediaCharacteristic,
+        in asset: AVAsset
+    ) async -> AVMediaSelectionGroup? {
+        #if os(iOS)
+        if #available(iOS 15.0, *) {
+            return try? await asset.loadMediaSelectionGroup(for: characteristic)
+        }
+
+        // Called only after AVPlayerItem reaches readyToPlay, so the legacy
+        // accessor's prerequisite key has already loaded on iOS 14.
+        return asset.mediaSelectionGroup(forMediaCharacteristic: characteristic)
+        #else
+        return try? await asset.loadMediaSelectionGroup(for: characteristic)
+        #endif
     }
 
     private func ensureAudibleTrackSelectedIfNeeded(

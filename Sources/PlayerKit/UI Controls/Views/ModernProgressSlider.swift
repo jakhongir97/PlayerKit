@@ -103,12 +103,11 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
             .frame(height: PlayerKitPlatform.isDesktop ? 26 : 28)
 
             HStack {
-                // iOS 15 is the deployment target, so monospacedDigit() is
-                // unconditionally available.
-                Text(displayedDuration.asTimeString(style: .positional)).monospacedDigit()
+                Text(displayedDuration.asTimeString(style: .positional))
+                    .monospacedDigitsCompat()
                 Spacer(minLength: 0)
                 Text("-" + (inRange.upperBound - displayedDuration).asTimeString(style: .positional))
-                    .monospacedDigit()
+                    .monospacedDigitsCompat()
             }
             .padding(.horizontal, contentHorizontalInset)
             .font(PlayerKitPlatform.isDesktop ? .system(size: 12, weight: .semibold, design: .rounded) : .system(.headline, design: .rounded))

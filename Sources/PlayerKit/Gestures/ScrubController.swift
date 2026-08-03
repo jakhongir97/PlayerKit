@@ -24,11 +24,15 @@ enum ScrubRateTier: Equatable, CaseIterable {
     /// `nil` at full rate — a label there would be noise, since it is the
     /// state the user is already in.
     var label: String? {
+        label(using: PlayerStrings())
+    }
+
+    func label(using strings: PlayerStrings) -> String? {
         switch self {
         case .hiSpeed: return nil
-        case .half: return "Half-Speed Scrubbing"
-        case .quarter: return "Quarter-Speed Scrubbing"
-        case .fine: return "Fine Scrubbing"
+        case .half: return strings.halfSpeedScrubbing
+        case .quarter: return strings.quarterSpeedScrubbing
+        case .fine: return strings.fineScrubbing
         }
     }
 
