@@ -27,33 +27,66 @@ from this repository are marked **[unverified]**.
 The August hardening pass closes the actionable playback-state, recovery,
 adaptive-layout, accessibility and platform-input defects found by the code
 audit and the 1,000-persona simulation. It does **not** complete the product
-roadmap: repository consolidation, host integration, multi-instance ownership,
-the timeline model, composable chrome, live-channel modelling and public-release
-evidence remain separate milestones.
+roadmap: repository consolidation, multi-instance ownership, the full reusable
+timeline/chrome models, live-channel modelling and public-release evidence remain
+separate milestones. The narrower iTV host integration now has a static candidate.
 
 | Track | Current state | Remaining exit work |
 |---|---|---|
 | Phase 0 · Consolidate | **Partial / externally blocked** | CI and deterministic package resolution are in place. Obtain the GitLab fork dossier, choose the canonical repository, move both iTV apps to it, and close the custom VLCKit provenance/license/privacy/signature evidence gap. |
-| Phase 1 · Adoptable | **Late-stage** | Public state, background/Now Playing, live-window seeking and stock recovery are done. Add `PlayerConfiguration`, narrow/deprecate accidental API, integrate both real iTV apps, and prove network-drop recovery on production-shaped streams. |
+| Phase 1 · Adoptable | **Late-stage** | Public state, background/Now Playing, live-window seeking and stock recovery are done. Add `PlayerConfiguration`, narrow/deprecate accidental API, integrate both real iTV apps, prove network-drop recovery, and define the host QoE session/schema. |
 | Phase 2a · Main actor | **Complete** | The control plane is main-actor isolated and macOS/iOS Swift 6 builds pass. |
 | Phase 2b · Instances | **Not started; foundations landed** | `PlayerManager` remains a singleton. Add the session registry, arbitrate Cast callbacks and screen brightness, expose instance creation, and run the currently skipped multi-backend/multi-player cases. |
-| Phase 3 · Timeline model | **Not started** | Live/DVR clamping defects are fixed, but there is no first-class VOD/live-DVR/pure-live/short-form timeline model. |
+| Phase 3 · Timeline model | **iTV-scoped candidate; broader phase open** | `PlayerTimelineMode` now distinguishes automatic/VOD/seekable-live/pure-live for the iTV integration. Short-form and the full reusable timeline-consumer migration remain. |
 | Phase 4 · Chrome + theming | **Preliminary hardening complete** | Compact widths, Dynamic Type, capability truth and accessibility are hardened. Control slots, content profiles, theming, inline trailer mode and observation fan-out remain. |
-| Phase 5 · Live TV | **Not started** | Requires the Phase 3 timeline and Phase 4 chrome seams plus decisions on DRM, DVR and tvOS scope. |
+| Phase 5 · Live TV | **Host transport candidate; reusable phase open** | iTV can select PlayerKit inside its existing TV shell, but reusable channel/EPG modelling is intentionally absent; production-shaped catch-up timeline validation, runtime/device proof, DRM and tvOS decisions remain. |
 | Phase 6 · OSS readiness | **Groundwork only / release blocked** | CI, release checks, security guidance and notices exist. API review, DocC, sample app, migration guides, legal review and reproducible VLCKit evidence remain. |
 | Continuous accessibility/localization | **Code pass complete; validation open** | Run VoiceOver, Voice Control, Switch Control, capture, PiP, AirPlay, Cast, brightness/volume and VLC paused-switch checks on physical devices. Supply target locales and approved translations. |
 
-The active iTV candidate now also has the minimum Step 5 code seams. PlayerKit
-`f8a3937` permits asynchronous host PiP-restoration completion and iTV
-`db5be536` restores the actual owning presentation with stale-owner/exit/root
-guards. PlayerKit `f179890` preserves an optional host-provided `AVURLAsset`, and
-iTV `fbf7f80b` routes both offline entries behind the existing selector with
-local-file validation and existing Core Data progress. The full 337-test suite
-(5 environment skips, 0 failures), focused 9/9 platform-interaction and 17/17
-backend-lifecycle selections, static iTV verifiers and dual-architecture builds
-pass. This is compile/static evidence only: PiP restoration, downloaded playback,
-airplane mode, invalid/expired assets, relaunch/progress and physical devices are
-still red, so Standard remains the rollback path.
+The active iTV candidate now has the minimum Step 5 and Step 6 code seams.
+PlayerKit `f8a3937`/`f179890` cover asynchronous PiP restoration and optional
+host-provided `AVURLAsset` input. PlayerKit `9e8d16a`, `9773f43` and `7b72368`
+add explicit live timelines, typed live Cast handoff and opt-in direct-load track
+preservation. iTV `ebb9767b`, `afdcc554` and `b5f8cec2` route generic live and
+the shared TV shell behind the existing selector while retaining app-owned EPG,
+auth, favorites, timeshift and channel state. iTV `74f45e8b` accepts only exact
+stored `Test Player` as the PlayerKit opt-in across all five selectors; nil,
+`Standard Player`, unknown, empty and case variants fail closed. This device-local default
+is not a server canary or kill switch. Catch-up seeking is
+design-red: Standard rebases logical programme time across replacement assets,
+while PlayerKit publishes backend time and has direct backend-time consumers.
+A URL-only host callback is therefore not accepted as a sufficient design.
+
+The PlayerKit Step 7 static slice is green through `2a6c8bb`: remote skip/scrub
+commands follow the current seek window and empty reset clears stale Now Playing
+metadata. iTV `30d56a6b` isolates radio-owned remote targets, and `95ce19f6`
+suppresses PlayerKit commands while IMA is `held`, `requesting`, `ready`,
+`playing` or `releasePending`, or while `released` VMAP remains visible/covered.
+It restores covered playback only for the same requesting owner, preserving user
+pause, and checkpoints guarded VOD/offline progress on background. The latest
+full suite, captured before cache cleanup, reports 355 executed, 5 environment
+skips and 0 failures. iTV `19520e06` adds app-ID-only logical-item watch dedupe:
+retry does not re-emit, real movie/episode/identified-live transitions do, and
+embedded TV is unchanged. All 13 iTV PlayerKit verifiers plus the radio verifier
+and EN/RU/UZ `plutil` pass through that commit. The final generic simulator build
+through `19520e06` passes arm64 and x86_64; `lipo` confirms a fat x86_64/arm64
+app binary. Both architectures warn that the iOS-simulator 14.0 app links IMA
+and Cast built for 15.0, and packaged slices confirm `minos 15.0`. No simulator boot
+or runtime proof exists. Every runtime media fixture, actual 100-switch run,
+airplane-mode path, receiver/system integration and physical device remains red;
+native RU/UZ approval is red. VMAP post-roll
+remains absent unless product requires a host `adsLoader.contentComplete()` contract.
+
+Production proof is also red: there is no server cohort/kill switch, common
+Standard QoE definition, baseline, tolerance or dashboard. `playbackStarted` is
+not decoded first frame, and the iTV host discards most QoE event context, so a
+privacy-safe host session/schema contract still has to be defined.
+
+Release blockers are unchanged. IMA and Cast declare `LC_BUILD_VERSION` with
+`minos 15.0`, so an iOS 14 smoke cannot close compatibility: raise app and
+PlayerKit minimums to 15 or replace both with reviewed `minos <= 14.0` slices.
+iTV still uses the unpublished local `../PlayerKit`, which needs immutable
+provenance before rollout.
 
 ### Next milestone: primary-player integration candidate
 
@@ -62,8 +95,10 @@ Work in this order:
 1. Resolve the two external Phase 0 blockers: the fork dossier/canonical repo and
    the custom VLCKit release evidence.
 2. Run the physical-device matrix in `RELEASE.md`; runtime-prove the compiled
-   iTV PiP/offline candidates; and integrate the package into both iTV apps
-   across movie, episode, live/DVR and background playback.
+   iTV PiP/offline/live/TV/system candidates. Probe a redacted catch-up template
+   and manifests at logical seconds 0, middle and live edge. If one zero-second
+   asset cannot seek natively, add the token-scoped reloading-timeline projection
+   and guarded host resolver; then integrate the package into both iTV apps.
 3. Close Phase 1 with `PlayerConfiguration` and a deliberate public-API review;
    do not add more one-off manager flags while that configuration seam is open.
 4. Start Phase 2b only after the host integration proves simultaneous players
@@ -91,8 +126,8 @@ Nine investigations produced four findings that reorder the obvious plan.
 **a. The singleton is not the problem it appears to be.** `PlayerManager.shared`
 is referenced **zero times** inside `Sources/`. The library's own logic is
 already instance-based; both backends are instantiable and hold no static state.
-The singleton survives only through `private init` at
-[PlayerManager.swift:432](../Sources/PlayerKit/PlayerManager.swift#L432) and 26
+The singleton survives only through `private init` in
+[PlayerManager.swift](../Sources/PlayerKit/PlayerManager.swift) and 26
 `= .shared` default arguments — 21 of which are on internal types a host cannot
 see. **Making `init` public is a one-line change that breaks nothing.** The real
 work is arbitrating five process-global resources that currently have
@@ -101,9 +136,10 @@ last-writer-wins semantics.
 **b. The thing actually blocking iOS adoption is probably the API, not the
 architecture.** A host application **cannot read whether the player is playing.**
 `isPlaying`, `duration`, `isBuffering` and `availableAudioTracks` were all
-`internal` ([PlayerManager.swift:236-269](../Sources/PlayerKit/PlayerManager.swift#L236);
-note that range is not homogeneous — it also holds 5 already-public properties
-and 6 UI-chrome ones that must not be promoted). Sprint 1 promoted the
+`internal` in the audit basis revision
+([PlayerManager.swift](../Sources/PlayerKit/PlayerManager.swift)); that historical
+block also held 5 already-public properties and 6 UI-chrome ones that must not
+be promoted. Sprint 1 promoted the
 read-only playback state; the rest of this finding stands. There is no
 configuration type in the package at all. 305 declarations are
 `public`, but the *deliberate* surface is perhaps 60 symbols and the rest is
@@ -251,7 +287,11 @@ mostly API and platform integration, not architecture.*
 - ~~**Background, lock screen, remote commands.**~~ *Done* — now-playing
   metadata, the six remote commands, and an opt-in background-playback policy.
   Scene-phase transition handling is still open, but `AVPlayer`'s own
-  background policy covers the case that mattered.
+  background policy covers the case that mattered. The iTV candidate hardening
+  in `2a6c8bb` additionally gates skip/scrub on the current seek window and
+  clears stale metadata on an empty reset. iTV `95ce19f6` adds IMA remote
+  ownership, same-owner covered resume and guarded VOD/offline background
+  checkpoints; ad/device/Control Center proof is open.
 - ~~**Fix live end-to-end** — slider range, scrub paths, gesture clamping — so
   finding (d) is closed at every layer.~~ *Done in Sprint 1.* Note this closes
   the *clamping*, not live TV: the timeline model is still Phase 3 and channels
@@ -301,6 +341,12 @@ wake lock or controller input; the 4 skipped backend-switch tests run.
 The load-bearing modelling work. A timeline abstraction with VOD, live-with-DVR,
 live-without-seek and short-form as first-class shapes.
 
+> **iTV candidate slice landed.** `9e8d16a` supplies the minimum
+> automatic/on-demand/seekable-live/pure-live distinction, live-edge state and
+> Go Live controls used by the current iTV bridge. This does not close the
+> broader phase: short-form and the full reusable timeline-consumer contract
+> remain, and no live fixture/device flow has run.
+
 > **Do not add a `.liveChannel` case to `PlayerContentType` and branch on it.**
 > That enum is already consulted from six sites asking four different questions.
 > A third case makes the sixth site ask a fifth question. This is precisely how
@@ -331,6 +377,16 @@ scroll view.
 *Only after Phases 3 and 4.* Channel model and switching, programme boundaries,
 live-specific chrome, broadcast track handling, DVR scrubbing. Preloaded zapping
 requires Phase 2.
+
+> **Host-specific iTV transport candidate landed.** iTV `b5f8cec2` embeds
+> PlayerKit under its existing TV shell and uses `7b72368` to preserve matching
+> track selections across accepted host reloads. The app, not PlayerKit, still
+> owns channels, EPG, auth, favorites and catch-up URL construction. This is not
+> the reusable Phase 5 channel model. First test a production-shaped template and
+> manifests at logical seconds 0, middle and live edge. If native AVFoundation
+> seeking on one zero-second URL is insufficient, the smallest correct seam is a
+> token-scoped reloading-timeline projection plus host resolver with paused-intent,
+> boundary and generation guards. This and every runtime/device matrix remain red.
 
 **tvOS is a separate ~6–8 week option**, not included above — see §6.
 
@@ -422,7 +478,7 @@ Ordered by how much they move the plan.
 - **Not** pursuing AVPlayer/VLC peer parity (§5).
 - **Not** building an EPG. Channel lists and programme metadata stay host data
   that PlayerKit renders. `configureExternalEpisodeNavigation`
-  ([PlayerManager.swift:1004](../Sources/PlayerKit/PlayerManager.swift#L1004)) is
+  ([PlayerManager.swift](../Sources/PlayerKit/PlayerManager.swift)) is
   the right precedent. Without this boundary, scope expands indefinitely.
 - **Not** shipping tvOS unless §6.4 says so.
 - **Not** open-sourcing before the API settles. Publishing an API mid-migration

@@ -11,8 +11,10 @@ losing the Standard Player's production contract.
   channel data, sharing, issue reporting, and analytics.
 - PlayerKit owns playback, timeline mechanics, controls, recovery, tracks,
   gestures, accessibility, PiP, AirPlay, Cast integration, and observable state.
-- iOS 14 remains supported unless a later measured blocker makes raising the app
-  minimum the smaller change.
+- The app source target remains iOS 14, but pinned IMA and Cast slices declare
+  `LC_BUILD_VERSION minos 15.0`. An iOS 14 smoke cannot close that mismatch:
+  release must raise both app and PlayerKit minimums to 15 or replace both
+  binaries with reviewed slices declaring `minos <= 14.0`.
 - This month does not include tvOS, public/open-source polish, or speculative DRM.
   A verified protected production asset immediately promotes FairPlay into scope.
 - Reels remains a separate product surface. Inline previews may use a small native
@@ -23,17 +25,22 @@ losing the Standard Player's production contract.
 - PlayerKit and the real iTV app compile against the local candidate. Current
   generic Debug simulator builds pass for both arm64 and x86_64 in PlayerKit and
   iTV; generic iOS 14 PlayerKit source/device slices also compiled earlier.
-- `swift test --no-parallel` executes 337 tests with 5 environment-dependent
-  skips and 0 failures. Focused checks cover exact markers, quality policy, QoE,
-  WebVTT, injectable strings, recovery, host-owned teardown and presentation
-  policy, asynchronous PiP restoration and local-asset lifecycle; the focused
-  platform-interaction and backend-lifecycle selections are 9/9 and 17/17 green.
+- The latest full `swift test --no-parallel` result, captured before cache
+  cleanup, executes 355 tests with 5 environment-dependent skips and 0 failures.
+  Focused checks now also cover explicit live timelines/Cast/remote commands,
+  empty-state Now Playing cleanup and opt-in direct-load track preservation.
 - The candidate VOD bridge now preserves Standard's exact resume thresholds,
   metadata, intro/credits actions, entitlement/paywall decisions, sorted async
   episode navigation, previous-season fallback, history fields, selected tracks,
-  playback rate, sharing, and watch analytics. Stale episode responses are
-  rejected, paid-next navigation retains the completed player state, temporary
-  child navigation pauses, and actual dismissal tears down the singleton owner.
+  playback rate, sharing, and watch analytics. iTV `19520e06` now deduplicates
+  watch events by logical kind plus app-owned content/file IDs: retry does not
+  re-emit, while real movie, episode and identified-live transitions do;
+  embedded TV keeps its channel-ID path. No URL/title/ad/user data enters the
+  identity. The verifier and final dual-architecture build pass; runtime event
+  proof remains red.
+  Stale episode responses are rejected, paid-next navigation retains the
+  completed player state, temporary child navigation pauses, and actual
+  dismissal tears down the singleton owner.
   Late URL/payment responses cannot recreate playback after exit, and the one
   final progress write is allowed to outlive controller deinitialization.
 - The two highest-risk VOD gaps were pulled forward: iTV now owns a deterministic
@@ -41,8 +48,8 @@ losing the Standard Player's production contract.
   Ad-bearing content is held until IMA success/failure/timeout releases it once;
   stale ad and URL responses cannot install content. These are code-complete
   candidates, not production-proven behavior: the real tag/expiry matrices are
-  still mandatory. VMAP post-roll is not claimed until inventory and episode
-  auto-next deferral are confirmed.
+  still mandatory. VMAP post-roll is absent because the host does not call
+  `adsLoader.contentComplete()`; add it only if product makes post-roll a contract.
 - The pure IMA gate assertion harness and signed-URL structural contract check
   pass. The final generic iTV Debug build resolves exact IMA 3.28.10 and compiles
   and links the candidate for both arm64 and x86_64 with zero errors.
@@ -62,6 +69,43 @@ losing the Standard Player's production contract.
   dual-architecture PlayerKit/iTV builds pass. No PiP session or downloaded
   playback has run, and airplane-mode, invalid/expired-file, progress/relaunch
   and physical-device gates remain red.
+- Step 6 now has a rollback-safe static candidate. PlayerKit `9e8d16a` adds
+  explicit VOD/seekable-live/pure-live timelines and live-edge controls;
+  `9773f43` types live Cast handoffs; and `7b72368` adds default-off track
+  preservation for host reloads. iTV `ebb9767b` routes generic live through the
+  existing selector, `afdcc554` rejects stale TV channel/guide/timeshift
+  generations, and `b5f8cec2` puts PlayerKit transport inside the one shared TV
+  shell while retaining app-owned EPG/auth/favorites/timeshift state and the
+  Standard-default rollback. Initial/program catch-up URLs are wired, but
+  catch-up seeking is design-red: Standard rebases logical programme time over
+  replacement assets while PlayerKit publishes backend time and direct consumers
+  read it. A URL-only callback is not sufficient by assumption. A redacted
+  template plus manifests at logical seconds 0, middle and live edge must first
+  show whether native AVFoundation seeking on one zero-second URL works. If not,
+  use a token-scoped reloading-timeline projection and host resolver with paused
+  intent, boundary and generation guards. All live/DVR/TV runtime gates remain red.
+- iTV `74f45e8b` makes exact stored `Test Player` the only PlayerKit opt-in across
+  all five selectors. Nil, `Standard Player`, unknown, empty and case variants
+  fail closed to Standard. This device-local setting is not the server
+  canary/kill switch required for rollout.
+- The PlayerKit Step 7 static slice is also green. PlayerKit `2a6c8bb` gates
+  remote skip/scrub commands on the current seek window and clears stale
+  Now Playing metadata after an empty reset. iTV `30d56a6b` retains and removes
+  only radio-owned remote targets so radio cannot intercept the player after
+  dismissal. iTV `95ce19f6` then gives IMA remote ownership while the content
+  gate is `held`, `requesting`, `ready`, `playing` or `releasePending`, and while
+  `released` VMAP is visible or paused under a covered presentation. Covered
+  content resumes only for the same owner that previously requested playback,
+  preserving user pause; background entry checkpoints guarded VOD/offline
+  progress without writing embedded TV, trailer/live or IMA-controlled state.
+  Interruption, receiver, ad, lock-screen, route and device proof remains red.
+- All 13 iTV `verify_playerkit_*.py` scripts and the radio ownership verifier
+  pass through `19520e06`; EN/RU/UZ property lists pass `plutil`. The final
+  generic Debug build through `19520e06` passes for arm64 and x86_64, and `lipo`
+  confirms a fat x86_64/arm64 app binary. Both architectures warn that the
+  iOS-simulator 14.0 app links IMA/Cast built for 15.0; packaged slices confirm
+  `minos 15.0`. No simulator boot/runtime proof exists. Native RU/UZ approval
+  remains red.
 - PlayerKit now exposes all eight Standard playback rates and an accessible
   Auto/Maximum/Optimal/Minimum adaptive HLS menu. iTV fixes and reuses its master
   parser, supplies only sanitized raw bitrates after ad release, rejects stale
@@ -73,21 +117,26 @@ losing the Standard Player's production contract.
   seconds/rate/percentage and 7 focused library checks pass. Candidate copy is
   not native-approved and localized device/layout proof remains open. The
   macOS-only diagnostics console is outside this iTV/iOS slice and remains
-  English. `playbackStarted` is not a decoded-first-frame metric.
+  English.
+- QoE production proof is red. `playbackStarted` is not a decoded-first-frame
+  metric; the host discards most event context; and no common Standard
+  definitions, baseline, written tolerances, dashboard or session/schema
+  contract exists. There is also no server cohort or kill switch.
 - Runtime smoke testing is still open because no simulator is booted and the
   installed runtimes are iOS 18.5 and 26.3 only. In particular, no report
   list/POST, timestamp share sheet, series catalog selection or trailer media/end
   flow has run; these slices remain runtime-red despite static/test/build proof.
-  Neither offline entry nor PiP host restoration has run; airplane-mode and
-  device/system-service proof remain mandatory.
-- The produced iTV app declares iOS 14, but its embedded Google Cast and Google
-  IMA Mach-O binaries declare minimum iOS 15. This is a release blocker for any
-  claim of iOS 14 support: prove the existing production combination on an iOS
-  14 device, select compatible vendor binaries, isolate the features safely, or
-  raise the app minimum from product data. Compilation does not close this gate.
+  Neither offline entry nor PiP host restoration has run; no live/DVR/TV,
+  production-shaped catch-up timeline, Cast, AirPlay, remote-command or
+  physical-device flow has run. Airplane-mode and every fixture, device and
+  system-service gate remain red.
+- The produced iTV app declares iOS 14, but embedded Cast and IMA declare
+  `LC_BUILD_VERSION minos 15.0`. Compilation and an iOS 14 runtime smoke cannot
+  close this release blocker. Raise app and PlayerKit minimums to 15, or replace
+  both binaries with reviewed slices declaring `minos <= 14.0`.
 - The candidate now pins Google IMA exactly to 3.28.10 instead of moving `main`.
-  Release reproducibility still requires publishing the local PlayerKit candidate
-  immutably and completing binary provenance/privacy/signing review.
+  iTV still resolves the unpublished local `../PlayerKit`; release reproducibility
+  requires publishing it immutably and completing binary provenance/privacy/signing review.
 
 ## Non-negotiable release contract
 
@@ -112,7 +161,8 @@ small runnable regression check, and system integrations get device evidence.
 **Exit:** the current PlayerKit branch builds inside the real iTV app, and a VOD
 session preserves the app's metadata and persistence contract.
 
-- Restore iOS 14 compatibility and build simulator/device slices.
+- Resolve the minimum OS honestly: raise app and PlayerKit to iOS 15, or replace
+  both IMA and Cast with reviewed `minos <= 14.0` binary slices.
 - Replace the app's 1.1.0 development pin with the reviewed candidate during
   integration; publish a versioned remote pin before release.
 - Clean stale PlayerKit product references without changing unrelated project
@@ -139,28 +189,38 @@ still available as a runtime fallback.
   existing-series-catalog episode selection bridge.
 - Runtime-prove the implemented app-owned report and timestamp-share menu.
 - Localize all PlayerKit chrome in English, Russian, and Uzbek.
-- Add iOS QoE events for load, ready, first frame, stall, recovery, fatal error,
-  seek, completion, external playback, and exit.
+- Define the host QoE session/schema and retain required privacy-safe context;
+  add a true decoded-first-frame signal alongside load/ready/stall/recovery/fatal/
+  seek/completion/external/exit events.
 - Run network-loss, expired-URL, ad-failure, rapid episode-switch, and lifecycle
   checks against production-shaped fixtures.
 
 ## Week 3 — offline, live, and TV transport
 
 **Exit:** every route that currently bypasses the Test Player can use PlayerKit
-behind a feature flag while the existing iTV product UI remains intact.
+behind the exact-value device-local selector while existing iTV product UI stays
+intact. This is not the server rollout flag required by Week 4.
 
 - ~~Accept downloaded/local assets and preserve offline Core Data progress.~~
   Candidate code/static/build evidence is complete for both entries; actual
   playback, failure, progress/relaunch and airplane-mode proof remain open.
-- Introduce only the timeline distinctions the UI needs: VOD, seekable live/DVR,
-  and pure live. All seek entry points use the same range.
-- Put PlayerKit transport under the existing TV shell; retain iTV EPG, favorites,
-  tariff/auth, channel pagination, and catch-up URL construction.
-- Validate live edge, `{START_AT}`/`{SECONDS}` catch-up replacement, programme
-  boundaries, rapid zapping, stale responses, and server/device clock offset.
-- Fix live Cast/Now Playing semantics and verify PiP/AirPlay/background behavior.
+- ~~Introduce only the timeline distinctions the UI needs: VOD, seekable
+  live/DVR, and pure live.~~ Candidate library and generic-live routing are
+  statically green; safe live/DVR fixtures and runtime transitions remain red.
+- ~~Put PlayerKit transport under the existing TV shell while retaining iTV EPG,
+  favorites, tariff/auth, channel pagination and catch-up ownership.~~ Candidate
+  `b5f8cec2` is compiled behind the Standard-default selector. Catch-up timeline
+  semantics remain unproved; do not add a URL-only callback.
+- Validate a redacted template/manifests at logical seconds 0, middle and live
+  edge. If one zero-second URL cannot seek natively, add a token-scoped
+  reloading-timeline projection plus host resolver with paused-intent, boundary
+  and generation guards. Then run programme-boundary, rapid-zap and clock checks.
+- ~~Fix live Cast/Now Playing and radio remote-command ownership semantics.~~
+  PlayerKit `9773f43`/`2a6c8bb` and iTV `30d56a6b`/`95ce19f6` have focused static
+  checks, including IMA ownership, covered resume and background checkpoints;
+  verify PiP/AirPlay/Cast/background/ad/remote behavior on devices.
 - Remove full-screen Standard routes only after their PlayerKit equivalents pass;
-  keep one rollback flag.
+  keep the device-local rollback and add separate server rollout control.
 
 ## Week 4 — proof and rollout
 
@@ -195,7 +255,7 @@ one because a month-end comparison is impossible without a Standard baseline.
 | Aug 3 | iOS 14 compile, exact marker contract | local candidate pin, remove stale package refs | freeze scope; capture Standard capability baseline |
 | Aug 4 | product policy/callback seams | VOD metadata, exact resume, history and track/rate persistence | app compile plus unit suite |
 | Aug 5 | manual HLS quality policy implemented early | iTV parser/tier mapping candidate complete | quality-switch and fallback runtime fixtures |
-| Aug 6 | QoE event contract | connect existing analytics identifiers | Standard and PlayerKit startup/stall baselines |
+| Aug 6 | QoE event enum exists; decoded first frame does not | logical watch IDs are deduped, but most QoE context is discarded | Standard definitions/baseline/tolerances/dashboard and session schema red |
 | Aug 7 | lifecycle/recovery hardening; async PiP restoration contract now compiled | signed-URL refresh and guarded PiP host restoration candidates pulled forward; runtime expiry/PiP proof remain | Week 1 VOD smoke gate |
 | Aug 10 | deterministic ad/content handoff seam | host-owned IMA candidate pulled forward; real SDK/tag failure paths remain | preroll/no-fill/error/background matrix |
 | Aug 11 | WebVTT thumbnail loader/cache | connect iTV thumbnail URLs | scrub/memory/network checks |
@@ -203,10 +263,10 @@ one because a month-end comparison is impossible without a Standard baseline.
 | Aug 13 | complete injectable iTV/iOS PlayerStrings candidate | matched English/Russian/Uzbek host bags and locale-aware formatters | static/compile gates green; native approval, truncation, RTL-safe layout and VoiceOver copy remain |
 | Aug 14 | VOD defect burn-down | movie/trailer/episode golden flows; strict trailer candidate already compiled | Week 2 non-inferiority gate; host-action/trailer media proof required |
 | Aug 17 | host-retained local `AVURLAsset` candidate compiled and focused lifecycle check green | both downloaded movie/episode entries route behind the selector and preserve offline progress in code | airplane-mode, invalid/expired-download, relaunch and progress runtime matrix remains red |
-| Aug 18 | unified VOD/live seekable ranges | generic live/DVR route | live-edge and catch-up range checks |
-| Aug 19 | live transition/recovery rules | keep current EPG/channel shell | clock-offset/program-boundary fixtures |
-| Aug 20 | rapid-load cancellation and identity | channel zapping and stale-response guards | 100-zap stress run |
-| Aug 21 | external playback live semantics | AirPlay/Cast/PiP/background wiring | Week 3 route-completeness gate |
+| Aug 18 | explicit VOD/seekable-live/pure-live candidate landed | generic pure-live route compiled behind selector | live/DVR fixture and transition proof red |
+| Aug 19 | live edge/go-live candidate landed | shared EPG/channel shell retained around PlayerKit transport | zero-second native-seek probe and, if needed, guarded reloading-timeline projection remain red |
+| Aug 20 | opt-in track preservation and load identity landed | stale zapping generations plus shared TV transport statically verified | deterministic 100-generation check green; real 100-switch stress red |
+| Aug 21 | live Cast and remote seek gating landed | radio targets plus IMA/covered/background ownership hardened through `95ce19f6` | all AirPlay/Cast/PiP/ad/background/lock-screen/device proof red |
 | Aug 24 | accessibility/performance fixes | host chrome integration cleanup | supported iPhone/iPad accessibility matrix |
 | Aug 25 | long-session leak/energy fixes | integration ownership/teardown audit | Instruments and 2-hour playback evidence |
 | Aug 26 | release API freeze | remote version pin and rollback flag | clean-checkout build and migration rehearsal |
@@ -257,6 +317,10 @@ A route is not complete until all of these are true:
 
 - A booted simulator and, for final gates, supported physical devices.
 - A redacted production test catalog covering VOD, ads, episodes, offline, pure
-  live, DVR/catch-up, Cast-accessible URLs, and every track/subtitle shape.
+  live, DVR/catch-up, Cast-accessible URLs, and every track/subtitle shape. The
+  catch-up fixture must include its template and manifests at logical seconds 0,
+  middle and live edge.
 - Confirmation whether any active catalog item uses FairPlay or request headers.
-- Access to the existing feature-flag and analytics dashboards for cohort rollout.
+- A product-owned server cohort/kill-switch contract and access to analytics
+  dashboards for rollout; neither server control nor a common QoE dashboard
+  exists in the current candidate.
