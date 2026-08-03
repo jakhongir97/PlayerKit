@@ -10,6 +10,9 @@ public struct PlayerView: View {
     @State private var loadedInput: LoadIdentity?
     @State private var announcedError: PlayerKitError?
     @State private var announcedErrorWasTerminal = false
+    #if os(iOS)
+    @StateObject private var thumbnailPreviewController = WebVTTThumbnailPreviewController()
+    #endif
     
     private let loadMode: LoadMode
     /// Disable only when the embedding host pauses temporary disappearances and
@@ -60,6 +63,10 @@ public struct PlayerView: View {
                 .id(playerManager.playerGeneration)
                 .edgesIgnoringSafeArea(.all)
 
+            #if os(iOS)
+            WebVTTThumbnailPreviewOverlay(controller: thumbnailPreviewController)
+            #endif
+
             // The gesture surface: touch host, HUD, affordances and coaching.
             GestureSurface(manager: playerManager.gestureManager)
                 .zIndex(0)
@@ -67,7 +74,7 @@ public struct PlayerView: View {
                 .accessibilityHidden(hasBlockingStatus)
             
             // Player controls
-            PlayerControlsView(playerManager: playerManager)
+            playerControls
                 .transition(.opacity)
                 .zIndex(1)
                 .accessibilityHidden(hasBlockingStatus)
@@ -103,7 +110,19 @@ public struct PlayerView: View {
                 NotificationCenter.default.post(name: .PlayerKitDidClose, object: nil)
             }
         }
+        #if os(iOS)
+        .onReceive(playerManager.$playerItem) { item in
+            // Treat every publication as a new owner, even when a signed VTT
+            // URL happens to be reused across two item generations.
+            thumbnailPreviewController.replaceOwner(sourceURL: item?.thumbnailVTTURL)
+        }
+        #endif
         .onAppear {
+            #if os(iOS)
+            thumbnailPreviewController.resumeIfNeeded(
+                sourceURL: playerManager.playerItem?.thumbnailVTTURL
+            )
+            #endif
             debugLog(
                 "Player view onAppear loadedInput=\(loadedInput != nil) loadMode=\(loadMode.debugName)"
             )
@@ -136,6 +155,9 @@ public struct PlayerView: View {
             bootstrapPlayerIfNeeded()
         }
         .onDisappear {
+            #if os(iOS)
+            thumbnailPreviewController.suspend()
+            #endif
             debugLog(
                 "Player view onDisappear loadMode=\(loadMode.debugName) " +
                 "isPlaying=\(playerManager.isPlaying) current=\(playerManager.currentTime)"
@@ -162,6 +184,18 @@ public struct PlayerView: View {
             terminalPlaybackFailure: playerManager.isPlaybackErrorTerminal,
             strings: playerManager.strings
         ).blocksPlayback
+    }
+
+    @ViewBuilder
+    private var playerControls: some View {
+        #if os(iOS)
+        PlayerControlsView(
+            playerManager: playerManager,
+            thumbnailPreviewController: thumbnailPreviewController
+        )
+        #else
+        PlayerControlsView(playerManager: playerManager)
+        #endif
     }
     
     private func bootstrapPlayerIfNeeded() {
@@ -257,6 +291,7 @@ extension PlayerView {
         let description: String?
         let url: URL
         let posterURL: URL?
+        let thumbnailVTTURL: URL?
         let castVideoURL: URL?
         let externalPlaybackURL: URL?
         let externalPlaybackContentType: String?
@@ -274,6 +309,7 @@ extension PlayerView {
             description = item.description
             url = item.url
             posterURL = item.posterUrl
+            thumbnailVTTURL = item.thumbnailVTTURL
             castVideoURL = item.castVideoUrl
             externalPlaybackURL = item.externalPlaybackURL
             externalPlaybackContentType = item.externalPlaybackContentType

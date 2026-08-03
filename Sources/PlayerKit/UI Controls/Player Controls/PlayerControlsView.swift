@@ -3,6 +3,9 @@ import SwiftUI
 @MainActor
 struct PlayerControlsView: View {
     @ObservedObject var playerManager: PlayerManager
+    #if os(iOS)
+    @ObservedObject var thumbnailPreviewController: WebVTTThumbnailPreviewController
+    #endif
 
     static let sideControlExtent: CGFloat = 50
     static let middleSpacing: CGFloat = 8
@@ -71,7 +74,7 @@ struct PlayerControlsView: View {
                     VStack {
                         BottomControlsView(playerManager: playerManager)
                             .presented(showsChrome)
-                        PlaybackSliderView(playerManager: playerManager)
+                        playbackSlider
                             .presented(showsScrubber)
                     }
                 }
@@ -87,6 +90,18 @@ struct PlayerControlsView: View {
             Spacer(minLength: 0)
             unlockControl
         }
+    }
+
+    @ViewBuilder
+    private var playbackSlider: some View {
+        #if os(iOS)
+        PlaybackSliderView(
+            playerManager: playerManager,
+            thumbnailPreviewController: thumbnailPreviewController
+        )
+        #else
+        PlaybackSliderView(playerManager: playerManager)
+        #endif
     }
 
     /// The one control that survives the lock — it is how the user gets back

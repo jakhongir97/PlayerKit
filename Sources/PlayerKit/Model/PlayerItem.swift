@@ -48,6 +48,9 @@ public struct PlayerItem {
     public let description: String?
     public let url: URL
     public let posterUrl: URL?
+    /// A WebVTT index whose cue payloads point to full-frame images or sprite
+    /// regions used while scrubbing. PlayerKit loads it only in memory.
+    public let thumbnailVTTURL: URL?
     public let castVideoUrl: URL?
     public let externalPlaybackURL: URL?
     public let externalPlaybackContentType: String?
@@ -71,6 +74,7 @@ public struct PlayerItem {
                 description: String? = nil,
                 url: URL,
                 posterUrl: URL? = nil,
+                thumbnailVTTURL: URL? = nil,
                 castVideoUrl: URL? = nil,
                 externalPlaybackURL: URL? = nil,
                 externalPlaybackContentType: String? = nil,
@@ -85,6 +89,7 @@ public struct PlayerItem {
         self.description = description
         self.url = url
         self.posterUrl = posterUrl
+        self.thumbnailVTTURL = thumbnailVTTURL
         self.castVideoUrl = castVideoUrl ?? externalPlaybackURL
         self.externalPlaybackURL = externalPlaybackURL ?? castVideoUrl
         self.externalPlaybackContentType = externalPlaybackContentType
@@ -101,6 +106,7 @@ public struct PlayerItem {
                 description: String? = nil,
                 url: URL,
                 posterUrl: URL? = nil,
+                thumbnailVTTURL: URL? = nil,
                 castVideoUrl: URL? = nil,
                 externalPlaybackURL: URL? = nil,
                 externalPlaybackContentType: String? = nil,
@@ -113,6 +119,7 @@ public struct PlayerItem {
         self.description = description
         self.url = url
         self.posterUrl = posterUrl
+        self.thumbnailVTTURL = thumbnailVTTURL
         self.castVideoUrl = castVideoUrl ?? externalPlaybackURL
         self.externalPlaybackURL = externalPlaybackURL ?? castVideoUrl
         self.externalPlaybackContentType = externalPlaybackContentType

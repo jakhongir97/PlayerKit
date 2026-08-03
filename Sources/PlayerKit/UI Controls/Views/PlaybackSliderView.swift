@@ -3,6 +3,9 @@ import SwiftUI
 @MainActor
 struct PlaybackSliderView: View {
     @ObservedObject var playerManager: PlayerManager
+    #if os(iOS)
+    @ObservedObject var thumbnailPreviewController: WebVTTThumbnailPreviewController
+    #endif
     @State private var sliderValue: Double = 0
     @State private var isEditingSlider = false
     @State private var pendingSeekValue: Double?
@@ -63,6 +66,11 @@ struct PlaybackSliderView: View {
                         get: { effectiveSliderValue },
                         set: { newValue in
                             sliderValue = newValue
+                            #if os(iOS)
+                            if isEditingSlider {
+                                thumbnailPreviewController.update(to: newValue)
+                            }
+                            #endif
                         }
                     ),
                     bufferedValue: Binding( // New binding for buffered progress
@@ -76,6 +84,13 @@ struct PlaybackSliderView: View {
                     bufferedColor: .white.opacity(0.1), // Light gray for buffered progress
                     height: sliderHeight
                 ) { editing in
+                    #if os(iOS)
+                    if editing {
+                        thumbnailPreviewController.begin(at: sliderValue)
+                    } else {
+                        thumbnailPreviewController.end()
+                    }
+                    #endif
                     playerManager.isSeeking = editing
                     isEditingSlider = editing
                     if editing {
@@ -96,6 +111,9 @@ struct PlaybackSliderView: View {
                         performSeek(to: targetValue)
                     }
                 } onEditingCancelled: {
+                    #if os(iOS)
+                    thumbnailPreviewController.end()
+                    #endif
                     playerManager.isSeeking = false
                     isEditingSlider = false
                     invalidatePendingSeek()
@@ -142,6 +160,9 @@ struct PlaybackSliderView: View {
         }
         .compatOnChange(of: seekableRange) { range in
             if range == nil, isEditingSlider {
+                #if os(iOS)
+                thumbnailPreviewController.end()
+                #endif
                 playerManager.isSeeking = false
                 isEditingSlider = false
                 invalidatePendingSeek()
