@@ -43,14 +43,27 @@ evidence remain separate milestones.
 | Phase 6 · OSS readiness | **Groundwork only / release blocked** | CI, release checks, security guidance and notices exist. API review, DocC, sample app, migration guides, legal review and reproducible VLCKit evidence remain. |
 | Continuous accessibility/localization | **Code pass complete; validation open** | Run VoiceOver, Voice Control, Switch Control, capture, PiP, AirPlay, Cast, brightness/volume and VLC paused-switch checks on physical devices. Supply target locales and approved translations. |
 
+The active iTV candidate now also has the minimum Step 5 code seams. PlayerKit
+`f8a3937` permits asynchronous host PiP-restoration completion and iTV
+`db5be536` restores the actual owning presentation with stale-owner/exit/root
+guards. PlayerKit `f179890` preserves an optional host-provided `AVURLAsset`, and
+iTV `fbf7f80b` routes both offline entries behind the existing selector with
+local-file validation and existing Core Data progress. The full 337-test suite
+(5 environment skips, 0 failures), focused 9/9 platform-interaction and 17/17
+backend-lifecycle selections, static iTV verifiers and dual-architecture builds
+pass. This is compile/static evidence only: PiP restoration, downloaded playback,
+airplane mode, invalid/expired assets, relaunch/progress and physical devices are
+still red, so Standard remains the rollback path.
+
 ### Next milestone: primary-player integration candidate
 
 Work in this order:
 
 1. Resolve the two external Phase 0 blockers: the fork dossier/canonical repo and
    the custom VLCKit release evidence.
-2. Run the physical-device matrix in `RELEASE.md` and integrate the package into
-   both iTV apps across movie, episode, live/DVR and background playback.
+2. Run the physical-device matrix in `RELEASE.md`; runtime-prove the compiled
+   iTV PiP/offline candidates; and integrate the package into both iTV apps
+   across movie, episode, live/DVR and background playback.
 3. Close Phase 1 with `PlayerConfiguration` and a deliberate public-API review;
    do not add more one-off manager flags while that configuration seam is open.
 4. Start Phase 2b only after the host integration proves simultaneous players
@@ -247,6 +260,12 @@ mostly API and platform integration, not architecture.*
   now present sanitized Retry/Close UI, recoverable external-playback failures
   remain non-blocking, and an optional async hook lets the host refresh a
   signed URL before retry. Automatic retry/backoff policy remains host-owned.
+- ~~**Host PiP restoration and local-asset input seams.**~~ *Code candidate
+  complete.* Async restoration no longer requires synchronous host presentation,
+  and an optional host-owned `AVURLAsset` reaches the AV backend without changing
+  URL-only callers. The current iTV integration compiles for both simulator
+  architectures, but PiP/device and offline/airplane-mode runtime proof remain
+  release gates rather than completed Phase 1 evidence.
 - **Narrow the accidental API** and start the deprecation clock on what has to go.
 
 **Exit:** iTV iOS can drive every playback surface it needs through public API

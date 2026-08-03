@@ -23,10 +23,11 @@ losing the Standard Player's production contract.
 - PlayerKit and the real iTV app compile against the local candidate. Current
   generic Debug simulator builds pass for both arm64 and x86_64 in PlayerKit and
   iTV; generic iOS 14 PlayerKit source/device slices also compiled earlier.
-- `swift test --no-parallel` executes 335 tests with 5 environment-dependent
+- `swift test --no-parallel` executes 337 tests with 5 environment-dependent
   skips and 0 failures. Focused checks cover exact markers, quality policy, QoE,
   WebVTT, injectable strings, recovery, host-owned teardown and presentation
-  policy; the focused presentation-policy selection is 10/10 green.
+  policy, asynchronous PiP restoration and local-asset lifecycle; the focused
+  platform-interaction and backend-lifecycle selections are 9/9 and 17/17 green.
 - The candidate VOD bridge now preserves Standard's exact resume thresholds,
   metadata, intro/credits actions, entitlement/paywall decisions, sorted async
   episode navigation, previous-season fallback, history fields, selected tracks,
@@ -51,6 +52,16 @@ losing the Standard Player's production contract.
   `82446853` round-trips typed selections through the existing series catalog,
   and `73acc8b5` applies strict Standard trailer control/end/progress behavior.
   All three iTV static verifiers and the dual-architecture builds pass.
+- PlayerKit `f8a3937` allows a host to complete PiP restoration asynchronously,
+  and iTV `db5be536` restores the actual owning presentation through its existing
+  root helper with owner/exit/root guards. PlayerKit `f179890` adds one optional,
+  host-retained `AVURLAsset`; iTV `fbf7f80b` routes both downloaded-entry shapes
+  behind the existing selector only for an existing local file, suppresses
+  online-only ad/retry/quality/menu paths, and preserves widget/Core Data
+  progress. The focused tests, iTV static verifiers, Swift source parses and
+  dual-architecture PlayerKit/iTV builds pass. No PiP session or downloaded
+  playback has run, and airplane-mode, invalid/expired-file, progress/relaunch
+  and physical-device gates remain red.
 - PlayerKit now exposes all eight Standard playback rates and an accessible
   Auto/Maximum/Optimal/Minimum adaptive HLS menu. iTV fixes and reuses its master
   parser, supplies only sanitized raw bitrates after ad release, rejects stale
@@ -67,6 +78,8 @@ losing the Standard Player's production contract.
   installed runtimes are iOS 18.5 and 26.3 only. In particular, no report
   list/POST, timestamp share sheet, series catalog selection or trailer media/end
   flow has run; these slices remain runtime-red despite static/test/build proof.
+  Neither offline entry nor PiP host restoration has run; airplane-mode and
+  device/system-service proof remain mandatory.
 - The produced iTV app declares iOS 14, but its embedded Google Cast and Google
   IMA Mach-O binaries declare minimum iOS 15. This is a release blocker for any
   claim of iOS 14 support: prove the existing production combination on an iOS
@@ -107,7 +120,8 @@ session preserves the app's metadata and persistence contract.
 - Add the smallest deliberate product contract: exact skip markers, host policy,
   quality cap, and required callbacks. Do not add app business models.
 - Configure AVPlayer, AirPlay, background playback, Now Playing, PiP restoration,
-  and signed-URL retry in the host.
+  and signed-URL retry in the host. The PiP restoration candidate is compiled;
+  its device matrix remains open.
 - Preserve exact resume, poster/Cast metadata, selected audio/subtitle/rate,
   history, widget, sharing, paywall, and episode navigation.
 - Establish PlayerKit unit tests plus an iTV integration smoke check.
@@ -135,7 +149,9 @@ still available as a runtime fallback.
 **Exit:** every route that currently bypasses the Test Player can use PlayerKit
 behind a feature flag while the existing iTV product UI remains intact.
 
-- Accept downloaded/local assets and preserve offline Core Data progress.
+- ~~Accept downloaded/local assets and preserve offline Core Data progress.~~
+  Candidate code/static/build evidence is complete for both entries; actual
+  playback, failure, progress/relaunch and airplane-mode proof remain open.
 - Introduce only the timeline distinctions the UI needs: VOD, seekable live/DVR,
   and pure live. All seek entry points use the same range.
 - Put PlayerKit transport under the existing TV shell; retain iTV EPG, favorites,
@@ -180,13 +196,13 @@ one because a month-end comparison is impossible without a Standard baseline.
 | Aug 4 | product policy/callback seams | VOD metadata, exact resume, history and track/rate persistence | app compile plus unit suite |
 | Aug 5 | manual HLS quality policy implemented early | iTV parser/tier mapping candidate complete | quality-switch and fallback runtime fixtures |
 | Aug 6 | QoE event contract | connect existing analytics identifiers | Standard and PlayerKit startup/stall baselines |
-| Aug 7 | lifecycle/recovery hardening | signed-URL refresh candidate pulled forward; PiP restoration and runtime expiry proof remain | Week 1 VOD smoke gate |
+| Aug 7 | lifecycle/recovery hardening; async PiP restoration contract now compiled | signed-URL refresh and guarded PiP host restoration candidates pulled forward; runtime expiry/PiP proof remain | Week 1 VOD smoke gate |
 | Aug 10 | deterministic ad/content handoff seam | host-owned IMA candidate pulled forward; real SDK/tag failure paths remain | preroll/no-fill/error/background matrix |
 | Aug 11 | WebVTT thumbnail loader/cache | connect iTV thumbnail URLs | scrub/memory/network checks |
 | Aug 12 | host presentation policy pulled forward; episode navigation contract | report/share menu and typed existing-catalog selection pulled forward | static checks green; report/share/catalog/trailer runtime and episode race checks remain |
 | Aug 13 | complete injectable iTV/iOS PlayerStrings candidate | matched English/Russian/Uzbek host bags and locale-aware formatters | static/compile gates green; native approval, truncation, RTL-safe layout and VoiceOver copy remain |
 | Aug 14 | VOD defect burn-down | movie/trailer/episode golden flows; strict trailer candidate already compiled | Week 2 non-inferiority gate; host-action/trailer media proof required |
-| Aug 17 | local asset support | downloaded movie/episode routes and progress | airplane-mode and expired-download matrix |
+| Aug 17 | host-retained local `AVURLAsset` candidate compiled and focused lifecycle check green | both downloaded movie/episode entries route behind the selector and preserve offline progress in code | airplane-mode, invalid/expired-download, relaunch and progress runtime matrix remains red |
 | Aug 18 | unified VOD/live seekable ranges | generic live/DVR route | live-edge and catch-up range checks |
 | Aug 19 | live transition/recovery rules | keep current EPG/channel shell | clock-offset/program-boundary fixtures |
 | Aug 20 | rapid-load cancellation and identity | channel zapping and stale-response guards | 100-zap stress run |
