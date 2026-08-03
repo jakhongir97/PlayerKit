@@ -5,6 +5,36 @@ enum CastPendingRequestKind: Equatable {
     var cancelsWhenPlayerDetaches: Bool { self == .mediaLoad }
 }
 
+enum CastMediaStreamKind: Equatable {
+    case buffered
+    case live
+}
+
+struct CastMediaLoadPolicy: Equatable {
+    let streamKind: CastMediaStreamKind
+    let startTime: Double
+
+    static func resolve(
+        for playerItem: PlayerItem,
+        currentPlaybackPosition: Double?
+    ) -> Self {
+        switch playerItem.timelineMode {
+        case .seekableLive, .pureLive:
+            return Self(streamKind: .live, startTime: 0)
+        case .automatic, .onDemand:
+            let requestedStartTime = currentPlaybackPosition
+                ?? playerItem.lastPosition
+                ?? 0
+            return Self(
+                streamKind: .buffered,
+                startTime: requestedStartTime.isFinite
+                    ? max(requestedStartTime, 0)
+                    : 0
+            )
+        }
+    }
+}
+
 #if canImport(GoogleCast) && canImport(UIKit)
 @preconcurrency import GoogleCast
 import AVFoundation
@@ -178,22 +208,28 @@ class CastManager: NSObject, ObservableObject {
     
     private func createMediaLoadRequest(for playerItem: PlayerItem) -> GCKMediaLoadRequestData {
         let metadata = createMediaMetadata(for: playerItem)
+        let loadPolicy = CastMediaLoadPolicy.resolve(
+            for: playerItem,
+            currentPlaybackPosition: currentPlaybackPositionProvider?()
+        )
         
         let mediaInfoBuilder = GCKMediaInformationBuilder()
         mediaInfoBuilder.contentURL = playerItem.preferredExternalPlaybackURL
-        mediaInfoBuilder.streamType = .buffered
+        switch loadPolicy.streamKind {
+        case .buffered:
+            mediaInfoBuilder.streamType = .buffered
+        case .live:
+            mediaInfoBuilder.streamType = .live
+        }
         mediaInfoBuilder.contentType = playerItem.preferredExternalPlaybackContentType
         mediaInfoBuilder.metadata = metadata
+        // Keep the existing buffered builder behavior and do not publish a
+        // finite duration for live; the receiver owns its moving timeline.
         
         let mediaLoadRequestDataBuilder = GCKMediaLoadRequestDataBuilder()
         mediaLoadRequestDataBuilder.mediaInformation = mediaInfoBuilder.build()
         mediaLoadRequestDataBuilder.autoplay = true
-        let requestedStartTime = currentPlaybackPositionProvider?()
-            ?? playerItem.lastPosition
-            ?? 0
-        mediaLoadRequestDataBuilder.startTime = requestedStartTime.isFinite
-            ? max(requestedStartTime, 0)
-            : 0
+        mediaLoadRequestDataBuilder.startTime = loadPolicy.startTime
         return mediaLoadRequestDataBuilder.build()
     }
     

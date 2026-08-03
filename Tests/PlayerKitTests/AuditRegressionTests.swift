@@ -973,6 +973,63 @@ final class AuditRegressionTests: XCTestCase {
         XCTAssertFalse(CastPendingRequestKind.stop.cancelsWhenPlayerDetaches)
     }
 
+    func testCastPolicyPreservesBufferedVODStartSemantics() {
+        let automatic = PlayerItem(
+            title: "Movie",
+            url: URL(string: "https://example.com/movie.m3u8")!,
+            lastPosition: 12
+        )
+        XCTAssertEqual(
+            CastMediaLoadPolicy.resolve(
+                for: automatic,
+                currentPlaybackPosition: 34
+            ),
+            CastMediaLoadPolicy(streamKind: .buffered, startTime: 34)
+        )
+        // Preserve the legacy precedence: an invalid current position wins
+        // over lastPosition and is sanitized to zero.
+        XCTAssertEqual(
+            CastMediaLoadPolicy.resolve(
+                for: automatic,
+                currentPlaybackPosition: .nan
+            ).startTime,
+            0
+        )
+
+        let onDemand = PlayerItem(
+            title: "Movie",
+            url: URL(string: "https://example.com/movie.m3u8")!,
+            timelineMode: .onDemand,
+            lastPosition: 12
+        )
+        XCTAssertEqual(
+            CastMediaLoadPolicy.resolve(
+                for: onDemand,
+                currentPlaybackPosition: nil
+            ),
+            CastMediaLoadPolicy(streamKind: .buffered, startTime: 12)
+        )
+    }
+
+    func testCastPolicyTypesExplicitLiveAndStartsAtTheLiveEdge() {
+        for mode in [PlayerTimelineMode.seekableLive, .pureLive] {
+            let item = PlayerItem(
+                title: "Channel",
+                url: URL(string: "https://example.com/live.m3u8")!,
+                timelineMode: mode,
+                lastPosition: 120
+            )
+
+            XCTAssertEqual(
+                CastMediaLoadPolicy.resolve(
+                    for: item,
+                    currentPlaybackPosition: 240
+                ),
+                CastMediaLoadPolicy(streamKind: .live, startTime: 0)
+            )
+        }
+    }
+
     // MARK: - Ordinary playback
 
     /// Kept from the deleted DubberDisabledTests, where it guarded ordinary
