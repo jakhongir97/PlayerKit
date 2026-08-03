@@ -93,12 +93,20 @@ final class NowPlayingCoordinator {
         previousNowPlayingInfo = MPNowPlayingInfoCenter.default().nowPlayingInfo
 
         func add(_ command: MPRemoteCommand, enabled: Bool = true, handler: @escaping () -> Void) {
-            previousCommandEnablement.append((command, command.isEnabled))
-            command.isEnabled = enabled
-            let token = command.addTarget { _ in
+            add(command, enabled: enabled) {
                 handler()
                 return .success
             }
+        }
+
+        func add(
+            _ command: MPRemoteCommand,
+            enabled: Bool = true,
+            statusHandler: @escaping () -> MPRemoteCommandHandlerStatus
+        ) {
+            previousCommandEnablement.append((command, command.isEnabled))
+            command.isEnabled = enabled
+            let token = command.addTarget { _ in statusHandler() }
             commandTargets.append((command, token))
         }
 
@@ -110,8 +118,16 @@ final class NowPlayingCoordinator {
         previousSkipBackwardIntervals = center.skipBackwardCommand.preferredIntervals
         center.skipForwardCommand.preferredIntervals = [NSNumber(value: Self.skipInterval)]
         center.skipBackwardCommand.preferredIntervals = [NSNumber(value: Self.skipInterval)]
-        add(center.skipForwardCommand) { commands.skipForward(Self.skipInterval) }
-        add(center.skipBackwardCommand) { commands.skipBackward(Self.skipInterval) }
+        add(center.skipForwardCommand, enabled: commands.canSeek(), statusHandler: {
+            Self.handleSkip(canSeek: commands.canSeek) {
+                commands.skipForward(Self.skipInterval)
+            }
+        })
+        add(center.skipBackwardCommand, enabled: commands.canSeek(), statusHandler: {
+            Self.handleSkip(canSeek: commands.canSeek) {
+                commands.skipBackward(Self.skipInterval)
+            }
+        })
 
         // Scrubbing carries a payload, so it cannot use the helper above.
         previousCommandEnablement.append(
@@ -119,7 +135,8 @@ final class NowPlayingCoordinator {
         )
         center.changePlaybackPositionCommand.isEnabled = commands.canSeek()
         let seekToken = center.changePlaybackPositionCommand.addTarget { event in
-            guard let event = event as? MPChangePlaybackPositionCommandEvent else {
+            guard commands.canSeek(),
+                  let event = event as? MPChangePlaybackPositionCommandEvent else {
                 return .commandFailed
             }
             commands.seek(event.positionTime)
@@ -132,6 +149,12 @@ final class NowPlayingCoordinator {
         // failure as offering an AirPlay control that does nothing.
         add(center.nextTrackCommand, enabled: commands.canNext(), handler: commands.next)
         add(center.previousTrackCommand, enabled: commands.canPrevious(), handler: commands.previous)
+    }
+
+    static func handleSkip(canSeek: () -> Bool, action: () -> Void) -> MPRemoteCommandHandlerStatus {
+        guard canSeek() else { return .commandFailed }
+        action()
+        return .success
     }
 
     func releaseCommands(for owner: AnyObject) {
@@ -221,6 +244,8 @@ final class NowPlayingCoordinator {
     func updateAvailability(canSeek: Bool, canNext: Bool, canPrevious: Bool) {
         guard areCommandsInstalled else { return }
         let center = MPRemoteCommandCenter.shared()
+        center.skipForwardCommand.isEnabled = canSeek
+        center.skipBackwardCommand.isEnabled = canSeek
         center.changePlaybackPositionCommand.isEnabled = canSeek
         center.nextTrackCommand.isEnabled = canNext
         center.previousTrackCommand.isEnabled = canPrevious

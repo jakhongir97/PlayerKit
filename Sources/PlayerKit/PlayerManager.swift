@@ -2114,6 +2114,7 @@ extension PlayerManager {
             playerItems = []
             currentPlayerItemIndex = 0
             contentType = .movie
+            refreshNowPlayingInfo(force: true)
         }
         
         stateCancellables.removeAll()

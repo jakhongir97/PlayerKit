@@ -1,4 +1,5 @@
 import AVFoundation
+import MediaPlayer
 import XCTest
 @testable import PlayerKit
 
@@ -774,6 +775,70 @@ final class AuditRegressionTests: XCTestCase {
         moved.elapsed = 20
         coordinator.publish(moved)
         XCTAssertEqual(coordinator.lastPublishedSnapshot, moved)
+    }
+
+    func testNowPlayingSkipCommandsFollowSeekAvailabilityAndRejectStaleEvents() {
+        let coordinator = NowPlayingCoordinator.shared
+        coordinator.ownership.removeAllOwners()
+        let owner = NSObject()
+        var canSeek = false
+        var skipCount = 0
+        var commands = Self.noopCommands
+        commands.canSeek = { canSeek }
+        coordinator.installCommands(for: owner, commands: commands)
+        defer { coordinator.releaseCommands(for: owner) }
+
+        let center = MPRemoteCommandCenter.shared()
+        XCTAssertFalse(center.skipForwardCommand.isEnabled)
+        XCTAssertFalse(center.skipBackwardCommand.isEnabled)
+
+        XCTAssertEqual(
+            NowPlayingCoordinator.handleSkip(canSeek: { canSeek }) { skipCount += 1 },
+            .commandFailed
+        )
+        XCTAssertEqual(skipCount, 0)
+
+        canSeek = true
+        coordinator.updateAvailability(canSeek: true, canNext: false, canPrevious: false)
+        XCTAssertTrue(center.skipForwardCommand.isEnabled)
+        XCTAssertTrue(center.skipBackwardCommand.isEnabled)
+        XCTAssertEqual(
+            NowPlayingCoordinator.handleSkip(canSeek: { canSeek }) { skipCount += 1 },
+            .success
+        )
+        XCTAssertEqual(skipCount, 1)
+
+        canSeek = false
+        XCTAssertEqual(
+            NowPlayingCoordinator.handleSkip(canSeek: { canSeek }) { skipCount += 1 },
+            .commandFailed,
+            "an event queued before the seek window disappeared must be rejected"
+        )
+        XCTAssertEqual(skipCount, 1)
+    }
+
+    func testEmptyEpisodeContextClearsNowPlayingSnapshotAndMetadata() {
+        let manager = PlayerManager.shared
+        manager.isNowPlayingEnabled = false
+        manager.resetPlayer()
+        manager.isNowPlayingEnabled = true
+        defer {
+            manager.isNowPlayingEnabled = false
+            manager.tearDown()
+        }
+
+        manager.playerItem = PlayerItem(
+            title: "Stale fixture",
+            url: URL(string: "https://example.com/stale.m3u8")!
+        )
+        manager.refreshNowPlayingInfo(force: true)
+        XCTAssertNotNil(NowPlayingCoordinator.shared.lastPublishedSnapshot)
+        XCTAssertNotNil(MPNowPlayingInfoCenter.default().nowPlayingInfo)
+
+        manager.loadEpisodes(playerItems: [])
+
+        XCTAssertNil(NowPlayingCoordinator.shared.lastPublishedSnapshot)
+        XCTAssertNil(MPNowPlayingInfoCenter.default().nowPlayingInfo)
     }
 
     /// A live stream has no total, and publishing 0 renders a zero-length
