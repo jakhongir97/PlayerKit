@@ -64,11 +64,15 @@ public enum PlayerType: String, CaseIterable, Identifiable, Codable {
     }
 
     var title: String {
+        title(using: PlayerStrings())
+    }
+
+    func title(using strings: PlayerStrings) -> String {
         switch self {
         case .vlcPlayer:
-            return "VLC Player"
+            return strings.vlcPlaybackEngineName
         case .avPlayer:
-            return "AV Player"
+            return strings.avPlaybackEngineName
         }
     }
 }

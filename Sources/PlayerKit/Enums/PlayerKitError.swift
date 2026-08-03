@@ -13,9 +13,8 @@ public enum PlayerKitError: Error, Equatable, LocalizedError {
 
     /// A stable, non-diagnostic description that is safe to present in host UI.
     ///
-    /// The associated strings carried by some cases remain available through
-    /// `errorDescription` for source compatibility. Treat those strings as
-    /// private diagnostics: never put credentials, signed URLs, or tokens in them.
+    /// Associated strings remain available by pattern matching for internal
+    /// diagnosis, but neither presentation API returns them.
     public var userFacingDescription: String {
         userFacingDescription(using: PlayerStrings())
     }
@@ -40,25 +39,6 @@ public enum PlayerKitError: Error, Equatable, LocalizedError {
     }
 
     public var errorDescription: String? {
-        switch self {
-        case .mediaLoadFailed(let description):
-            return "Failed to load media: \(description)"
-        case .pictureInPictureFailed(let description):
-            return "Picture in Picture failed: \(description)"
-        case .castSessionUnavailable:
-            return "Cast session is unavailable."
-        case .castURLMissing:
-            return "Cast URL is missing for the current item."
-        case .externalPlaybackDeviceUnavailable:
-            return "No external playback device is selected."
-        case .externalPlaybackURLMissing:
-            return "No reachable external playback URL is available for the current item."
-        case .externalPlaybackRequiresReachableURL:
-            return "External playback currently requires an http or https media URL."
-        case .externalPlaybackFailed(let description):
-            return "External playback failed: \(description)"
-        case .unknown(let description):
-            return description
-        }
+        userFacingDescription
     }
 }

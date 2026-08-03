@@ -23,7 +23,7 @@ struct SkipButtonView: View {
         return configured.isFinite ? configured : 10
     }
     private var intervalLabel: String {
-        interval.rounded() == interval ? String(Int(interval)) : String(format: "%.1f", interval)
+        playerManager.strings.skipIntervalValue(interval)
     }
     private var canSkip: Bool {
         gestureManager.configuration.isEnabled

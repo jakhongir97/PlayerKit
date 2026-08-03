@@ -83,7 +83,7 @@ final class PlatformInteractionRegressionTests: XCTestCase {
     func testPictureInPictureFailureHasUserFacingDescription() {
         XCTAssertEqual(
             PlayerKitError.pictureInPictureFailed("The video is not ready.").errorDescription,
-            "Picture in Picture failed: The video is not ready."
+            "Picture in Picture couldn’t start."
         )
     }
 

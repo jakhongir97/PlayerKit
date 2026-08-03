@@ -813,6 +813,10 @@ extension DesktopVLCPlayerWrapper: StreamingInfoProtocol {
     public func fetchStreamingInfo() -> StreamingInfo {
         .placeholder
     }
+
+    public func fetchStreamingInfo(using strings: PlayerStrings) -> StreamingInfo {
+        .placeholder(using: strings)
+    }
 }
 
 extension DesktopVLCPlayerWrapper: PlayerEventSource {}

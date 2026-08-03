@@ -19,4 +19,13 @@ public struct StreamingInfo: Sendable {
         resolution: "Unknown",
         bufferDuration:"0 sec"
     )
+
+    public static func placeholder(using strings: PlayerStrings) -> StreamingInfo {
+        StreamingInfo(
+            frameRate: strings.streamingUnknownValue,
+            videoBitrate: strings.streamingVideoBitrateValue(0),
+            resolution: strings.streamingUnknownValue,
+            bufferDuration: strings.streamingBufferDurationValue(0)
+        )
+    }
 }

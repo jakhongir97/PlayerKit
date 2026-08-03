@@ -1058,21 +1058,25 @@ extension AVPlayerWrapper: PlayerStateSource {
 // MARK: - StreamingInfoProtocol
 extension AVPlayerWrapper: StreamingInfoProtocol {
     public func fetchStreamingInfo() -> StreamingInfo {
+        fetchStreamingInfo(using: PlayerStrings())
+    }
+
+    public func fetchStreamingInfo(using strings: PlayerStrings) -> StreamingInfo {
         guard let playerItem = player?.currentItem else {
-            return StreamingInfo.placeholder
+            return .placeholder(using: strings)
         }
         
         // Extract Buffer Duration as String
-        let bufferDuration = formatBufferDuration(for: playerItem)
+        let bufferDuration = formatBufferDuration(for: playerItem, strings: strings)
         
         // Extract Bitrate as String (if multiple bitrates are available, choose the first)
-        let videoBitrate = extractVideoBitrate(from: playerItem)
+        let videoBitrate = extractVideoBitrate(from: playerItem, strings: strings)
         
         // Extract Resolution
-        let resolution = extractResolution(from: playerItem)
+        let resolution = extractResolution(from: playerItem, strings: strings)
         
         // Extract Frame Rate
-        let frameRate = extractFrameRate(from: playerItem)
+        let frameRate = extractFrameRate(from: playerItem, strings: strings)
         
         return StreamingInfo(
             frameRate: frameRate,
@@ -1083,23 +1087,28 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
     }
     
     // MARK: - Helper Methods
-    private func formatBufferDuration(for playerItem: AVPlayerItem) -> String {
+    private func formatBufferDuration(
+        for playerItem: AVPlayerItem,
+        strings: PlayerStrings
+    ) -> String {
         guard let timeRange = playerItem.loadedTimeRanges.first?.timeRangeValue else {
-            return "0 sec"
+            return strings.streamingBufferDurationValue(0)
         }
         let duration = CMTimeGetSeconds(timeRange.duration)
-        let intDuration = Int(duration.rounded())
-        return "\(intDuration) sec"
+        return strings.streamingBufferDurationValue(duration.rounded())
     }
     
-    private func extractVideoBitrate(from playerItem: AVPlayerItem) -> String {
+    private func extractVideoBitrate(
+        from playerItem: AVPlayerItem,
+        strings: PlayerStrings
+    ) -> String {
         #if os(macOS)
         let indicatedBitRate = playbackDiagnosticsLogCache
             .snapshot(for: playerItem)
             .network
             .indicatedBitRate
         if let indicatedBitRate {
-            return String(format: "%.2f Mbps", indicatedBitRate / 1_000_000)
+            return strings.streamingVideoBitrateValue(indicatedBitRate / 1_000_000)
         }
         #else
         let accessLogEvents = playerItem.accessLog()?.events ?? []
@@ -1107,23 +1116,30 @@ extension AVPlayerWrapper: StreamingInfoProtocol {
         if let firstEvent = accessLogEvents.first {
             let mbps = firstEvent.indicatedBitrate / 1_000_000
             if mbps > 0 {
-                return String(format: "%.2f Mbps", mbps)
+                return strings.streamingVideoBitrateValue(mbps)
             }
         }
         #endif
-        return "0 Mbps"
+        return strings.streamingVideoBitrateValue(0)
     }
     
-    private func extractResolution(from playerItem: AVPlayerItem) -> String {
+    private func extractResolution(
+        from playerItem: AVPlayerItem,
+        strings: PlayerStrings
+    ) -> String {
         let size = playerItem.presentationSize
-        return size.width > 0 && size.height > 0
-        ? "\(Int(size.width))x\(Int(size.height))"
-        : "Unknown"
+        guard size.width > 0, size.height > 0 else { return strings.streamingUnknownValue }
+        return strings.streamingResolutionValue(Int(size.width), Int(size.height))
     }
     
-    private func extractFrameRate(from playerItem: AVPlayerItem) -> String {
-        guard let videoTrack = playerItem.tracks.first?.currentVideoFrameRate else { return "Unknown" }
-        return "\(Int(videoTrack)) fps"
+    private func extractFrameRate(
+        from playerItem: AVPlayerItem,
+        strings: PlayerStrings
+    ) -> String {
+        guard let videoTrack = playerItem.tracks.first?.currentVideoFrameRate else {
+            return strings.streamingUnknownValue
+        }
+        return strings.streamingFrameRateValue(Double(videoTrack))
     }
 }
 

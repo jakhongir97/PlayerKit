@@ -1730,7 +1730,7 @@ extension PlayerManager {
 // MARK: - Streaming Info Updates
 extension PlayerManager {
     func fetchStreamingInfo() -> StreamingInfo {
-        return currentPlayer?.fetchStreamingInfo() ?? .placeholder
+        currentPlayer?.fetchStreamingInfo(using: strings) ?? .placeholder(using: strings)
     }
 
     #if os(macOS)

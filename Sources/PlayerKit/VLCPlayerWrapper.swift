@@ -545,54 +545,63 @@ extension VLCPlayerWrapper: GestureHandlingProtocol {
 // MARK: - StreamingInfoProtocol
 extension VLCPlayerWrapper: StreamingInfoProtocol {
     public func fetchStreamingInfo() -> StreamingInfo {
+        fetchStreamingInfo(using: PlayerStrings())
+    }
+
+    public func fetchStreamingInfo(using strings: PlayerStrings) -> StreamingInfo {
         guard let media = player.media else {
-            return .placeholder
+            return .placeholder(using: strings)
         }
         
         let tracksInfo = media.tracksInformation
-        let resolution = extractCurrentResolution()
-        let frameRate = extractFrameRate(from: tracksInfo)
-        let videoBitrate = extractVideoBitrate(from: media)
+        let resolution = extractCurrentResolution(strings: strings)
+        let frameRate = extractFrameRate(from: tracksInfo, strings: strings)
+        let videoBitrate = extractVideoBitrate(from: media, strings: strings)
         
         return StreamingInfo(
             frameRate: frameRate,
             videoBitrate: videoBitrate,
             resolution: resolution,
-            bufferDuration: "0 sec"
+            bufferDuration: strings.streamingBufferDurationValue(0)
         )
     }
     
     // MARK: - Helper Methods
-    private func extractCurrentResolution() -> String {
+    private func extractCurrentResolution(strings: PlayerStrings) -> String {
         let videoSize = player.videoSize
         let width = Int(videoSize.width)
         let height = Int(videoSize.height)
         
         if width > 0 && height > 0 {
-            return "\(width)x\(height)"
+            return strings.streamingResolutionValue(width, height)
         }
-        return "Unknown"
+        return strings.streamingUnknownValue
     }
     
-    private func extractFrameRate(from tracks: [VLCMedia.Track]) -> String {
+    private func extractFrameRate(
+        from tracks: [VLCMedia.Track],
+        strings: PlayerStrings
+    ) -> String {
         for track in tracks {
             if track.type == .video, let videoTrack = track.video {
                 let frameRate = videoTrack.frameRate
                 let frameRateDenominator = videoTrack.frameRateDenominator
                 if frameRate > 0, frameRateDenominator > 0 {
                     let fps = Double(frameRate) / Double(frameRateDenominator)
-                    let roundedFps = Int(ceil(fps))
-                    return "\(roundedFps) fps"
+                    return strings.streamingFrameRateValue(fps)
                 }
             }
         }
-        return "Unknown"
+        return strings.streamingUnknownValue
     }
     
-    private func extractVideoBitrate(from media: VLCMedia) -> String {
+    private func extractVideoBitrate(
+        from media: VLCMedia,
+        strings: PlayerStrings
+    ) -> String {
         let bitrate = media.statistics.demuxBitrate
         let bitrateMbps = Double(bitrate)
-        return String(format: "%.2f Mbps", bitrateMbps)
+        return strings.streamingVideoBitrateValue(bitrateMbps)
     }
     
 }

@@ -36,6 +36,9 @@ public struct PlayerStrings {
     public var playbackPositionValue: (_ current: String, _ total: String) -> String = {
         "\($0) of \($1)"
     }
+    public var skipIntervalValue: (_ seconds: Double) -> String = {
+        Self.decimalLabel(max($0.isFinite ? $0 : 0, 0))
+    }
     public var skipForwardSeconds: (_ seconds: Double) -> String = {
         "Skip forward \(Self.intervalLabel($0)) seconds"
     }
@@ -73,6 +76,23 @@ public struct PlayerStrings {
     public var buffer = "Buffer"
     public var frameRate = "Frame Rate"
     public var resolution = "Resolution"
+    public var streamingUnknownValue = "Unknown"
+    /// Formats a nonnegative duration in seconds.
+    public var streamingBufferDurationValue: (_ seconds: Double) -> String = {
+        "\(Self.intervalLabel(max($0.isFinite ? $0 : 0, 0))) sec"
+    }
+    /// Formats a nonnegative bitrate whose input unit is megabits per second.
+    public var streamingVideoBitrateValue: (_ megabitsPerSecond: Double) -> String = {
+        let value = max($0.isFinite ? $0 : 0, 0)
+        return value == 0 ? "0 Mbps" : String(format: "%.2f Mbps", value)
+    }
+    public var streamingFrameRateValue: (_ framesPerSecond: Double) -> String = {
+        "\(Self.decimalLabel(max($0.isFinite ? $0 : 0, 0))) fps"
+    }
+    public var streamingResolutionValue: (_ width: Int, _ height: Int) -> String = {
+        guard $0 > 0, $1 > 0 else { return "Unknown" }
+        return "\($0)x\($1)"
+    }
 
     // MARK: Empty, protected, recovery, and ended states
 
@@ -111,6 +131,11 @@ public struct PlayerStrings {
     public var chromecast = "Chromecast"
     public var chromecastHint = "Opens the Chromecast device picker"
     public var defaultStreamTitle = "PlayerKit Stream"
+    public var vlcPlaybackEngineName = "VLC Player"
+    public var avPlaybackEngineName = "AV Player"
+    public var playbackEngineAccessibilityLabel = "Playback engine"
+    public var selectPlaybackEngineHint = "Selects a playback engine for debugging"
+    public var activePlaybackEngineHint = "Shows the active playback engine"
 
     // MARK: Gesture UI and accessibility
 
@@ -173,5 +198,12 @@ public struct PlayerStrings {
         guard seconds.isFinite else { return "0" }
         let rounded = seconds.rounded()
         return rounded == seconds ? String(Int(rounded)) : String(format: "%.1f", seconds)
+    }
+
+    private static func decimalLabel(_ value: Double) -> String {
+        var label = String(format: "%.2f", value)
+        while label.last == "0" { label.removeLast() }
+        if label.last == "." { label.removeLast() }
+        return label
     }
 }

@@ -4,11 +4,12 @@ import Combine
 @MainActor
 struct StreamingInfoView: View {
     @ObservedObject private var playerManager: PlayerManager
-    @State var streamingInfo: StreamingInfo = .placeholder
+    @State var streamingInfo: StreamingInfo
     @State private var refreshTimer: AnyCancellable?
     
     init(playerManager: PlayerManager = .shared) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
+        _streamingInfo = State(initialValue: .placeholder(using: playerManager.strings))
     }
 
     var body: some View {

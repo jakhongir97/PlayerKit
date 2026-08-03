@@ -10,4 +10,11 @@ import Foundation
 @MainActor
 public protocol StreamingInfoProtocol: AnyObject {
     func fetchStreamingInfo() -> StreamingInfo
+    func fetchStreamingInfo(using strings: PlayerStrings) -> StreamingInfo
+}
+
+public extension StreamingInfoProtocol {
+    func fetchStreamingInfo(using strings: PlayerStrings) -> StreamingInfo {
+        fetchStreamingInfo()
+    }
 }
