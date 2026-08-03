@@ -45,9 +45,15 @@ public final class Player {
         playerManager.load(playerItem: item)
     }
 
-    public func load(playerItem: PlayerItem) {
+    public func load(
+        playerItem: PlayerItem,
+        preservingTrackSelection: Bool = false
+    ) {
         playerManager.ensurePlayerConfigured()
-        playerManager.load(playerItem: playerItem)
+        playerManager.load(
+            playerItem: playerItem,
+            preservingTrackSelection: preservingTrackSelection
+        )
     }
 
     public func load(playerItems: [PlayerItem], currentIndex: Int = 0) {

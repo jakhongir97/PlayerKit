@@ -78,6 +78,78 @@ final class PlaybackRecoveryRegressionTests: XCTestCase {
         XCTAssertNil(manager.selectedSubtitle)
     }
 
+    func testDirectItemLoadDoesNotCarryTracksByDefault() {
+        let manager = PlayerManager.shared
+        let backend = RecoveryMockPlayer()
+        let selectedAudio = TrackInfo(id: "old-audio", name: "Russian", languageCode: "ru")
+        let selectedSubtitle = TrackInfo(id: "old-subtitle", name: "Russian", languageCode: "ru")
+        manager.installPlayerBackend(backend)
+        manager.load(playerItem: item("old"))
+        backend.availableAudioTracks = [selectedAudio]
+        backend.availableSubtitles = [selectedSubtitle]
+        manager.playerDidUpdateTracks()
+        manager.selectAudioTrack(track: selectedAudio)
+        manager.selectSubtitle(track: selectedSubtitle)
+
+        let defaultAudio = TrackInfo(id: "new-audio-en", name: "English", languageCode: "en")
+        let matchingAudio = TrackInfo(id: "new-audio-ru", name: "Russian", languageCode: "ru")
+        let defaultSubtitle = TrackInfo(id: "new-subtitle-en", name: "English", languageCode: "en")
+        let matchingSubtitle = TrackInfo(id: "new-subtitle-ru", name: "Russian", languageCode: "ru")
+        backend.availableAudioTracks = [defaultAudio, matchingAudio]
+        backend.availableSubtitles = [defaultSubtitle, matchingSubtitle]
+        backend.currentAudioTrack = defaultAudio
+        backend.currentSubtitleTrack = defaultSubtitle
+
+        manager.load(playerItem: item("new"))
+        manager.playerDidUpdateTracks()
+
+        XCTAssertEqual(manager.selectedAudio, defaultAudio)
+        XCTAssertEqual(manager.selectedSubtitle, defaultSubtitle)
+    }
+
+    func testDirectItemLoadCanPreserveMatchingTracksAndDisabledSubtitles() {
+        let manager = PlayerManager.shared
+        let backend = RecoveryMockPlayer()
+        let selectedAudio = TrackInfo(id: "old-audio", name: "Russian", languageCode: "ru")
+        let selectedSubtitle = TrackInfo(id: "old-subtitle", name: "Russian", languageCode: "ru")
+        manager.installPlayerBackend(backend)
+        manager.load(playerItem: item("old"))
+        backend.availableAudioTracks = [selectedAudio]
+        backend.availableSubtitles = [selectedSubtitle]
+        manager.playerDidUpdateTracks()
+        manager.selectAudioTrack(track: selectedAudio)
+        manager.selectSubtitle(track: selectedSubtitle)
+
+        let defaultAudio = TrackInfo(id: "new-audio-en", name: "English", languageCode: "en")
+        let matchingAudio = TrackInfo(id: "new-audio-ru", name: "Russian", languageCode: "ru")
+        let defaultSubtitle = TrackInfo(id: "new-subtitle-en", name: "English", languageCode: "en")
+        let matchingSubtitle = TrackInfo(id: "new-subtitle-ru", name: "Russian", languageCode: "ru")
+        backend.availableAudioTracks = [defaultAudio, matchingAudio]
+        backend.availableSubtitles = [defaultSubtitle, matchingSubtitle]
+        backend.currentAudioTrack = defaultAudio
+        backend.currentSubtitleTrack = defaultSubtitle
+
+        Player(playerManager: manager).load(
+            playerItem: item("new"),
+            preservingTrackSelection: true
+        )
+        manager.playerDidUpdateTracks()
+
+        XCTAssertEqual(manager.selectedAudio, matchingAudio)
+        XCTAssertEqual(manager.selectedSubtitle, matchingSubtitle)
+
+        manager.selectSubtitle(track: nil)
+        backend.currentSubtitleTrack = defaultSubtitle
+        manager.load(
+            playerItem: item("newer"),
+            preservingTrackSelection: true
+        )
+        manager.playerDidUpdateTracks()
+
+        XCTAssertNil(manager.selectedSubtitle)
+        XCTAssertNil(backend.currentSubtitleTrack)
+    }
+
     func testPausedBackendReplacementRestoresPausedIntentDuringLoad() {
         let manager = PlayerManager.shared
         let original = RecoveryMockPlayer()

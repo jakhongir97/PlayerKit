@@ -530,7 +530,10 @@ public class PlayerManager: ObservableObject {
         #endif
     }
     
-    public func load(playerItem: PlayerItem) {
+    public func load(
+        playerItem: PlayerItem,
+        preservingTrackSelection: Bool = false
+    ) {
         if currentPlayer == nil {
             configurePlayer(type: selectedPlayerType, clearMediaContext: true)
         }
@@ -547,6 +550,9 @@ public class PlayerManager: ObservableObject {
         } else {
             clearExternalEpisodeNavigation()
             contentType = playerItem.episodeIndex == nil ? .movie : .episode
+        }
+        if preservingTrackSelection {
+            saveCurrentTracks()
         }
         loadPlayerItem(playerItem, preservingQueue: preservesExternalNavigation)
     }
