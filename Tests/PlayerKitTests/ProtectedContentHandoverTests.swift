@@ -35,8 +35,8 @@ final class ProtectedContentHandoverTests: XCTestCase {
             content.isDescendant(of: incoming),
             "the outgoing host tore the player view out of the live host — this is the black player"
         )
-        XCTAssertEqual(incoming.subviews.count, 1, "the live host must still be rendering the player view")
-        XCTAssertTrue(outgoing.subviews.isEmpty, "the retired host must not keep the player view")
+        XCTAssertEqual(incoming.installedPlayerViews, [content], "the live host must still be rendering the player view")
+        XCTAssertTrue(outgoing.installedPlayerViews.isEmpty, "the retired host must not keep the player view")
     }
 
     /// A layout pass must not let a retired host steal the content back.
@@ -60,11 +60,11 @@ final class ProtectedContentHandoverTests: XCTestCase {
         let host = PlayerKitProtectedContentView(frame: NSRect(x: 0, y: 0, width: 320, height: 180))
 
         host.setProtectedContentView(content)
-        XCTAssertEqual(host.subviews.count, 1)
+        XCTAssertEqual(host.installedPlayerViews, [content])
         XCTAssertEqual(content.superview, host)
 
         host.setProtectedContentView(nil)
-        XCTAssertTrue(host.subviews.isEmpty, "tearing down the only host must release the player view")
+        XCTAssertTrue(host.installedPlayerViews.isEmpty, "tearing down the only host must release the player view")
         XCTAssertNil(content.superview)
     }
 

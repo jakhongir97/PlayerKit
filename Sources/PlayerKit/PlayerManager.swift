@@ -95,6 +95,14 @@ public class PlayerManager: ObservableObject {
             gestureManager.strings = strings
         }
     }
+    /// How the rendered video is protected from screen capture.
+    ///
+    /// Defaults to ``PlayerCaptureProtectionPolicy/resolvedDefault(defaults:environment:)``
+    /// so screenshot tooling and QA builds can pick a policy from outside the
+    /// app; a host that wants to decide in code just assigns to this instead.
+    /// Changing it takes effect on the players already on screen.
+    @Published public var captureProtectionPolicy: PlayerCaptureProtectionPolicy =
+        .resolvedDefault()
     @Published public var suppressesHeuristicSkipButtons: Bool = false
     public var heuristicSkipButtonTitles: HeuristicSkipButtonTitles {
         get { strings.heuristicSkipButtonTitles }

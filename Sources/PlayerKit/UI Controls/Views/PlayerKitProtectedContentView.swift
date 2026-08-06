@@ -9,6 +9,8 @@ final class PlayerKitProtectedContentView: UIView {
     private let captureShieldLabel = UILabel(frame: .zero)
     private weak var protectedContentView: UIView?
     private var contentConstraints: [NSLayoutConstraint] = []
+    private var policy: PlayerCaptureProtectionPolicy = .automatic
+    private var screenIsCaptured = false
 
     var isContentHiddenForCapture: Bool {
         !captureShieldView.isHidden
@@ -57,6 +59,16 @@ final class PlayerKitProtectedContentView: UIView {
     func setCaptureMessage(_ message: String) {
         captureShieldLabel.text = message
         captureShieldView.accessibilityLabel = message
+    }
+
+    /// Switching to ``PlayerCaptureProtectionPolicy/allowCapture`` re-parents the
+    /// player view out of the secure canvas, so the content has to move before
+    /// the shield state is recomputed.
+    func setCaptureProtectionPolicy(_ newPolicy: PlayerCaptureProtectionPolicy) {
+        guard policy != newPolicy else { return }
+        policy = newPolicy
+        installProtectedContentIfPossible()
+        applyCaptureState(screenIsCaptured)
     }
 
     override func layoutSubviews() {
@@ -169,16 +181,28 @@ final class PlayerKitProtectedContentView: UIView {
     /// control. It cannot retroactively hide a one-frame screenshot, so the
     /// secure-text canvas remains a best-effort additional layer.
     func applyCaptureState(_ isCaptured: Bool) {
-        captureShieldView.isHidden = !isCaptured
-        captureShieldView.accessibilityElementsHidden = !isCaptured
-        protectedContentView?.accessibilityElementsHidden = isCaptured
+        screenIsCaptured = isCaptured
+        let isShielded = shouldShieldContent(screenIsCaptured: isCaptured)
+        captureShieldView.isHidden = !isShielded
+        captureShieldView.accessibilityElementsHidden = !isShielded
+        protectedContentView?.accessibilityElementsHidden = isShielded
+    }
+
+    private func shouldShieldContent(screenIsCaptured: Bool) -> Bool {
+        switch policy {
+        case .automatic:
+            return screenIsCaptured
+        case .blackOutVideo:
+            return true
+        case .allowCapture:
+            return false
+        }
     }
 
     private func installProtectedContentIfPossible() {
         guard let protectedContentView else { return }
 
-        secureTextField.layoutIfNeeded()
-        let secureContainer = secureCanvasView ?? secureTextField
+        let secureContainer = contentContainer
 
         if protectedContentView.superview !== secureContainer {
             protectedContentView.removeFromSuperview()
@@ -195,6 +219,20 @@ final class PlayerKitProtectedContentView: UIView {
         ]
         NSLayoutConstraint.activate(contentConstraints)
         protectedContentView.accessibilityElementsHidden = isContentHiddenForCapture
+        // `.allowCapture` parents the player view to `self`, which would
+        // otherwise leave it in front of the shield.
+        bringSubviewToFront(captureShieldView)
+    }
+
+    /// The secure canvas is what actually keeps the video out of a screenshot,
+    /// so every protecting policy hosts the player view inside it.
+    /// ``PlayerCaptureProtectionPolicy/allowCapture`` deliberately opts out and
+    /// hosts the player view directly, which is what makes the video appear in
+    /// captures.
+    private var contentContainer: UIView {
+        guard policy != .allowCapture else { return self }
+        secureTextField.layoutIfNeeded()
+        return secureCanvasView ?? secureTextField
     }
 
     private var secureCanvasView: UIView? {
@@ -230,6 +268,20 @@ final class PlayerKitProtectedContentView: NSView {
     private weak var protectedContentView: NSView?
     private weak var protectedWindow: NSWindow?
     private var contentConstraints: [NSLayoutConstraint] = []
+    private let captureShieldView = NSView(frame: .zero)
+    private let captureShieldLabel = NSTextField(labelWithString: "")
+    private var policy: PlayerCaptureProtectionPolicy = .automatic
+
+    var isContentHiddenForCapture: Bool {
+        !captureShieldView.isHidden
+    }
+
+    /// The capture shield is a permanent subview, so anything reasoning about
+    /// *who owns the player view* has to discount it rather than counting raw
+    /// `subviews`.
+    var installedPlayerViews: [NSView] {
+        subviews.filter { $0 !== captureShieldView }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -258,6 +310,7 @@ final class PlayerKitProtectedContentView: NSView {
         // live host, leaving a `PlayerKitProtectedContentView` whose only
         // content is its own black backing layer.
         if protectedContentView?.superview === self {
+            protectedContentView?.isHidden = false
             protectedContentView?.removeFromSuperview()
         }
 
@@ -267,9 +320,21 @@ final class PlayerKitProtectedContentView: NSView {
         install(contentView)
     }
 
+    func setCaptureMessage(_ message: String) {
+        captureShieldLabel.stringValue = message
+        captureShieldView.setAccessibilityLabel(message)
+    }
+
+    func setCaptureProtectionPolicy(_ newPolicy: PlayerCaptureProtectionPolicy) {
+        guard policy != newPolicy else { return }
+        policy = newPolicy
+        applyPolicy()
+    }
+
     override func layout() {
         super.layout()
         adoptProtectedContentIfOrphaned()
+        raiseCaptureShield()
     }
 
     /// Passive recovery: re-adopt the player view only when nothing else owns
@@ -285,7 +350,7 @@ final class PlayerKitProtectedContentView: NSView {
 
         contentView.removeFromSuperview()
         contentView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(contentView)
+        addSubview(contentView, positioned: .below, relativeTo: captureShieldView)
 
         NSLayoutConstraint.deactivate(contentConstraints)
         contentConstraints = [
@@ -295,6 +360,7 @@ final class PlayerKitProtectedContentView: NSView {
             contentView.trailingAnchor.constraint(equalTo: trailingAnchor),
         ]
         NSLayoutConstraint.activate(contentConstraints)
+        applyContentVisibility()
     }
 
     override func viewDidMoveToWindow() {
@@ -305,16 +371,100 @@ final class PlayerKitProtectedContentView: NSView {
     private func configure() {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
+
+        // AppKit has no secure-text canvas and no capture notification, so the
+        // shield is not a reaction to a capture the way it is on iOS — it is the
+        // whole mechanism behind `.blackOutVideo`, and it is opaque so the video
+        // beneath it reaches neither the screen nor a capture.
+        captureShieldView.translatesAutoresizingMaskIntoConstraints = false
+        captureShieldView.wantsLayer = true
+        captureShieldView.layer?.backgroundColor = NSColor.black.cgColor
+        captureShieldView.isHidden = true
+        captureShieldView.setAccessibilityElement(true)
+        captureShieldView.setAccessibilityRole(.staticText)
+        addSubview(captureShieldView)
+        NSLayoutConstraint.activate([
+            captureShieldView.topAnchor.constraint(equalTo: topAnchor),
+            captureShieldView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            captureShieldView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            captureShieldView.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
+
+        captureShieldLabel.translatesAutoresizingMaskIntoConstraints = false
+        captureShieldLabel.textColor = .white
+        captureShieldLabel.font = .preferredFont(forTextStyle: .headline)
+        captureShieldLabel.alignment = .center
+        captureShieldLabel.maximumNumberOfLines = 0
+        captureShieldLabel.lineBreakMode = .byWordWrapping
+        captureShieldLabel.setAccessibilityElement(false)
+        captureShieldView.addSubview(captureShieldLabel)
+        // Deliberately *not* centred. Unlike iOS — where the shield only appears
+        // for the duration of an active capture — this one is a mode the viewer
+        // sits in, and dead centre is exactly where the transport cluster lives,
+        // which sliced the sentence into fragments between the buttons. A
+        // proportional offset clears both the title chrome above and the
+        // transport row at every window size.
+        let verticalPlacement = NSLayoutConstraint(
+            item: captureShieldLabel,
+            attribute: .centerY,
+            relatedBy: .equal,
+            toItem: captureShieldView,
+            attribute: .bottom,
+            multiplier: 0.3,
+            constant: 0
+        )
+        NSLayoutConstraint.activate([
+            captureShieldLabel.centerXAnchor.constraint(equalTo: captureShieldView.centerXAnchor),
+            verticalPlacement,
+            captureShieldLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: captureShieldView.leadingAnchor,
+                constant: 24
+            ),
+            captureShieldLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: captureShieldView.trailingAnchor,
+                constant: -24
+            ),
+        ])
+
+        setCaptureMessage(PlayerStrings().videoHiddenDuringScreenSharing)
     }
 
+    private func applyPolicy() {
+        updateWindowProtection()
+        captureShieldView.isHidden = (policy != .blackOutVideo)
+        applyContentVisibility()
+        raiseCaptureShield()
+    }
+
+    /// The shield is opaque and covers the whole surface, so hiding the player
+    /// view underneath is belt-and-braces rather than load-bearing. It also
+    /// stops the compositor doing any work for pixels nobody can see, and it
+    /// keeps `AVPlayer` running so audio and the transport timeline continue.
+    private func applyContentVisibility() {
+        protectedContentView?.isHidden = (policy == .blackOutVideo)
+        protectedContentView?.setAccessibilityElement(policy != .blackOutVideo)
+    }
+
+    private func raiseCaptureShield() {
+        guard captureShieldView.superview === self,
+              subviews.last !== captureShieldView else { return }
+        captureShieldView.removeFromSuperview()
+        addSubview(captureShieldView, positioned: .above, relativeTo: nil)
+    }
+
+    /// Only ``PlayerCaptureProtectionPolicy/automatic`` takes the hosting window
+    /// out of screen sharing. The other policies deliberately leave it
+    /// capturable, and must therefore hand back any protection this view took
+    /// out earlier — the policy can change while the player is on screen.
     private func updateWindowProtection() {
-        if protectedWindow === window { return }
+        let desiredWindow = (policy == .automatic) ? window : nil
+        if protectedWindow === desiredWindow { return }
 
         releaseWindowProtection()
 
-        guard let window else { return }
-        PlayerKitWindowCaptureProtectionRegistry.shared.retain(window)
-        protectedWindow = window
+        guard let desiredWindow else { return }
+        PlayerKitWindowCaptureProtectionRegistry.shared.retain(desiredWindow)
+        protectedWindow = desiredWindow
     }
 
     private func releaseWindowProtection() {

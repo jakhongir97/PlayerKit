@@ -15,7 +15,8 @@ struct PlayerRenderingView: View {
                let playerView = playerManager.currentPlayer?.getPlayerView() {
                 ProtectedPlayerContentRepresentable(
                     playerView: playerView,
-                    captureMessage: playerManager.strings.videoHiddenDuringScreenSharing
+                    captureMessage: playerManager.strings.videoHiddenDuringScreenSharing,
+                    captureProtectionPolicy: playerManager.captureProtectionPolicy
                 )
             } else {
                 VStack(spacing: 10) {
@@ -51,16 +52,22 @@ struct PlayerRenderingView: View {
 struct ProtectedPlayerContentRepresentable: UIViewRepresentable {
     let playerView: PKView
     let captureMessage: String
+    let captureProtectionPolicy: PlayerCaptureProtectionPolicy
 
     func makeUIView(context: Context) -> PlayerKitProtectedContentView {
         let protectedView = PlayerKitProtectedContentView()
         protectedView.setCaptureMessage(captureMessage)
+        // Before the content is installed, so `.allowCapture` parents the player
+        // view outside the secure canvas on the first pass instead of moving it
+        // a frame later.
+        protectedView.setCaptureProtectionPolicy(captureProtectionPolicy)
         protectedView.setProtectedContentView(playerView)
         return protectedView
     }
 
     func updateUIView(_ uiView: PlayerKitProtectedContentView, context: Context) {
         uiView.setCaptureMessage(captureMessage)
+        uiView.setCaptureProtectionPolicy(captureProtectionPolicy)
         uiView.setProtectedContentView(playerView)
     }
 
@@ -73,14 +80,19 @@ struct ProtectedPlayerContentRepresentable: UIViewRepresentable {
 struct ProtectedPlayerContentRepresentable: NSViewRepresentable {
     let playerView: PKView
     let captureMessage: String
+    let captureProtectionPolicy: PlayerCaptureProtectionPolicy
 
     func makeNSView(context: Context) -> PlayerKitProtectedContentView {
         let protectedView = PlayerKitProtectedContentView()
+        protectedView.setCaptureMessage(captureMessage)
+        protectedView.setCaptureProtectionPolicy(captureProtectionPolicy)
         protectedView.setProtectedContentView(playerView)
         return protectedView
     }
 
     func updateNSView(_ nsView: PlayerKitProtectedContentView, context: Context) {
+        nsView.setCaptureMessage(captureMessage)
+        nsView.setCaptureProtectionPolicy(captureProtectionPolicy)
         nsView.setProtectedContentView(playerView)
     }
 
