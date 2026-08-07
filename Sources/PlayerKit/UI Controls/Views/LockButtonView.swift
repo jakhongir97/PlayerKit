@@ -11,9 +11,9 @@ struct LockButtonView: View {
     var body: some View {
         Button(action: toggleLock) {
             Image(systemName: playerManager.isLocked ? "lock.fill" : "lock.open")
-                .circularGlassIcon()
+                .playerControlIcon(appearance: playerManager.appearance)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PlayerControlButtonStyle())
         .accessibilityLabel(
             playerManager.isLocked
                 ? playerManager.strings.unlockControls

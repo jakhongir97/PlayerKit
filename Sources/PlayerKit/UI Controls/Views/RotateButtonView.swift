@@ -3,20 +3,23 @@ import SwiftUI
 @MainActor
 struct RotateButtonView: View {
     private let playerManager: PlayerManager
+    let isGrouped: Bool
     #if canImport(UIKit)
     @State private var windowScene: UIWindowScene?
     #endif
-    
-    init(playerManager: PlayerManager = .shared) {
+
+    init(playerManager: PlayerManager = .shared, isGrouped: Bool = false) {
         self.playerManager = playerManager
+        self.isGrouped = isGrouped
     }
 
     var body: some View {
         Button(action: toggleOrientation) {
             Image(systemName: "rotate.right")
-                .circularGlassIcon()
+                .playerBarItem(isGrouped: isGrouped, appearance: playerManager.appearance)
         }
-        .buttonStyle(.plain)
+        // Grouped, the glyph owns the hover response — see FullscreenButtonView.
+        .buttonStyle(PlayerControlButtonStyle(hoverEnabled: !isGrouped))
         .accessibilityLabel(playerManager.strings.rotatePlayer)
         .accessibilityHint(playerManager.strings.rotatePlayerHint)
         .accessibilityIdentifier("player.rotate")

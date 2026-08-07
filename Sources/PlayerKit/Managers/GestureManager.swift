@@ -354,8 +354,31 @@ public class GestureManager: ObservableObject {
     }
 
     /// A skip with no fingertip behind it — buttons, rotor actions, keyboard.
-    func skipForward() { machine.skip(.forward) }
-    func skipBackward() { machine.skip(.backward) }
+    ///
+    /// A plain ±`skipInterval` seek through the machine's discrete path, not a
+    /// double-tap session: no overlay and no accumulation readout. The result
+    /// is announced here, because with no overlay there is nothing else to
+    /// tell a VoiceOver user the playhead moved.
+    func skipForward() { performDiscreteSkip(.forward) }
+    func skipBackward() { performDiscreteSkip(.backward) }
+
+    private func performDiscreteSkip(_ direction: SeekDirection) {
+        let achieved = machine.skip(direction)
+        guard achieved > 0 else { return }
+        GestureAnnouncer.announce(
+            direction == .forward
+                ? strings.forwardSeconds(achieved)
+                : strings.backSeconds(achieved),
+            state: assistiveState
+        )
+    }
+
+    /// The playhead moved under someone else's control — the slider, a remote
+    /// command, the host's own seek. Drops the machine's anchors so the next
+    /// skip continues from where the playhead actually went.
+    func noteExternalSeek() {
+        machine.noteExternalSeek()
+    }
 
     /// Drops any in-flight tap session and its timers.
     ///
@@ -580,8 +603,16 @@ public class GestureManager: ObservableObject {
             guard let kind = geometry.kind(forSide: side) else { return }
             coach.showNudge(side: side, kind: kind)
 
+        case .scrubEnded(let committedTarget):
+            // A committed scrub is a seek the tap machine did not issue: its
+            // anchors now point at a superseded position. Presentation stays
+            // with the routing layer, like the other scrub intents.
+            if committedTarget != nil {
+                machine.noteExternalSeek()
+            }
+
         case .zoom, .speedHoldBegan, .speedHoldEnded,
-             .scrubBegan, .scrubChanged, .scrubEnded,
+             .scrubBegan, .scrubChanged,
              .levelArmed, .levelBegan, .levelChanged, .levelPinned, .levelEnded,
              .axisLocked, .cancel:
             // Presentation for these is driven directly by the routing layer,

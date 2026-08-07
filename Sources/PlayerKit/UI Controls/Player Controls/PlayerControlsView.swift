@@ -8,9 +8,6 @@ struct PlayerControlsView: View {
     #endif
     let presentationPolicy: PlayerPresentationPolicy
 
-    static let sideControlExtent: CGFloat = 50
-    static let middleSpacing: CGFloat = 8
-
     /// The chrome is on screen and not suppressed by the lock.
     private var showsChrome: Bool {
         playerManager.areControlsVisible && !playerManager.isLocked
@@ -28,59 +25,48 @@ struct PlayerControlsView: View {
         GeometryReader { proxy in
             let padding = Self.contentPadding(for: proxy.size.width)
             let contentWidth = max(proxy.size.width - (padding * 2), 0)
-            let transportWidth = Self.transportWidth(for: proxy.size.width)
-            let separatesSideControls = Self.separatesSideControls(for: proxy.size.width)
 
             ZStack {
-                Color.black.opacity(0.62)
-                    .edgesIgnoringSafeArea(.all)
-                    .allowsHitTesting(false)
-                    .opacity(playerManager.areControlsVisible ? 1 : 0)
+                scrim
 
-                VStack {
+                VStack(spacing: 0) {
+                    // Presented on visibility alone: the row gates its own
+                    // children on `showsChrome` and deliberately keeps the lock
+                    // alive past it, since the lock is the way back out.
                     TopControlsView(playerManager: playerManager)
-                        .presented(showsChrome)
+                        .presented(playerManager.areControlsVisible)
 
-                    Spacer(minLength: 8)
+                    Spacer(minLength: PlayerChromeMetrics.spacingL)
 
-                    if separatesSideControls {
-                        VStack(spacing: 8) {
-                            MiddleControlsView(
-                                playerManager: playerManager,
-                                availableWidth: contentWidth
-                            )
-                            .presented(showsChrome)
+                    // The transport gets the whole content width. It used to be
+                    // handed `contentWidth - 104`, reserving room for the info
+                    // and lock buttons that flanked it — but both moved into
+                    // the top bar, so the reservation was paying rent for an
+                    // empty room and stacked the episode row at widths where it
+                    // fits comfortably.
+                    MiddleControlsView(
+                        playerManager: playerManager,
+                        availableWidth: contentWidth
+                    )
+                    .presented(showsChrome)
 
-                            sideControls
-                        }
-                    } else {
-                        HStack(spacing: 0) {
-                            InfoButtonView(playerManager: playerManager)
-                                .presented(showsChrome)
-                            Spacer(minLength: 0)
+                    Spacer(minLength: PlayerChromeMetrics.spacingL)
 
-                            MiddleControlsView(
-                                playerManager: playerManager,
-                                availableWidth: transportWidth
-                            )
-                            .padding(.horizontal, Self.middleSpacing)
-                            .presented(showsChrome)
-                            Spacer(minLength: 0)
-
-                            unlockControl
-                        }
-                    }
-
-                    Spacer(minLength: 8)
-
-                    VStack {
-                        BottomControlsView(
-                            playerManager: playerManager,
-                            presentationPolicy: presentationPolicy
-                        )
-                            .presented(showsChrome)
+                    // Scrubber above the buttons, the way every streaming
+                    // player puts it: the timeline is what the bottom row acts
+                    // on, so it reads top-down as position-then-actions. It
+                    // also stops the time readouts from being stranded in the
+                    // window's bottom corners under everything else.
+                    VStack(spacing: PlayerChromeMetrics.spacingS) {
                         playbackSlider
                             .presented(showsScrubber)
+
+                        BottomControlsView(
+                            playerManager: playerManager,
+                            presentationPolicy: presentationPolicy,
+                            availableWidth: contentWidth
+                        )
+                        .presented(showsChrome)
                     }
                 }
                 .padding(padding)
@@ -88,13 +74,30 @@ struct PlayerControlsView: View {
         }
     }
 
-    private var sideControls: some View {
-        HStack {
-            InfoButtonView(playerManager: playerManager)
-                .presented(showsChrome)
-            Spacer(minLength: 0)
-            unlockControl
-        }
+    /// Top-and-bottom gradient rather than one flat wash.
+    ///
+    /// The chrome used to sit under a full-screen `black.opacity(0.62)`, which
+    /// dimmed the *whole picture* by 62% every time the controls appeared —
+    /// including the middle of the frame, where there are no controls to make
+    /// legible. It also defeats the point of glass: a translucent surface over
+    /// a uniformly darkened backdrop has nothing left to refract. Weighting the
+    /// scrim to the edges keeps the same contrast behind the bars and hands the
+    /// picture back.
+    private var scrim: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .black.opacity(0.68), location: 0),
+                .init(color: .black.opacity(0.24), location: 0.22),
+                .init(color: .black.opacity(0.12), location: 0.5),
+                .init(color: .black.opacity(0.34), location: 0.76),
+                .init(color: .black.opacity(0.78), location: 1),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .edgesIgnoringSafeArea(.all)
+        .allowsHitTesting(false)
+        .opacity(playerManager.areControlsVisible ? 1 : 0)
     }
 
     @ViewBuilder
@@ -109,33 +112,20 @@ struct PlayerControlsView: View {
         #endif
     }
 
-    /// The one control that survives the lock — it is how the user gets back
-    /// out. Keeping it in one helper avoids the compact and regular layouts
-    /// drifting apart.
-    private var unlockControl: some View {
-        LockButtonView(playerManager: playerManager)
-            .presented(playerManager.areControlsVisible)
-    }
-
     static func contentPadding(for width: CGFloat) -> CGFloat {
-        min(max(width * 0.04, 12), 32)
+        PlayerChromeMetrics.contentInset(for: width)
     }
 
-    static func transportWidth(for totalWidth: CGFloat) -> CGFloat {
-        let contentWidth = max(totalWidth - (contentPadding(for: totalWidth) * 2), 0)
-        let sideControlsWidth = (sideControlExtent * 2) + (middleSpacing * 2)
-        return max(contentWidth - sideControlsWidth, 0)
-    }
-
-    static func separatesSideControls(for totalWidth: CGFloat) -> Bool {
-        transportWidth(for: totalWidth) < MiddleControlsView.compactTransportMinimumWidth
-    }
-
+    /// The width the transport is laid out in.
+    ///
+    /// Now simply the content width. The `transportWidth` / `separatesSideControls`
+    /// pair this replaces existed to keep the transport clear of the info and
+    /// lock buttons that sat on its line; those moved into the top bar, and the
+    /// subtraction they justified made the function non-monotonic across its
+    /// own breakpoint — a 287pt surface reported 287 and a 288pt one reported
+    /// 184.
     static func effectiveTransportWidth(for totalWidth: CGFloat) -> CGFloat {
-        if separatesSideControls(for: totalWidth) {
-            return max(totalWidth - (contentPadding(for: totalWidth) * 2), 0)
-        }
-        return transportWidth(for: totalWidth)
+        max(totalWidth - (contentPadding(for: totalWidth) * 2), 0)
     }
 }
 

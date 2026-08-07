@@ -286,10 +286,16 @@ struct GestureGeometry: Equatable {
 
     /// Where the rail draws. The live HUD, the resting affordance and the coach
     /// all call this, so a coach mark cannot point somewhere the rail is not.
+    ///
+    /// Inset by the same `contentInset` the chrome uses, not a private constant:
+    /// the rails used to sit 20pt from the raw window edge while the control
+    /// bars sat up to 32pt in, so the gesture layer hugged the bezel outside the
+    /// grid everything else aligned to.
     func railFrame(_ side: RailSide) -> CGRect {
         guard isUsable else { return .zero }
         let height = min(0.46 * surface.size.height, 180)
         let width: CGFloat = 6
+        let chromeInset = PlayerChromeMetrics.contentInset(for: surface.size.width)
         let inset: CGFloat
         let physicalSide: RailSide
         if surface.layoutDirection == .rightToLeft {
@@ -299,7 +305,7 @@ struct GestureGeometry: Equatable {
         }
         switch physicalSide {
         case .leading:
-            inset = max(surface.insets.leading, 20)
+            inset = max(surface.insets.leading, chromeInset)
             return CGRect(
                 x: inset,
                 y: (surface.size.height - height) / 2,
@@ -307,7 +313,7 @@ struct GestureGeometry: Equatable {
                 height: height
             )
         case .trailing:
-            inset = max(surface.insets.trailing, 20)
+            inset = max(surface.insets.trailing, chromeInset)
             return CGRect(
                 x: surface.size.width - inset - width,
                 y: (surface.size.height - height) / 2,

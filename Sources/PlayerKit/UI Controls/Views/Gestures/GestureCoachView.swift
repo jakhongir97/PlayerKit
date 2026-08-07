@@ -99,8 +99,22 @@ struct GestureCoachView: View {
             }
             Spacer()
         }
-        .padding(.top, max(geometry.surface.insets.top, 8))
-        .padding(.trailing, max(geometry.surface.insets.trailing, 8))
+        // The chrome's inset, not a private 8pt: the dismiss control used to
+        // hug the corner tighter than anything else on screen.
+        .padding(
+            .top,
+            max(
+                geometry.surface.insets.top,
+                PlayerChromeMetrics.contentInset(for: geometry.size.width)
+            )
+        )
+        .padding(
+            .trailing,
+            max(
+                geometry.surface.insets.trailing,
+                PlayerChromeMetrics.contentInset(for: geometry.size.width)
+            )
+        )
     }
 
     // MARK: - Nudge

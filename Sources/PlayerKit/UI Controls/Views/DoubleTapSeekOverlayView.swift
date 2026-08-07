@@ -1,24 +1,37 @@
 import SwiftUI
 
-/// PlayerKit's double-tap skip indicator.
+/// PlayerKit's double-tap skip indicator, drawn with YouTube's anatomy.
 ///
-/// Three layers, each a single view with no offscreen render pass between them:
+/// The double tap *is* YouTube's gesture, so the feedback borrows YouTube's
+/// visual language wholesale — the shape every viewer already knows how to
+/// read. An earlier design drew a scaled-up twin of the ±10 transport button
+/// with the running total *inside* the glyph; a 56pt disc leaves ~24pt for the
+/// number, so "30" was cramped and "110" shrank into illegibility. Here the
+/// total is a full-size text line and nothing has to fit inside anything.
 ///
-/// 1. **Edge bloom** — light spilling in from the outer edge of the tapped side,
-///    fading to nothing by the midline. There is no panel and no cut-out: the
-///    earlier design masked a hard-edged shape over half the picture, which
-///    costs an offscreen pass on every animated frame and draws a border across
-///    the video that has nothing to do with the video.
-/// 2. **Tap ring** — a thin ring opening from the fingertip, sized so it can
-///    never reach across the midline (see `tapRingRadius(forWidth:)`), which is
-///    what lets it be drawn without any clipping at all.
-/// 3. **Readout** — chevrons leading the number in the direction of travel, over
-///    a soft radial bloom that carries the white text on bright footage without
-///    a blur pass.
+/// Four layers, back to front:
 ///
-/// The motion is an impulse rather than a loop: each tap sends the chevrons
-/// sweeping outward and pops the number, then everything settles. Nothing
-/// animates between taps, so an idle overlay costs nothing to keep on screen.
+/// 1. **Edge bloom** — dark light-falloff from the tapped edge, reaching
+///    `.clear` at the midline. Deliberately dark, not light: a white wash is
+///    invisible on bright footage — exactly the frames where the overlay most
+///    needs to separate itself — whereas darkening reads there, and on
+///    already-dark footage there is nothing for it to fight. It doubles as the
+///    contrast floor for the white cluster above it.
+/// 2. **Sector wash** — YouTube's signature shape: a translucent sheet over
+///    the tapped half whose inner edge is a circular arc bulging toward the
+///    midline. A circle anchored at the outer edge, clipped to the tapped
+///    half, so it cannot reach the other side by construction.
+/// 3. **Tap ripple** — a soft filled circle expanding from the fingertip on
+///    every tap, clipped with the wash. Anchoring at the finger is safe here
+///    because the clip owns containment; the old ring needed geometry to
+///    promise it stayed in its half.
+/// 4. **The cluster** — three chevrons pointing the way the seek is going,
+///    animated as a sequential wave, with "N SECONDS" beneath them. The wave
+///    runs while the session is up; each further tap pops the cluster and
+///    replays the ripple from the new fingertip.
+///
+/// Reduce Motion drops the ripple and freezes the wave at its staggered
+/// resting opacities — the direction still reads, nothing loops.
 ///
 /// Purely presentational — `GestureManager` owns the state.
 struct DoubleTapSeekOverlayView: View {
@@ -26,8 +39,8 @@ struct DoubleTapSeekOverlayView: View {
     let size: CGSize
     let strings: PlayerStrings
 
-    /// Springs the readout on each tap. Driven by `tapID` rather than view
-    /// identity so the number is not torn down and rebuilt to animate.
+    /// Impulses driven by `tapID` rather than view identity, so the cluster is
+    /// not torn down and rebuilt to animate.
     @State private var pop: CGFloat = 1
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -37,8 +50,8 @@ struct DoubleTapSeekOverlayView: View {
     var body: some View {
         ZStack {
             edgeBloom
-            tapRing
-            readout
+            sectorWash
+            cluster
         }
         .frame(width: size.width, height: size.height)
         .allowsHitTesting(false)
@@ -52,11 +65,6 @@ struct DoubleTapSeekOverlayView: View {
 
     /// Reaches `.clear` exactly at the midline, so the tapped side is shaded and
     /// the other side is untouched without a mask deciding where to stop.
-    ///
-    /// Deliberately a dark scrim, not a light one. A white wash is invisible on
-    /// bright footage — exactly the frames where the overlay most needs to
-    /// separate itself from the picture — whereas darkening reads there, and on
-    /// already-dark footage there is nothing for it to fight.
     private var edgeBloom: some View {
         LinearGradient(
             gradient: Gradient(stops: [
@@ -70,47 +78,75 @@ struct DoubleTapSeekOverlayView: View {
         )
     }
 
-    @ViewBuilder
-    private var tapRing: some View {
-        // The expanding ring is pure decoration; Reduce Motion drops it rather
-        // than slowing it down, because a slower expanding circle is still an
-        // expanding circle.
-        if !reduceMotion {
-            SeekTapRing(
-                center: state.origin(in: size),
-                radius: Self.tapRingRadius(forWidth: size.width)
-            )
-            .id(state.tapID)
+    /// The arc-edged sheet plus the per-tap ripple, both living inside a
+    /// clipped half-width container so neither can cross the midline no matter
+    /// what the surface's aspect ratio does to the circle.
+    private var sectorWash: some View {
+        let halfWidth = size.width / 2
+        let washRadius = Self.washRadius(for: size)
+        // The wash circle is anchored at the outer edge of the tapped half, in
+        // the half-container's own coordinates.
+        let anchorX: CGFloat = isForward ? halfWidth : 0
+
+        return ZStack {
+            Circle()
+                .fill(Color.white.opacity(0.09))
+                .frame(width: washRadius * 2, height: washRadius * 2)
+                .position(x: anchorX, y: size.height / 2)
+
+            // The ripple is pure decoration; Reduce Motion drops it rather
+            // than slowing it down, because a slower expanding circle is still
+            // an expanding circle.
+            if !reduceMotion {
+                SeekTapRipple(
+                    center: rippleCenter(halfWidth: halfWidth),
+                    maxRadius: Self.pulseReach(forWidth: size.width) * 3
+                )
+                .id(state.tapID)
+            }
         }
+        .frame(width: halfWidth, height: size.height)
+        .clipped()
+        .frame(
+            width: size.width,
+            height: size.height,
+            alignment: isForward ? .trailing : .leading
+        )
     }
 
-    /// A glass medallion, echoing the circular controls the rest of the player
-    /// is built from — and echoing the ring that just opened under the finger.
-    ///
-    /// The glass is what makes the white type readable over any frame, bright or
-    /// dark, without a `shadow` blurring the whole readout into an offscreen
-    /// buffer on every animated frame.
-    private var readout: some View {
-        VStack(spacing: 0) {
-            SeekChevronsView(isForward: isForward, isAnimated: !reduceMotion)
-                .id(state.tapID)
-            Text(secondsValue)
-                .font(.system(size: 32, weight: .semibold, design: .rounded))
+    /// The fingertip, translated into the half-container's coordinates.
+    private func rippleCenter(halfWidth: CGFloat) -> CGPoint {
+        let surfaceX = state.unitOrigin.x * size.width
+        return CGPoint(
+            x: isForward ? surfaceX - halfWidth : surfaceX,
+            y: state.unitOrigin.y * size.height
+        )
+    }
+
+    /// Chevrons above, total below — YouTube's arrangement, centred in the
+    /// tapped side zone on the transport's own line.
+    private var cluster: some View {
+        VStack(spacing: 10) {
+            SeekChevronWave(isForward: isForward, animated: !reduceMotion)
+            Text(secondsLabel)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .kerning(0.8)
                 .monospacedDigitsCompat()
-            Text(strings.seconds)
-                .font(.system(size: 10, weight: .semibold))
-                .trackingCompat(1.8)
-                .opacity(0.65)
+                .lineLimit(1)
         }
         .foregroundColor(.white)
-        .frame(width: Self.medallionSize, height: Self.medallionSize)
-        .modifier(SeekMedallionGlass())
+        // The cluster sits on footage, not on glass; the shadow is its
+        // contrast floor for the frames the edge bloom cannot darken enough.
+        .shadow(color: .black.opacity(0.4), radius: 6, y: 1)
         .scaleEffect(pop)
-        .position(x: size.width * (isForward ? 0.75 : 0.25), y: size.height / 2)
+        .position(
+            x: Self.pulseCenterX(forWidth: size.width, isForward: isForward),
+            y: size.height / 2
+        )
         .compatOnChange(of: state.tapID) { _ in
             guard !reduceMotion else { return }
-            pop = 1.11
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.55)) { pop = 1 }
+            pop = 1.07
+            withAnimation(PlayerChromeMotion.press) { pop = 1 }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
@@ -118,114 +154,122 @@ struct DoubleTapSeekOverlayView: View {
         )
     }
 
-    private static let medallionSize: CGFloat = 118
-
-    private var secondsValue: String {
-        String(Int(state.seconds.rounded()))
+    private var secondsLabel: String {
+        "\(Int(state.seconds.rounded())) \(strings.seconds)"
     }
 
-    /// Radius of the tap ring.
+    /// Nominal diameter of the cluster's core content. The ripple's reach is
+    /// held above half of this by test, so the ripple always visibly escapes
+    /// the cluster instead of dying underneath it.
+    static let discDiameter: CGFloat = 56
+
+    // MARK: - Geometry contract
+
+    /// The cluster's centre: the middle of each side zone.
     ///
-    /// Capped against the width so the ring cannot reach past the midline from
-    /// the innermost point a seek tap can land on — the property that lets it be
-    /// drawn with no clip. `DoubleTapSeekOverlayGeometryTests` pins it to
-    /// `GestureManager`'s zone boundary.
-    static func tapRingRadius(forWidth width: CGFloat) -> CGFloat {
-        min(90, width * 0.09)
+    /// `DoubleTapSeekGestureTests` holds `pulseCenterX ± pulseReach` inside the
+    /// tapped half, so even the unclipped layer — the cluster — stays where a
+    /// tap on the other side could never have put it.
+    static func pulseCenterX(forWidth width: CGFloat, isForward: Bool) -> CGFloat {
+        width * (isForward ? 0.75 : 0.25)
+    }
+
+    /// The ripple's base radius (the drawn ripple reaches three of these
+    /// before the clip). Capped against the width so the *contract* radius can
+    /// never reach the midline from a centre pinned at quarter-width; the
+    /// width term only bites below a 250pt surface.
+    static func pulseReach(forWidth width: CGFloat) -> CGFloat {
+        min(60, width * 0.24)
+    }
+
+    /// The wash circle's radius: far enough in for the arc to read as
+    /// YouTube's lens, tall enough to span the surface near the tapped edge.
+    /// On tall surfaces the height term wins and the clip turns the wash into
+    /// a plain half-sheet — the degenerate case YouTube shows there too.
+    static func washRadius(for size: CGSize) -> CGFloat {
+        max(size.width * 0.42, size.height * 0.6)
     }
 }
 
-// MARK: - Medallion
+// MARK: - Chevron wave
 
-/// The same glass treatment `circularGlassIcon` gives the player's round
-/// buttons, so the skip readout belongs to the same set of controls.
-private struct SeekMedallionGlass: ViewModifier {
-    func body(content: Content) -> some View {
-        glass(content)
-            // Tint *under* the glass, which samples it along with the frame
-            // behind. Clear glass alone over a blown-out shot leaves white type
-            // on a near-white disc; this floors the contrast whatever is
-            // playing. `glassBackgroundCompat` tints the same way on macOS.
-            .shapeBackgroundCompat(Color.black.opacity(0.26), in: Circle())
-    }
+/// YouTube's triple chevron, running its sequential opacity wave.
+///
+/// The three triangles rest at staggered opacities so a single static frame
+/// already reads as motion in the seek's direction; the loop then carries each
+/// one between its floor and full strength, offset by its position. Backward
+/// mirrors the whole row, which flips both the triangles and the direction the
+/// wave travels.
+private struct SeekChevronWave: View {
+    let isForward: Bool
+    let animated: Bool
 
-    @ViewBuilder
-    private func glass(_ content: Content) -> some View {
-        #if compiler(>=6.2)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content.glassEffect(.clear, in: .circle)
-        } else {
-            fallback(content)
+    @State private var isWaving = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0 ..< 3, id: \.self) { index in
+                Image(systemName: "play.fill")
+                    .font(.system(size: 19, weight: .bold))
+                    .opacity(opacity(for: index))
+                    .animation(waveAnimation(for: index), value: isWaving)
+            }
         }
-        #else
-        fallback(content)
-        #endif
+        .scaleEffect(x: isForward ? 1 : -1, y: 1)
+        .onAppear {
+            guard animated else { return }
+            isWaving = true
+        }
     }
 
-    private func fallback(_ content: Content) -> some View {
-        content
-            .thinMaterialBackgroundCompat(in: Circle())
-            .overlay(Circle().strokeBorder(.white.opacity(0.14), lineWidth: 1))
+    /// Resting opacities lead from the direction of travel — a static frame
+    /// still reads as motion. The wave then carries each chevron between its
+    /// own floor and full strength (the floors must sit below 1, or the
+    /// leading chevron's loop would animate 1 → 1 and never move).
+    private func opacity(for index: Int) -> Double {
+        guard animated else { return [1.0, 0.7, 0.45][index] }
+        return isWaving ? 1 : [0.55, 0.4, 0.25][index]
+    }
+
+    private func waveAnimation(for index: Int) -> Animation? {
+        guard animated else { return nil }
+        return .easeInOut(duration: 0.4)
+            .repeatForever(autoreverses: true)
+            .delay(Double(index) * 0.13)
     }
 }
 
-// MARK: - Tap ring
+// MARK: - Tap ripple
 
-/// A ring opening out of the fingertip and dissolving.
-private struct SeekTapRing: View {
+/// A soft filled circle expanding from the fingertip and dissolving — the
+/// second half of YouTube's tap feedback. Containment is the clip's job, so
+/// the ripple is free to grow from wherever the finger actually landed.
+private struct SeekTapRipple: View {
     let center: CGPoint
-    let radius: CGFloat
+    let maxRadius: CGFloat
 
-    @State private var scale: CGFloat = 0.28
-    @State private var opacity: Double = 0.85
+    @State private var expanded = false
 
     var body: some View {
         Circle()
-            .strokeBorder(Color.white, lineWidth: 1.5)
-            .frame(width: radius * 2, height: radius * 2)
-            .scaleEffect(scale)
-            .opacity(opacity)
+            .fill(
+                RadialGradient(
+                    gradient: Gradient(colors: [
+                        Color.white.opacity(0.26),
+                        Color.white.opacity(0.10),
+                        Color.white.opacity(0)
+                    ]),
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: maxRadius
+                )
+            )
+            .frame(width: maxRadius * 2, height: maxRadius * 2)
+            .scaleEffect(expanded ? 1 : 0.35)
+            .opacity(expanded ? 0 : 0.9)
             .position(center)
             .onAppear {
-                withAnimation(.easeOut(duration: 0.44)) { scale = 1 }
-                withAnimation(.easeIn(duration: 0.32).delay(0.10)) { opacity = 0 }
+                withAnimation(.easeOut(duration: 0.6)) { expanded = true }
             }
-    }
-}
-
-// MARK: - Chevrons
-
-/// Three chevrons sweeping outward in the direction of travel, staggered so the
-/// impulse reads as a wave leaving the readout rather than three lights blinking.
-private struct SeekChevronsView: View {
-    let isForward: Bool
-    let isAnimated: Bool
-
-    @State private var swept = false
-
-    private let count = 3
-
-    var body: some View {
-        HStack(spacing: 1) {
-            ForEach(0 ..< count, id: \.self) { index in
-                Image(systemName: isForward ? "chevron.right" : "chevron.left")
-                    .font(.system(size: 13, weight: .bold))
-                    .opacity(isAnimated && swept ? 0.5 : 1)
-                    .offset(x: isAnimated && swept ? (isForward ? 7 : -7) : 0)
-                    .animation(
-                        isAnimated
-                            ? .easeOut(duration: 0.5).delay(0.06 * Double(order(of: index)))
-                            : nil,
-                        value: swept
-                    )
-            }
-        }
-        .onAppear { swept = isAnimated }
-    }
-
-    /// Forward sweeps left-to-right, backward right-to-left, so the wave always
-    /// travels the way the playhead is going.
-    private func order(of index: Int) -> Int {
-        isForward ? index : (count - 1 - index)
     }
 }

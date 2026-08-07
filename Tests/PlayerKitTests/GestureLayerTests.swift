@@ -171,16 +171,167 @@ final class TapSeekMachineTests: XCTestCase {
         XCTAssertEqual(probe.intents.first, .toggleControls(.immediate))
     }
 
-    /// The button/rotor/keyboard path shares the double tap's accumulation, so
-    /// the two cannot drift apart.
-    func testLocationFreeSkipAccumulatesLikeADoubleTap() {
+    /// The button/rotor/keyboard path is a plain seek: it must not open the
+    /// double-tap session, draw the accumulation overlay, or hide the chrome.
+    /// It wakes the chrome instead, the way any control press does.
+    func testLocationFreeSkipSeeksWithoutOpeningASession() {
+        let (machine, probe, _) = makeMachine()
+
+        machine.skip(.forward)
+
+        XCTAssertEqual(probe.seeks, [110])
+        XCTAssertNil(machine.overlay)
+        XCTAssertFalse(machine.isSeeking)
+        XCTAssertFalse(probe.intents.contains(.setControlsVisible(false)))
+        XCTAssertFalse(probe.intents.contains(.toggleControls(.immediate)))
+        XCTAssertTrue(probe.intents.contains(.setControlsVisible(true)))
+    }
+
+    /// Rapid presses still anchor on the last *issued* target: with every seek
+    /// in flight the playhead reads stale, and re-reading it would make three
+    /// fast +10s land +10.
+    func testRapidDiscreteSkipsAnchorOnTheLastIssuedTarget() {
         let (machine, probe, _) = makeMachine()
 
         machine.skip(.forward)
         machine.skip(.forward)
+        machine.skip(.forward)
+
+        XCTAssertEqual(probe.playhead, 100, "Every seek is still in flight")
+        XCTAssertEqual(probe.seeks, [110, 120, 130])
+        XCTAssertNil(machine.overlay)
+    }
+
+    /// Once the anchor window closes, the next press re-reads the playhead —
+    /// an anchor that never expired would drift away from a paused stream.
+    func testDiscreteAnchorExpiresAfterTheSessionTimeout() {
+        let (machine, probe, clock) = makeMachine()
+
+        machine.skip(.forward)
+        probe.playhead = 110 // The seek landed.
+        clock.advance(by: 1.0)
+        machine.skip(.forward)
 
         XCTAssertEqual(probe.seeks, [110, 120])
-        XCTAssertEqual(machine.overlay?.seconds, 20)
+    }
+
+    /// A press while a fingertip session is open takes the session over: the
+    /// overlay comes down and the skip continues from where the session was
+    /// already headed, never from the lagging playhead behind it.
+    func testDiscreteSkipDuringASessionClosesItAndContinuesFromItsTarget() {
+        let (machine, probe, _) = makeMachine()
+
+        machine.handleTap(unitOrigin: rightUnit, zone: .forward)
+        machine.handleTap(unitOrigin: rightUnit, zone: .forward)
+        XCTAssertEqual(probe.seeks, [110])
+        XCTAssertNotNil(machine.overlay)
+
+        machine.skip(.forward)
+
+        XCTAssertEqual(probe.seeks, [110, 120])
+        XCTAssertNil(machine.overlay)
+        XCTAssertFalse(machine.isSeeking)
+    }
+
+    /// The reverse handover: a double tap right after a press anchors on the
+    /// press's target, so the two mechanisms cannot fight over a stale
+    /// playhead.
+    func testDoubleTapAfterDiscreteSkipAnchorsOnItsTarget() {
+        let (machine, probe, _) = makeMachine()
+
+        machine.skip(.forward)
+        machine.handleTap(unitOrigin: rightUnit, zone: .forward)
+        machine.handleTap(unitOrigin: rightUnit, zone: .forward)
+
+        XCTAssertEqual(probe.seeks, [110, 120])
+        XCTAssertEqual(machine.overlay?.seconds, 10)
+    }
+
+    /// Hard against the end of the window a press does nothing at all — no
+    /// seek, no chrome wake, and a zero return so the caller stays quiet.
+    func testDiscreteSkipAtTheEdgeIsSilent() {
+        let (machine, probe, _) = makeMachine(playhead: 600, range: 0 ... 600)
+
+        let achieved = machine.skip(.forward)
+
+        XCTAssertEqual(achieved, 0)
+        XCTAssertTrue(probe.seeks.isEmpty)
+        XCTAssertFalse(probe.intents.contains(.setControlsVisible(true)))
+    }
+
+    /// A backward press is one interval back, and the DVR case matters: the
+    /// clamp must land on the window's start, not on zero, or one back-press
+    /// on a live stream throws the playhead to the top of the DVR window.
+    func testDiscreteBackwardSkipClampsToTheWindowStart() {
+        let (machine, probe, _) = makeMachine(playhead: 3605, range: 3600 ... 7200)
+
+        let achieved = machine.skip(.backward)
+
+        XCTAssertEqual(probe.seeks, [3600])
+        XCTAssertEqual(achieved, 5)
+    }
+
+    func testDiscreteBackwardSkipSeeksOneIntervalBack() {
+        let (machine, probe, _) = makeMachine()
+
+        XCTAssertEqual(machine.skip(.backward), 10)
+        XCTAssertEqual(probe.seeks, [90])
+    }
+
+    /// A partially clamped press reports the movement it actually bought —
+    /// the number VoiceOver announces.
+    func testPartiallyClampedDiscreteSkipReturnsTheAchievedMovement() {
+        let (machine, probe, _) = makeMachine(playhead: 595, range: 0 ... 600)
+
+        XCTAssertEqual(machine.skip(.forward), 5)
+        XCTAssertEqual(probe.seeks, [600])
+    }
+
+    /// A seek the machine did not issue — slider, remote, host — supersedes
+    /// the discrete anchor: the next press continues from the playhead, not
+    /// from where a previous press was headed.
+    func testExternalSeekDropsTheDiscreteAnchor() {
+        let (machine, probe, _) = makeMachine()
+
+        machine.skip(.forward)
+        machine.noteExternalSeek() // The slider moved the playhead…
+        probe.playhead = 300       // …and that seek landed.
+        machine.skip(.forward)
+
+        XCTAssertEqual(probe.seeks, [110, 310])
+    }
+
+    /// The same supersession closes an open fingertip session: its committed
+    /// target is just as stale, and the overlay must not keep counting on top
+    /// of a playhead someone else moved.
+    func testExternalSeekEndsAnOpenSession() {
+        let (machine, probe, _) = makeMachine()
+
+        machine.handleTap(unitOrigin: rightUnit, zone: .forward)
+        machine.handleTap(unitOrigin: rightUnit, zone: .forward)
+        XCTAssertNotNil(machine.overlay)
+        XCTAssertEqual(probe.seeks, [110])
+
+        machine.noteExternalSeek()
+
+        XCTAssertNil(machine.overlay)
+        XCTAssertFalse(machine.isSeeking)
+    }
+
+    /// The media-change path: reset() must drop the anchor, or a press in the
+    /// next item would seek off the previous item's playhead.
+    func testResetDropsTheDiscreteAnchor() {
+        let (machine, probe, _) = makeMachine()
+
+        machine.skip(.forward)
+        machine.reset()
+        machine.skip(.forward)
+
+        XCTAssertEqual(
+            probe.seeks,
+            [110, 110],
+            "After reset the press must re-read the playhead, not the old target"
+        )
     }
 
     func testLockedSkipIsReportedRatherThanSwallowed() {

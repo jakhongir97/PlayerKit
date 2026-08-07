@@ -13,9 +13,9 @@ public struct CloseButtonView: View {
             playerManager.shouldDismiss = true
         }) {
             Image(systemName: "xmark")
-                .circularGlassIcon()
+                .playerControlIcon(appearance: playerManager.appearance)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PlayerControlButtonStyle())
         .accessibilityLabel(playerManager.strings.closePlayer)
         .accessibilityHint(playerManager.strings.closePlayerHint)
         .accessibilityIdentifier("player.close")

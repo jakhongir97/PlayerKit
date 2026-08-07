@@ -21,10 +21,9 @@ struct PlaybackSpeedMenu: View {
             }
         } label: {
             Image(systemName: "gauge.with.needle")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(10)
+                .playerBarGlyph()
         }
+        .hidesMenuIndicatorCompat()
         .accessibilityLabel(playerManager.strings.playbackSpeedAccessibilityLabel)
         .accessibilityHint(playerManager.strings.playbackSpeedHint)
         .accessibilityIdentifier("player.speedMenu")

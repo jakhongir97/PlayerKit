@@ -120,6 +120,13 @@ public class PlayerManager: ObservableObject {
         get { strings.heuristicSkipButtonTitles }
         set { strings.heuristicSkipButtonTitles = newValue }
     }
+    /// The host's brand styling for the chrome.
+    ///
+    /// Set alongside ``strings`` when a session is configured. Left at its
+    /// default the player is neutral white-on-black, which is correct for a
+    /// host that has no brand to assert; an app that does gets its accent on
+    /// the primary action pill and the played scrubber and nowhere else.
+    @Published public var appearance: PlayerAppearance = .default
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
     @Published public internal(set) var isPiPActive: Bool = false
@@ -219,6 +226,10 @@ public class PlayerManager: ObservableObject {
     lazy var castManager = CastManager.shared
     let gestureManager = GestureManager()
     private var didNotifyGesturePlaybackStart = false
+    /// True while `seek(to:)` is applying a seek the gesture layer itself
+    /// issued. Lets the seek funnel tell those apart from external seeks
+    /// (slider, remote, host), which must invalidate the tap machine's anchors.
+    private var isPerformingGestureDrivenSeek = false
     let orientationManager = OrientationManager()
     
     // Lazy initialization for controlVisibilityManager
@@ -1127,6 +1138,13 @@ extension PlayerManager {
             completion?(false)
             return
         }
+        if !isPerformingGestureDrivenSeek {
+            // A seek the tap machine did not issue — slider, remote command,
+            // skip-intro, the host — supersedes any ±10s anchor it holds; the
+            // next press must continue from here, not from where a previous
+            // press was headed.
+            gestureManager.noteExternalSeek()
+        }
         let targetTime = min(max(time, seekableRange.lowerBound), seekableRange.upperBound)
         debugLog(
             "Seek requested target=\(debugInterval(targetTime)) " +
@@ -1746,7 +1764,13 @@ extension PlayerManager {
 extension PlayerManager {
     private func setupGestureHandling() {
         gestureManager.onSeek = { [weak self] newTime in
-            self?.seek(to: newTime)
+            guard let self else { return }
+            // Marked so `seek(to:)` can tell the gesture layer's own seeks
+            // from external ones; only the latter invalidate the tap
+            // machine's anchors.
+            self.isPerformingGestureDrivenSeek = true
+            self.seek(to: newTime)
+            self.isPerformingGestureDrivenSeek = false
         }
         
         gestureManager.onToggleControls = { [weak self] in

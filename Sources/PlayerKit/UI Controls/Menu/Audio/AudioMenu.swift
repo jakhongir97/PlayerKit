@@ -28,10 +28,9 @@ struct AudioMenu: View {
             }
         } label: {
             Image(systemName: "waveform.circle")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(10)
+                .playerBarGlyph()
         }
+        .hidesMenuIndicatorCompat()
         .accessibilityLabel(playerManager.strings.audioTracksAccessibilityLabel)
         .accessibilityHint(playerManager.strings.audioTracksHint)
         .accessibilityIdentifier("player.audioMenu")

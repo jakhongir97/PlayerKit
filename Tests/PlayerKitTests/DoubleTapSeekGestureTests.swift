@@ -286,31 +286,87 @@ final class DoubleTapSeekGestureTests: XCTestCase {
         XCTAssertEqual(probe.toggleCount, 2)
     }
 
+    // MARK: - Discrete skips (buttons, keyboard, rotor)
+
+    /// The location-free entry points do a plain seek: chrome up, no session,
+    /// no overlay, no toggle. This pins the routing itself — the machine-level
+    /// tests cannot notice skipForward being rerouted back through the
+    /// session path.
+    func testSkipForwardIsAPlainSeekThatWakesTheChrome() {
+        let (manager, probe) = makeManager()
+
+        manager.skipForward()
+
+        XCTAssertEqual(probe.seekTargets, [110])
+        XCTAssertNil(manager.seekOverlay)
+        XCTAssertFalse(manager.isDoubleTapSeeking)
+        XCTAssertEqual(probe.visibilityChanges, [true])
+        XCTAssertTrue(probe.sessionChanges.isEmpty)
+        XCTAssertEqual(probe.toggleCount, 0)
+    }
+
+    func testSkipBackwardIsAPlainSeek() {
+        let (manager, probe) = makeManager()
+
+        manager.skipBackward()
+
+        XCTAssertEqual(probe.seekTargets, [90])
+        XCTAssertNil(manager.seekOverlay)
+    }
+
+    /// A committed scrub is a seek the tap machine did not issue: a button
+    /// press right after it must continue from the scrub's landing point, not
+    /// yank the playhead back toward the press before the scrub.
+    func testScrubCommitSupersedesTheDiscreteAnchor() {
+        let (manager, probe) = makeManager()
+
+        manager.skipForward()                           // 110
+        manager.emit(.scrubEnded(committedTarget: 300)) // The scrub commits…
+        manager.emit(.seek(to: 300))                    // …and issues its seek.
+        manager.skipForward()
+
+        XCTAssertEqual(probe.seekTargets, [110, 300, 310])
+    }
+
     // MARK: - Overlay geometry
 
-    /// The tap ring is drawn with no clip at all, which is only safe because it
-    /// cannot reach the midline from the innermost point a seek tap can land
-    /// on. That is a contract between the gesture zones and the view: if either
-    /// the dead zone or the ring size is retuned without the other, the ring
-    /// starts bleeding onto the untapped half. Checked across the aspect ratios
-    /// a player actually gets, from a portrait phone to a wide desktop window.
-    func testTapRingCannotReachAcrossTheMidline() {
+    /// The seek pulse is drawn with no clip at all, which is only safe because
+    /// nothing it emits can reach the midline or the screen edge. The disc is
+    /// pinned at quarter-width and the ring grows concentrically from it, so
+    /// the contract is symmetric: centre ± reach stays inside the tapped half.
+    /// Checked across the aspect ratios a player actually gets, from a portrait
+    /// phone to a wide desktop window.
+    func testSeekPulseCannotLeaveTheTappedHalf() {
         let widths: [CGFloat] = [320, 390, 430, 744, 852, 1024, 1366, 1920, 3840]
 
         for width in widths {
-            let innermostSeekTapX = width * GestureManager.sideZoneWidthRatio
-            let reach = innermostSeekTapX + DoubleTapSeekOverlayView.tapRingRadius(forWidth: width)
+            for isForward in [false, true] {
+                let center = DoubleTapSeekOverlayView.pulseCenterX(
+                    forWidth: width,
+                    isForward: isForward
+                )
+                let reach = DoubleTapSeekOverlayView.pulseReach(forWidth: width)
+                let half = isForward
+                    ? (width / 2)...width
+                    : 0...(width / 2)
 
-            XCTAssertLessThanOrEqual(
-                reach,
-                width / 2,
-                "A tap ring at width \(width) reaches \(reach), past the midline at \(width / 2)"
-            )
+                XCTAssertTrue(
+                    half.contains(center - reach) && half.contains(center + reach),
+                    "A pulse at width \(width) spans \(center - reach)...\(center + reach), outside \(half)"
+                )
+            }
         }
     }
 
-    /// The ring still has to be big enough to read as a ring rather than a dot.
-    func testTapRingStaysVisibleOnSmallScreens() {
-        XCTAssertGreaterThan(DoubleTapSeekOverlayView.tapRingRadius(forWidth: 320), 24)
+    /// The pulse still has to be big enough to read as feedback, and the ring
+    /// must always clear the disc it is emitted from.
+    func testSeekPulseStaysVisibleOnSmallScreens() {
+        for width: CGFloat in [320, 390, 1120] {
+            XCTAssertGreaterThan(
+                DoubleTapSeekOverlayView.pulseReach(forWidth: width),
+                DoubleTapSeekOverlayView.discDiameter / 2,
+                "The ring at width \(width) never escapes the disc"
+            )
+        }
     }
 }

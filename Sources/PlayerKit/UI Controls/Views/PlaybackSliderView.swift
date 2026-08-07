@@ -12,11 +12,11 @@ struct PlaybackSliderView: View {
     @State private var seekRequestID = 0
 
     private var sliderHeight: CGFloat {
-        PlayerKitPlatform.isDesktop ? 36 : 45
+        PlayerKitPlatform.isDesktop ? 44 : 52
     }
 
     private var horizontalInset: CGFloat {
-        PlayerKitPlatform.isDesktop ? 8 : 5
+        PlayerChromeMetrics.spacingXS
     }
     
     private var accessibilityValueText: String {
@@ -78,10 +78,18 @@ struct PlaybackSliderView: View {
                         set: { _ in } // No need to set this manually
                     ),
                     inRange: sliderRange,
-                    activeFillColor: .white,
-                    fillColor: .white.opacity(0.5),
-                    emptyColor: .white.opacity(0.3),
-                    bufferedColor: .white.opacity(0.1), // Light gray for buffered progress
+                    // The played portion carries the host's accent — one of
+                    // only two places a brand appears in the chrome. It used to
+                    // be white at 50% opacity at rest and only reached full
+                    // white while being dragged, so the resting scrubber never
+                    // showed a confident "you are here".
+                    activeFillColor: playerManager.appearance.accent,
+                    fillColor: playerManager.appearance.accent,
+                    // Buffered was white at 10% over an empty track at 30% —
+                    // *darker* than the track it was meant to stand out from,
+                    // which is why the buffer bar was invisible.
+                    emptyColor: .white.opacity(0.24),
+                    bufferedColor: .white.opacity(0.45),
                     height: sliderHeight
                 ) { editing in
                     #if os(iOS)
@@ -120,7 +128,6 @@ struct PlaybackSliderView: View {
                     sliderValue = playerManager.currentTime
                 }
                 .frame(height: sliderHeight)
-                .padding(.vertical)
                 .padding(.horizontal, horizontalInset)
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
@@ -141,7 +148,13 @@ struct PlaybackSliderView: View {
                     adjustPlaybackPosition(direction)
                 }
             }
-            .frame(height: PlayerKitPlatform.isDesktop ? 42 : 50)
+            // One height for the row, declared once. It used to be framed at
+            // 36/45 inside `ModernProgressSlider`, re-framed at 36/45 here,
+            // given an unlabelled `.padding(.vertical)` and then clamped again
+            // at 42/50 — four numbers for one row, none of which matched the
+            // ~56pt the content actually wanted, so the scrubber's hit area
+            // overhung the button bar beneath it.
+            .frame(height: sliderHeight)
             // Nothing to scrub within: keep the row so the layout does not
             // jump while `duration` resolves, but do not offer a control that
             // cannot move the playhead.

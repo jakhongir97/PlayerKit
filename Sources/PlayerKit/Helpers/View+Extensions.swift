@@ -141,6 +141,22 @@ public extension View {
 }
 
 public extension View {
+    /// Hides a `Menu`'s disclosure chevron where the platform can.
+    ///
+    /// The media-options pill holds four menu triggers side by side; with the
+    /// indicator visible each one is a glyph-plus-arrow pair, which reads as
+    /// eight controls rather than four. `menuIndicator` arrived in iOS 15 —
+    /// above the package's deployment target — so iOS 14 keeps the chevrons
+    /// rather than losing the menus.
+    @ViewBuilder
+    func hidesMenuIndicatorCompat() -> some View {
+        if #available(iOS 15.0, macOS 12.0, *) {
+            self.menuIndicator(.hidden)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder
     func monospacedDigitsCompat() -> some View {
         if #available(iOS 15.0, macOS 12.0, *) {

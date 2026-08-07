@@ -50,9 +50,9 @@ struct InfoButtonView: View {
             #endif
         }) {
             Image(systemName: "info")
-                .circularGlassIcon()
+                .playerControlIcon(appearance: playerManager.appearance)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PlayerControlButtonStyle())
         .accessibilityIdentifier("player.info")
     }
 }

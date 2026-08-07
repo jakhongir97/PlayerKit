@@ -8,18 +8,26 @@ struct PrevButtonView: View {
         !playerManager.canPlayPreviousItem
     }
 
+    /// SF Symbols, not the bundled `prev`/`next` PNGs.
+    ///
+    /// The raster pair was drawn at one weight and one size and sat in the same
+    /// row as SF Symbol glyphs that track weight and optical size, so the
+    /// transport mixed two icon sets: the custom marks stayed put while the
+    /// symbols around them grew and thickened with the control size.
     var body: some View {
         Button(action: {
             playerManager.playPrevious()
             HapticsManager.shared.triggerImpactFeedback(style: .light)
         }) {
-            Image.fromFramework(named: "prev", fallbackSystemName: "backward.end.fill")
-                .circularGlassIcon(frameSize: 40, desktopHoverEnabled: !isDisabled)
-                .opacity(isDisabled ? 0.5 : 1.0)
+            Image(systemName: "backward.end.fill")
+                .playerControlIcon(
+                    diameter: PlayerChromeMetrics.secondaryControlDiameter,
+                    appearance: playerManager.appearance
+                )
+                .playerControlEnabled(!isDisabled)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PlayerControlButtonStyle(hoverEnabled: !isDisabled))
         .disabled(isDisabled)
-        .animation(.easeInOut(duration: 0.2), value: isDisabled) // Smooth transition
         .accessibilityLabel(playerManager.strings.previousEpisodeAccessibilityLabel)
         .accessibilityHint(playerManager.strings.previousEpisodeHint)
         .accessibilityIdentifier("player.previous")

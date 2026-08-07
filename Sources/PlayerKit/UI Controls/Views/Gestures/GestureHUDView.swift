@@ -37,7 +37,13 @@ struct GestureHUDView: View {
                     pill(hud)
                         .position(
                             x: geometry.size.width / 2,
-                            y: max(geometry.surface.insets.top, 24) + 28
+                            // Hangs from the chrome's own top inset, so the
+                            // banner lines up with the title bar instead of
+                            // floating at its own distance from the edge.
+                            y: max(
+                                geometry.surface.insets.top,
+                                PlayerChromeMetrics.contentInset(for: geometry.size.width)
+                            ) + 28
                         )
                         .transition(transition(for: hud.slot))
                 case .center:

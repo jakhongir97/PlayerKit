@@ -4,26 +4,27 @@ import SwiftUI
 struct PlayPauseButtonView: View {
     @ObservedObject var playerManager: PlayerManager
 
+    /// Play/pause is the only control at the primary diameter. That is what
+    /// makes it read as the centre of the transport — it does not need a
+    /// colour, a fill, or a second material to say so.
     var body: some View {
-        HStack {
-            Button(action: {
-                playerManager.isPlaybackRequested ? playerManager.pause() : playerManager.play()
-                HapticsManager.shared.triggerImpactFeedback(style: .medium)
-            }) {
-                Image.fromFramework(
-                    named: playerManager.isPlaybackRequested ? "pause" : "play",
-                    fallbackSystemName: playerManager.isPlaybackRequested ? "pause.fill" : "play.fill"
+        Button(action: {
+            playerManager.isPlaybackRequested ? playerManager.pause() : playerManager.play()
+            HapticsManager.shared.triggerImpactFeedback(style: .medium)
+        }) {
+            Image(systemName: playerManager.isPlaybackRequested ? "pause.fill" : "play.fill")
+                .playerControlIcon(
+                    diameter: PlayerChromeMetrics.primaryControlDiameter,
+                    appearance: playerManager.appearance
                 )
-                    .circularGlassIcon(frameSize: PlayerKitPlatform.isDesktop ? 64 : 60)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                playerManager.isPlaybackRequested
-                    ? playerManager.strings.pause
-                    : playerManager.strings.play
-            )
-            .accessibilityHint(playerManager.strings.togglePlaybackHint)
-            .accessibilityIdentifier("player.playPause")
         }
+        .buttonStyle(PlayerControlButtonStyle())
+        .accessibilityLabel(
+            playerManager.isPlaybackRequested
+                ? playerManager.strings.pause
+                : playerManager.strings.play
+        )
+        .accessibilityHint(playerManager.strings.togglePlaybackHint)
+        .accessibilityIdentifier("player.playPause")
     }
 }

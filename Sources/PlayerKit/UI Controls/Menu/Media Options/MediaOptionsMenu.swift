@@ -6,8 +6,6 @@ struct MediaOptionsMenu: View {
     @ObservedObject private var playerManager: PlayerManager
     private let presentationPolicy: PlayerPresentationPolicy
 
-    private let insets = EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
-    
     init(
         playerManager: PlayerManager = .shared,
         presentationPolicy: PlayerPresentationPolicy = .init()
@@ -17,72 +15,44 @@ struct MediaOptionsMenu: View {
         self.presentationPolicy = presentationPolicy
     }
 
+    /// One pill, one height, one surface.
+    ///
+    /// The 26+ and pre-26 paths used to be two separate bodies that had drifted
+    /// apart — different padding, one with a stroke and one without — so the
+    /// same pill was a different size depending on the OS. They now differ only
+    /// in the finish `playerGlass` applies, and the row height comes from the
+    /// shared bar metric so this pill lines up with the live badge and the
+    /// trailing icon group instead of standing ~12pt taller than both.
     var body: some View {
         if hasVisibleOptions {
-            #if compiler(>=6.2)
-            if #available(iOS 26.0, macOS 26.0, *) {
-                GlassEffectContainer {
-                    HStack {
-                        if presentationPolicy.showsPlaybackQualityControl,
-                           !playerManager.availablePlaybackQualityPresets.isEmpty {
-                            PlaybackQualityMenu(playerManager: playerManager)
-                        }
-
-                        if presentationPolicy.showsPlaybackSpeedControl {
-                            PlaybackSpeedMenu(playerManager: playerManager)
-                        }
-
-                        if presentationPolicy.showsMediaTrackControls,
-                           viewModel.hasSubtitles {
-                            SubtitleMenu(playerManager: playerManager)
-                        }
-
-                        if presentationPolicy.showsMediaTrackControls,
-                           viewModel.hasAudioTracks {
-                            AudioMenu(playerManager: playerManager)
-                        }
+            PlayerGlassGroup {
+                HStack(spacing: PlayerChromeMetrics.spacingXS) {
+                    if presentationPolicy.showsPlaybackQualityControl,
+                       !playerManager.availablePlaybackQualityPresets.isEmpty {
+                        PlaybackQualityMenu(playerManager: playerManager)
                     }
-                    .padding(insets)
-                    .contentShape(Capsule())
+
+                    if presentationPolicy.showsPlaybackSpeedControl {
+                        PlaybackSpeedMenu(playerManager: playerManager)
+                    }
+
+                    if presentationPolicy.showsMediaTrackControls,
+                       viewModel.hasSubtitles {
+                        SubtitleMenu(playerManager: playerManager)
+                    }
+
+                    if presentationPolicy.showsMediaTrackControls,
+                       viewModel.hasAudioTracks {
+                        AudioMenu(playerManager: playerManager)
+                    }
                 }
-                .glassEffect(.clear, in: .capsule)
-                .clipShape(Capsule())
+                .padding(.horizontal, PlayerChromeMetrics.spacingS)
+                .frame(minHeight: PlayerChromeMetrics.barItemHeight)
+                .playerSurfaceShape(.capsule)
+                .playerGlass(.capsule, prominence: .bar, appearance: playerManager.appearance)
                 .buttonStyle(.plain)
-                .transaction { $0.animation = nil }
-            } else {
-                fallback
-            }
-            #else
-            fallback
-            #endif
-        }
-    }
-
-    private var fallback: some View {
-        HStack {
-            if presentationPolicy.showsPlaybackQualityControl,
-               !playerManager.availablePlaybackQualityPresets.isEmpty {
-                PlaybackQualityMenu(playerManager: playerManager)
-            }
-
-            if presentationPolicy.showsPlaybackSpeedControl {
-                PlaybackSpeedMenu(playerManager: playerManager)
-            }
-
-            if presentationPolicy.showsMediaTrackControls && viewModel.hasSubtitles {
-                SubtitleMenu(playerManager: playerManager)
-            }
-            if presentationPolicy.showsMediaTrackControls && viewModel.hasAudioTracks {
-                AudioMenu(playerManager: playerManager)
             }
         }
-        .padding(insets)
-        .thinMaterialBackgroundCompat(in: Capsule())
-        .overlay(
-            Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1)
-        )
-        .contentShape(Capsule())
-        .buttonStyle(.plain)
     }
 
     private var hasVisibleOptions: Bool {
@@ -129,10 +99,9 @@ private struct PlaybackQualityMenu: View {
             }
         } label: {
             Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(10)
+                .playerBarGlyph()
         }
+        .hidesMenuIndicatorCompat()
         .accessibilityLabel(playerManager.strings.playbackQualityAccessibilityLabel)
         .accessibilityHint(playerManager.strings.playbackQualityHint)
         .accessibilityIdentifier("player.qualityMenu")

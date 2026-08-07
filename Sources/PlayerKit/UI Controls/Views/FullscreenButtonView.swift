@@ -7,19 +7,24 @@ import AppKit
 @MainActor
 struct FullscreenButtonView: View {
     @ObservedObject var playerManager: PlayerManager
+    let isGrouped: Bool
     @State private var isFullscreen = false
 
-    init(playerManager: PlayerManager = .shared) {
+    init(playerManager: PlayerManager = .shared, isGrouped: Bool = false) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
+        self.isGrouped = isGrouped
     }
 
     var body: some View {
         #if os(macOS)
         Button(action: toggleFullscreen) {
             Image(systemName: isFullscreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                .circularGlassIcon()
+                .playerBarItem(isGrouped: isGrouped, appearance: playerManager.appearance)
         }
-        .buttonStyle(.plain)
+        // Grouped, the glyph carries its own hover wash and lift; a second
+        // lift from the style would compound to 1.06², so hover moves to
+        // whichever layer owns the visible response.
+        .buttonStyle(PlayerControlButtonStyle(hoverEnabled: !isGrouped))
         .accessibilityLabel(isFullscreen ? "Exit Full Screen" : "Enter Full Screen")
         .accessibilityHint("Toggles full screen for the player window")
         .accessibilityIdentifier("player.fullscreen")

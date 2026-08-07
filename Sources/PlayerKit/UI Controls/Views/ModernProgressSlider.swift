@@ -63,44 +63,48 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
     }
 
     private var trackHeight: CGFloat {
-        if PlayerKitPlatform.isDesktop {
-            if isActive {
-                return 11
-            }
-            return isHoveringTrack ? 9 : 7
+        if isActive {
+            return 8
         }
-        return isActive ? 11 : 8
+        return isHoveringTrack ? 7 : 5
     }
 
     private var trackPaddingY: CGFloat {
-        PlayerKitPlatform.isDesktop ? 8 : 6
+        PlayerChromeMetrics.spacingS
     }
 
     private var contentHorizontalInset: CGFloat {
-        PlayerKitPlatform.isDesktop ? trackPaddingY : 6
+        PlayerChromeMetrics.spacingXS
     }
 
     private var thumbDiameter: CGFloat {
+        if isActive {
+            return 15
+        }
         if PlayerKitPlatform.isDesktop {
-            if isActive {
-                return 16
-            }
             return isHoveringTrack ? 12 : 0
         }
-        return isActive ? 16 : 0
+        return 0
     }
 
     private var containerHeight: CGFloat {
-        PlayerKitPlatform.isDesktop ? max(height, 34) : height
+        height
+    }
+
+    /// The band the track lives in: the thickest the track ever gets, plus the
+    /// thumb's overhang on both sides, plus its padding. Derived rather than
+    /// hardcoded so growing the thumb cannot silently clip it.
+    private var trackZoneHeight: CGFloat {
+        max(15, 8) + (trackPaddingY * 2)
     }
 
     var body: some View {
-        VStack(spacing: PlayerKitPlatform.isDesktop ? 4 : 6) {
+        VStack(spacing: PlayerChromeMetrics.spacingXS) {
             GeometryReader { bounds in
                 interactiveTrack(boundsWidth: max(bounds.size.width, 1))
                     .frame(width: bounds.size.width, height: bounds.size.height, alignment: .center)
             }
-            .frame(height: PlayerKitPlatform.isDesktop ? 26 : 28)
+            .frame(height: trackZoneHeight)
 
             HStack {
                 Text(displayedDuration.asTimeString(style: .positional))
@@ -110,8 +114,11 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
                     .monospacedDigitsCompat()
             }
             .padding(.horizontal, contentHorizontalInset)
-            .font(PlayerKitPlatform.isDesktop ? .system(size: 12, weight: .semibold, design: .rounded) : .system(.headline, design: .rounded))
-            .foregroundColor((isActive || isHoveringTrack) ? fillColor : emptyColor)
+            // One timecode style on both platforms. iOS used `.headline`,
+            // which is a body-text role roughly 17pt — larger than the player's
+            // own title on a phone — for what is a secondary readout.
+            .playerChromeFont(.timecode)
+            .foregroundColor(.white.opacity((isActive || isHoveringTrack) ? 0.95 : 0.7))
         }
         .frame(height: containerHeight, alignment: .center)
         .onAppear {
@@ -152,10 +159,11 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
                let hoverLocationX,
                isHoveringTrack,
                !isActive {
-                Circle()
-                    .fill(activeFillColor.opacity(0.4))
-                    .frame(width: 10, height: 10)
-                    .position(x: clampedLocation(hoverLocationX, within: trackWidth), y: trackHeight / 2)
+                let x = clampedLocation(hoverLocationX, within: trackWidth)
+                Capsule()
+                    .fill(.white.opacity(0.9))
+                    .frame(width: 2, height: trackHeight + 8)
+                    .position(x: x, y: trackHeight / 2)
             }
 
             if thumbDiameter > 0 {
@@ -174,8 +182,11 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         .padding(.horizontal, contentHorizontalInset)
         .padding(.vertical, trackPaddingY)
         .contentShape(Rectangle())
-        .compositingGroup()
-        .modifier(GlassCapsuleBackground())
+        // No tray. The track used to sit on a full-width glass capsule, which
+        // is why the timeline read as a grey bar pinned across the bottom of
+        // the window rather than as a scrubber: a 5pt line inside a 40pt
+        // capsule makes the container the dominant shape. The bottom scrim
+        // supplies the contrast the tray was standing in for.
         .gesture(scrubGesture(boundsWidth: trackWidth, horizontalInset: contentHorizontalInset))
         .animation(animation, value: isActive)
         .animation(animation, value: isHoveringTrack)

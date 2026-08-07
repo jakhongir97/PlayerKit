@@ -39,7 +39,15 @@ struct SkipIntroButtonView: View {
         if (playerManager.playerItem?.timelineMode ?? .automatic).allowsMarkerSkipActions,
            let introTargetSeconds,
            shouldShowButton(targetTime: introTargetSeconds) {
-            SkipSegmentButton(title: title, systemImage: "goforward") {
+            // `forward.fill`, not `goforward`: `goforward` is the circular
+            // arrow the ±10s buttons carry with a numeral inside it, and one
+            // glyph cannot mean both "jump ten seconds" and "skip this
+            // section" in a row where both are visible at once.
+            SkipSegmentButton(
+                title: title,
+                systemImage: "forward.fill",
+                appearance: playerManager.appearance
+            ) {
                 playerManager.userInteracted()
                 playerManager.seek(to: introTargetSeconds)
             }
@@ -123,7 +131,13 @@ struct SkipOutroButtonView: View {
         if (playerManager.playerItem?.timelineMode ?? .automatic).allowsMarkerSkipActions,
            let outroStartSeconds,
            shouldShowButton(startTime: outroStartSeconds) {
-            SkipSegmentButton(title: title, systemImage: "goforward") {
+            // The tap advances instead of seeking when another item is queued,
+            // so the glyph follows the same branch the label does.
+            SkipSegmentButton(
+                title: title,
+                systemImage: playerManager.canPlayNextItem ? "forward.end.fill" : "forward.fill",
+                appearance: playerManager.appearance
+            ) {
                 playerManager.userInteracted()
                 if playerManager.canPlayNextItem {
                     playerManager.playNext()
@@ -211,51 +225,40 @@ struct SkipOutroButtonView: View {
     }
 }
 
+/// The player's one emphasised action.
+///
+/// This button used to be the only control in the chrome with a dialect of its
+/// own: a flat `black.opacity(0.52)` capsule with a left-to-right white
+/// gradient rim — a stroke that appears nowhere else — and it never took the
+/// glass path on any OS. It sat in the same row as true glass pills, so on
+/// macOS 26 it was the single opaque object in a bar of material. It now takes
+/// the shared capsule at the `.prominent` prominence: tinted with the host's
+/// accent, which is also what makes it read as *the* action rather than as a
+/// fourth settings pill.
 private struct SkipSegmentButton: View {
     @Environment(\.sizeCategory) private var sizeCategory
     let title: String
     let systemImage: String
+    let appearance: PlayerAppearance
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.caption.weight(.bold))
-
+            HStack(spacing: PlayerChromeMetrics.spacingS) {
                 Text(title)
-                    .font(.callout.weight(.semibold))
+                    .playerChromeFont(.action)
                     .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
                     .multilineTextAlignment(.center)
+
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .bold))
             }
-            .foregroundColor(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .frame(minHeight: 44)
-            .background(buttonBackground)
-            .overlay(buttonStroke)
+            .foregroundColor(appearance.accentForeground)
+            .padding(.horizontal, PlayerChromeMetrics.pillHorizontalPadding)
+            .frame(minHeight: PlayerChromeMetrics.barItemHeight)
+            .playerSurfaceShape(.capsule)
+            .playerGlass(.capsule, prominence: .prominent, appearance: appearance)
         }
-        .buttonStyle(.plain)
-        .desktopHoverLift(enabled: true, scale: 1.02)
-    }
-
-    private var buttonBackground: some View {
-        Capsule(style: .continuous)
-            .fill(Color.black.opacity(0.52))
-    }
-
-    private var buttonStroke: some View {
-        Capsule(style: .continuous)
-            .stroke(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(0.24),
-                        Color.white.opacity(0.12),
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                ),
-                lineWidth: 1
-            )
+        .buttonStyle(PlayerControlButtonStyle())
     }
 }

@@ -8,9 +8,10 @@ import Foundation
 /// VoiceOver — and a Switch Control user scanning the chrome benefits far more
 /// from a real button than from a rotor action buried on the video element.
 ///
-/// It calls the same `TapSeekMachine` path the double tap uses, so a button
-/// press, a rotor action, a keyboard arrow and a gesture cannot drift apart:
-/// one clamp, one overlay, one accumulated total.
+/// It performs a plain, self-contained ±interval seek. The double tap runs its
+/// own accumulating session with the on-video overlay; this button deliberately
+/// does not join it, so a press never hides the chrome or starts a counter — it
+/// just moves the playhead by one interval, like any transport button.
 @MainActor
 struct SkipButtonView: View {
     @ObservedObject var playerManager: PlayerManager
@@ -31,31 +32,43 @@ struct SkipButtonView: View {
             && playerManager.seekableRange != nil
     }
 
+    private static let diameter = PlayerChromeMetrics.secondaryControlDiameter
+
     init(playerManager: PlayerManager, direction: SeekDirection) {
         self.playerManager = playerManager
         _gestureManager = ObservedObject(wrappedValue: playerManager.gestureManager)
         self.direction = direction
     }
 
+    /// The numeral sits inside the circular-arrow glyph, and both are sized off
+    /// the shared control diameter so this control matches play/pause and
+    /// previous/next instead of being a bare glyph floating between glass discs.
     var body: some View {
         Button {
             isForward ? playerManager.skipForward() : playerManager.skipBackward()
         } label: {
             ZStack {
                 Image(systemName: isForward ? "goforward" : "gobackward")
-                    .font(.system(size: 24, weight: .medium))
+                    .font(
+                        .system(
+                            size: PlayerChromeTypography.glyphSize(for: Self.diameter),
+                            weight: .semibold
+                        )
+                    )
                 Text(intervalLabel)
-                    .font(.caption2.bold().monospacedDigit())
+                    .font(.system(size: 9, weight: .bold).monospacedDigit())
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
-                    .frame(maxWidth: 24)
+                    .frame(maxWidth: Self.diameter * 0.42)
+                    .offset(y: 1)
             }
             .foregroundColor(.white)
-            // 44×44 minimum target, per the HIG accessibility guidance.
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
+            .frame(width: Self.diameter, height: Self.diameter)
+            .playerSurfaceShape(.circle)
+            .playerGlass(.circle, appearance: playerManager.appearance)
+            .playerControlEnabled(canSkip)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PlayerControlButtonStyle(hoverEnabled: canSkip))
         .disabled(!canSkip)
         .accessibilityHidden(!canSkip)
         .accessibilityLabel(

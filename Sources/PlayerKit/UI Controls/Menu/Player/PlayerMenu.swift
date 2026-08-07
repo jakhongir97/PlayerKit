@@ -25,9 +25,12 @@ struct PlayerMenu: View {
                 }
             }
         } label: {
+            // Standalone in the top bar, not inside a group — so it brings its
+            // own surface, like the info and lock discs it sits between.
             Image(systemName: "wrench.and.screwdriver.fill")
-                .circularGlassIcon()
+                .playerControlIcon(appearance: playerManager.appearance)
         }
+        .hidesMenuIndicatorCompat()
         .accessibilityLabel(playerManager.strings.playbackEngineAccessibilityLabel)
         .accessibilityHint(
             PlayerType.supportedCases.count > 1

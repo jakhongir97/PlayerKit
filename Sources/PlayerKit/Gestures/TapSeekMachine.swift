@@ -95,6 +95,16 @@ final class TapSeekMachine {
     /// A toggle held back to see whether a second tap follows.
     private var pendingToggle = false
 
+    /// The last target a *discrete* skip issued — the buttons' anchor, kept
+    /// apart from the session's so the two mechanisms stay independent.
+    ///
+    /// Same reasoning as `committedTarget`: seeks land asynchronously, so three
+    /// fast button presses re-reading the playhead would issue 110/110/110
+    /// instead of 110/120/130. Expires `seekSessionTimeout` after the last
+    /// press.
+    private var discreteTarget: Double?
+    private var discreteTimer: GestureCancellable?
+
     init(clock: GestureClock) {
         self.clock = clock
     }
@@ -163,30 +173,79 @@ final class TapSeekMachine {
     }
 
     /// A skip with no fingertip behind it — the ±10s buttons, a rotor action, a
-    /// keyboard arrow, a remote command.
+    /// keyboard arrow.
     ///
-    /// Routed through the same accumulation as the double tap so there is one
-    /// clamp, one overlay and one total, however the skip was asked for.
-    func skip(_ direction: SeekDirection) {
+    /// Deliberately *not* the double-tap session: one plain seek per call, no
+    /// accumulation overlay, and the chrome comes up rather than going away — a
+    /// button press should read as a button press, not as a gesture echo. What
+    /// it shares with the session is the anchoring: each press seeks from the
+    /// last *issued* target while seeks are still in flight, so rapid presses
+    /// accumulate correctly instead of re-reading a stale playhead.
+    ///
+    /// Returns the seconds of movement actually achieved — 0 when locked, when
+    /// there is nothing to seek within, or hard against the window's edge — so
+    /// the caller can announce the skip that happened and stay quiet about one
+    /// that did not.
+    @discardableResult
+    func skip(_ direction: SeekDirection) -> Double {
         guard !isLocked() else {
             emit?(.blocked(.skip))
-            return
+            return 0
         }
-        let origin = CGPoint(x: direction == .forward ? 0.75 : 0.25, y: 0.5)
-        switch tapPhase {
-        case .seeking(let current):
-            accumulateSkip(direction: direction, reversing: direction != current, unitOrigin: origin)
-        case .idle, .awaitingSecondTap:
-            invalidateDoubleTapTimer()
-            pendingToggle = false
-            beginSeekSession(direction: direction, unitOrigin: origin)
-        }
-    }
+        guard let seekableRange = seekableRangeProvider() else { return 0 }
 
-    /// Drops any in-flight session and its timers.
-    func reset() {
+        // An open fingertip session hands over its anchor: the skip continues
+        // from where the playhead is already going, never from behind it.
+        var sessionAnchor: Double?
+        if case .seeking = tapPhase {
+            sessionAnchor = committedTarget ?? initialTime
+        }
+
+        guard let anchor = sessionAnchor ?? discreteTarget ?? currentTimeProvider() else {
+            return 0
+        }
+
+        let offset = direction == .forward ? skipInterval : -skipInterval
+        let target = min(max(anchor + offset, seekableRange.lowerBound), seekableRange.upperBound)
+        let achieved = abs(target - anchor)
+        guard achieved > 0.01 else { return 0 }
+
+        // The skip is happening, so any tap flow in flight is over: the open
+        // session's overlay comes down, a half-finished double tap stops
+        // waiting, and a deferred chrome show is superseded by the explicit
+        // show below.
         pendingToggle = false
         endSeekSession()
+
+        discreteTarget = target
+        restartDiscreteTimer()
+        emit?(.seek(to: target))
+        emit?(.setControlsVisible(true))
+        if isHapticsEnabled { feedback?.impact(.light) }
+        return achieved
+    }
+
+    /// Drops any in-flight session, the discrete anchor, and their timers.
+    func reset() {
+        pendingToggle = false
+        clearDiscreteAnchor()
+        endSeekSession()
+    }
+
+    /// The playhead moved under someone else's control — the progress bar, the
+    /// scrub gesture, a remote command, the host's own seek. Every anchor the
+    /// machine holds now points at a superseded position, so the next skip must
+    /// re-read the playhead instead of yanking it back to where a previous
+    /// press was headed.
+    ///
+    /// Only the anchors go: a first tap still waiting for its double-tap
+    /// partner holds no position, so that flow (and its deferred chrome
+    /// toggle) is left to resolve on its own.
+    func noteExternalSeek() {
+        clearDiscreteAnchor()
+        if case .seeking = tapPhase {
+            endSeekSession()
+        }
     }
 
     // MARK: - Session
@@ -197,11 +256,16 @@ final class TapSeekMachine {
         // within, so a double tap on a still-loading stream simply deleted the
         // interface: no overlay, no seek, no haptic, and nothing put the chrome
         // back.
-        guard let start = currentTimeProvider(), seekableRangeProvider() != nil else {
+        // A fresh button press hands its target over as the anchor — the mirror
+        // of the session handing `committedTarget` to a press in `skip(_:)`:
+        // whichever mechanism moved the playhead last, the other continues from
+        // there rather than from a stale read.
+        guard let start = discreteTarget ?? currentTimeProvider(), seekableRangeProvider() != nil else {
             flushPendingToggle()
             emit?(.toggleControls(.immediate))
             return
         }
+        clearDiscreteAnchor()
 
         accumulatedInterval = 0
         initialTime = start
@@ -368,6 +432,19 @@ final class TapSeekMachine {
     private func invalidateSeekSessionTimer() {
         seekSessionTimer?.cancel()
         seekSessionTimer = nil
+    }
+
+    private func restartDiscreteTimer() {
+        discreteTimer?.cancel()
+        discreteTimer = clock.schedule(after: seekSessionTimeout) { [weak self] in
+            self?.clearDiscreteAnchor()
+        }
+    }
+
+    private func clearDiscreteAnchor() {
+        discreteTimer?.cancel()
+        discreteTimer = nil
+        discreteTarget = nil
     }
 
     private func isLocked() -> Bool {

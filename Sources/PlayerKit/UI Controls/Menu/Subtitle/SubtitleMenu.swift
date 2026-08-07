@@ -41,10 +41,9 @@ struct SubtitleMenu: View {
             }
         } label: {
             Image(systemName: "captions.bubble")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-                .padding(10)
+                .playerBarGlyph()
         }
+        .hidesMenuIndicatorCompat()
         .accessibilityLabel(playerManager.strings.subtitles)
         .accessibilityHint(playerManager.strings.subtitlesHint)
         .accessibilityIdentifier("player.subtitleMenu")

@@ -12,7 +12,7 @@ struct SharingMenuView: View {
         HStack(spacing: 4) {
             #if canImport(UIKit) && canImport(GoogleCast)
             CastButton(playerManager: playerManager)
-                .circularGlassIcon()
+                .playerControlIcon(appearance: playerManager.appearance)
             #endif
 
             if isAirPlayEnabled {

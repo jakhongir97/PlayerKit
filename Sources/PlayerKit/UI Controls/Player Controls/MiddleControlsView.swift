@@ -10,12 +10,19 @@ struct MiddleControlsView: View {
         case stacked
     }
 
-    // Four 44pt secondary controls, the 64pt desktop play control, two outer
-    // 16pt gaps and two inner 12pt gaps. Deriving the breakpoint from the
-    // controls themselves keeps it valid in Slide Over and embedded players
-    // without guessing a device type.
-    static let episodeRowMinimumWidth: CGFloat = 296
-    static let compactTransportMinimumWidth: CGFloat = 172
+    // Measured from the controls themselves rather than guessed from a device
+    // class, so the breakpoints stay correct in Slide Over and in embedded
+    // players: five controls at the shared diameters — two 48pt episode
+    // buttons, two 48pt skips and the 60/64pt play control — plus the gaps
+    // between them, and the same sum without the episode pair.
+    static let episodeRowMinimumWidth: CGFloat =
+        (PlayerChromeMetrics.secondaryControlDiameter * 4)
+            + PlayerChromeMetrics.primaryControlDiameter
+            + (PlayerChromeMetrics.spacingM * 4)
+    static let compactTransportMinimumWidth: CGFloat =
+        (PlayerChromeMetrics.secondaryControlDiameter * 2)
+            + PlayerChromeMetrics.primaryControlDiameter
+            + (PlayerChromeMetrics.spacingM * 2)
 
     init(playerManager: PlayerManager, availableWidth: CGFloat = .greatestFiniteMagnitude) {
         self.playerManager = playerManager
@@ -38,13 +45,19 @@ struct MiddleControlsView: View {
         )
     }
 
+    /// The whole cluster is one glass group.
+    ///
+    /// Each control still carries its own disc, but declaring them inside a
+    /// container lets the platform share one lensing pass across the row and
+    /// blend neighbours as they scale under the cursor, instead of compositing
+    /// five unrelated blobs that happen to be adjacent.
     var body: some View {
-        Group {
+        PlayerGlassGroup(spacing: PlayerChromeMetrics.spacingM) {
             switch arrangement {
             case .row:
                 row
             case .stacked:
-                VStack(spacing: 8) {
+                VStack(spacing: PlayerChromeMetrics.spacingM) {
                     transport
                     episodeNavigation
                 }
@@ -53,7 +66,7 @@ struct MiddleControlsView: View {
     }
 
     private var row: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: PlayerChromeMetrics.spacingM) {
             if playerManager.contentType == .episode {
                 previousButton
             }
@@ -68,7 +81,7 @@ struct MiddleControlsView: View {
     /// for Switch Control, VoiceOver, Voice Control, and anyone who simply does
     /// not know the gesture.
     private var transport: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: PlayerChromeMetrics.spacingM) {
             SkipButtonView(playerManager: playerManager, direction: .backward)
             PlayPauseButtonView(playerManager: playerManager)
             SkipButtonView(playerManager: playerManager, direction: .forward)
@@ -76,7 +89,7 @@ struct MiddleControlsView: View {
     }
 
     private var episodeNavigation: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: PlayerChromeMetrics.spacingM) {
             previousButton
             nextButton
         }
@@ -84,11 +97,9 @@ struct MiddleControlsView: View {
 
     private var previousButton: some View {
         PrevButtonView(playerManager: playerManager)
-            .frame(minWidth: 44, minHeight: 44)
     }
 
     private var nextButton: some View {
         NextButtonView(playerManager: playerManager)
-            .frame(minWidth: 44, minHeight: 44)
     }
 }

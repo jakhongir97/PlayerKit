@@ -92,9 +92,10 @@ public extension PlayerManager {
 
     // MARK: Location-free intents
 
-    /// The same code path the double tap uses, so a button, a rotor action, a
-    /// keyboard shortcut and a gesture cannot drift apart: one clamp, one
-    /// overlay, one accumulated total.
+    /// A plain ±interval seek — the discrete counterpart to the double-tap
+    /// session. It shares the session's clamp and its in-flight anchoring, but
+    /// draws no overlay and accumulates no readout: a button does a button's
+    /// job, and only the fingertip gesture gets the YouTube-style counter.
     func skipForward() {
         gestureManager.skipForward()
     }

@@ -5,32 +5,90 @@ struct TopControlsView: View {
     @Environment(\.sizeCategory) private var sizeCategory
     @ObservedObject var playerManager: PlayerManager
 
+    /// Whether the row's ordinary contents are showing. The lock ignores this —
+    /// see ``trailingActions``.
+    var showsChrome: Bool {
+        playerManager.areControlsVisible && !playerManager.isLocked
+    }
+
+    /// Whether the unlock affordance is showing. Deliberately independent of
+    /// ``showsChrome``: a locked player whose only way out is hidden is a trap.
+    var showsUnlockControl: Bool {
+        playerManager.areControlsVisible
+    }
+
+    /// Close on the left, identity in the middle, session actions grouped on
+    /// the right.
+    ///
+    /// The info button used to float alone against the *left* edge at the
+    /// player's vertical midpoint, and the lock against the right one, with
+    /// nothing between them but video — two orphans on a line of their own. Both
+    /// are session-level actions, so both live with the rest of them.
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: PlayerChromeMetrics.spacingM) {
             CloseButtonView(playerManager: playerManager)
+                .chromeGated(showsChrome)
+
             VStack(alignment: .leading, spacing: 2) {
                 if let item = playerManager.playerItem {
                     PlayerTitleView(title: item.title, imageURL: item.titleImageURL)
 
-                    if let description = item.description {
+                    if let description = item.description, description != item.title {
                         Text(description)
-                            .font(.callout.weight(.medium))
-                            .foregroundColor(.white)
+                            .playerChromeFont(.subtitle)
+                            .foregroundColor(.white.opacity(0.75))
                             .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
                     }
                 }
             }
-            .padding(.horizontal, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
+            // Centres the text block against the close button's disc rather
+            // than hanging it from the very top of the bar.
+            .frame(minHeight: PlayerChromeMetrics.minimumHitTarget, alignment: .center)
+            .chromeGated(showsChrome)
 
+            trailingActions
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// The lock is gated on `areControlsVisible` alone, not on `showsChrome`.
+    ///
+    /// It is the only way out of a locked player, so it has to outlive the
+    /// chrome it belongs to. Keeping it in this row rather than floating it
+    /// somewhere safe means it does not move when the lock engages — the rest
+    /// of the row goes invisible around it while still occupying its space, so
+    /// the button the user reaches for is exactly where it was.
+    private var trailingActions: some View {
+        HStack(spacing: PlayerChromeMetrics.spacingS) {
             SharingMenuView(
                 playerManager: playerManager,
                 isAirPlayEnabled: playerManager.canUseAirPlay
             )
+            .chromeGated(showsChrome)
+
+            InfoButtonView(playerManager: playerManager)
+                .chromeGated(showsChrome)
+
             SettingsMenu(playerManager: playerManager)
+                .chromeGated(showsChrome)
+
+            LockButtonView(playerManager: playerManager)
+                .chromeGated(showsUnlockControl)
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+}
+
+private extension View {
+    /// Hides a control completely: invisible, untappable, and absent from
+    /// accessibility — but still occupying its slot, so its neighbours do not
+    /// reflow when it goes.
+    @ViewBuilder
+    func chromeGated(_ isPresented: Bool) -> some View {
+        opacity(isPresented ? 1 : 0)
+            .allowsHitTesting(isPresented)
+            .accessibilityHidden(!isPresented)
     }
 }
 
@@ -49,11 +107,11 @@ private struct PlayerTitleView: View {
     let title: String
     let imageURL: URL?
 
-    /// Sized against the 25pt text title it stands in for: tall enough to read
-    /// a title treatment, short enough that a wide one cannot push the
-    /// controls to its right off the bar.
+    /// Sized against the text title it stands in for: tall enough to read a
+    /// title treatment, short enough that a wide one cannot push the controls
+    /// to its right off the bar.
     private static let maxImageWidth: CGFloat = 280
-    private static let maxImageHeight: CGFloat = 44
+    private static let maxImageHeight: CGFloat = 40
 
     var body: some View {
         if let imageURL {
@@ -93,7 +151,7 @@ private struct PlayerTitleView: View {
 
     private var titleText: some View {
         Text(title)
-            .font(.title2.weight(.semibold))
+            .playerChromeFont(.title)
             .foregroundColor(.white)
             .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
     }
