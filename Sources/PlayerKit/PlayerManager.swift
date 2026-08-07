@@ -102,7 +102,19 @@ public class PlayerManager: ObservableObject {
     /// app; a host that wants to decide in code just assigns to this instead.
     /// Changing it takes effect on the players already on screen.
     @Published public var captureProtectionPolicy: PlayerCaptureProtectionPolicy =
-        .resolvedDefault()
+        .resolvedDefault() {
+        didSet {
+            guard oldValue != captureProtectionPolicy else { return }
+            // The PiP window is composited by the system outside this app's
+            // windows, where no capture protection can follow it. A session
+            // that was legitimately started under `.allowCapture` must not
+            // keep showing the video after the host flips to a protecting
+            // policy.
+            if !captureProtectionPolicy.allowsPictureInPicture, isPiPActive {
+                currentPlayer?.stopPiP()
+            }
+        }
+    }
     @Published public var suppressesHeuristicSkipButtons: Bool = false
     public var heuristicSkipButtonTitles: HeuristicSkipButtonTitles {
         get { strings.heuristicSkipButtonTitles }
@@ -1661,16 +1673,27 @@ extension PlayerManager {
         }
     }
 
+    /// False while ``captureProtectionPolicy`` protects the video, even on a
+    /// backend that could do PiP: the PiP window is drawn by the system in a
+    /// window this app does not own, so it escapes every capture protection —
+    /// see ``PlayerCaptureProtectionPolicy/allowsPictureInPicture``.
     public var isPiPSupported: Bool {
-        (currentPlayer as? PlayerPictureInPictureSupporting)?.isPictureInPictureSupported ?? false
+        guard captureProtectionPolicy.allowsPictureInPicture else { return false }
+        return (currentPlayer as? PlayerPictureInPictureSupporting)?.isPictureInPictureSupported ?? false
     }
 
     public var canTogglePiP: Bool {
-        guard let pipSupport = currentPlayer as? PlayerPictureInPictureSupporting else { return false }
-        return pipSupport.isPictureInPictureSupported && (pipSupport.isPictureInPicturePossible || isPiPActive)
+        guard isPiPSupported,
+              let pipSupport = currentPlayer as? PlayerPictureInPictureSupporting else { return false }
+        return pipSupport.isPictureInPicturePossible || isPiPActive
     }
 
     public func startPiP() {
+        // Hosts can reach this directly, bypassing the (hidden) PiP button.
+        guard captureProtectionPolicy.allowsPictureInPicture else {
+            debugLog("Refusing PiP: captureProtectionPolicy=\(captureProtectionPolicy.rawValue) hides video from capture, and the system-owned PiP window cannot be protected")
+            return
+        }
         currentPlayer?.startPiP()
     }
     

@@ -58,6 +58,21 @@ public enum PlayerCaptureProtectionPolicy: String, Sendable, CaseIterable {
 }
 
 extension PlayerCaptureProtectionPolicy {
+    /// Whether Picture in Picture may be offered under this policy.
+    ///
+    /// PiP video is composited by a system process (`PIPAgent` on macOS, the
+    /// system shell on iOS) into a window this process does not own. Every
+    /// protection above stops at our own window: `NSWindow.sharingType`, the
+    /// capture shield and the secure-text canvas all leave the PiP window
+    /// fully visible to `screencapture` and to any recorder — and under
+    /// ``blackOutVideo`` the PiP window would not just leak into captures, it
+    /// would *display* the very picture the policy blanks on screen. So a
+    /// protecting policy must withhold PiP entirely; only ``allowCapture``
+    /// may offer it.
+    public var allowsPictureInPicture: Bool {
+        self == .allowCapture
+    }
+
     /// Read by ``resolvedDefault(defaults:environment:)``.
     ///
     /// `UserDefaults` resolves the argument domain first, so this key doubles as
