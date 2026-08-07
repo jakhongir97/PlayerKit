@@ -54,6 +54,13 @@ struct DoubleTapSeekOverlayView: View {
             cluster
         }
         .frame(width: size.width, height: size.height)
+        // This overlay is pure physical geometry: the tap zones it echoes are
+        // raw touch coordinates (`GestureGeometry.tapZone` deliberately does
+        // not RTL-convert the left/right halves), so the drawing must not
+        // mirror either. Without this pin, right-to-left layout mirrors the
+        // whole overlay — wash, bloom, cluster — onto the *untapped* half
+        // while the machine keeps seeking for the half the finger is on.
+        .environment(\.layoutDirection, .leftToRight)
         .allowsHitTesting(false)
         // Announced from the model instead. A transient element that exists for
         // three quarters of a second steals focus and is gone before the user
@@ -107,10 +114,14 @@ struct DoubleTapSeekOverlayView: View {
         }
         .frame(width: halfWidth, height: size.height)
         .clipped()
-        .frame(
-            width: size.width,
-            height: size.height,
-            alignment: isForward ? .trailing : .leading
+        // Placed with `.position`, never an alignment frame: `.leading` and
+        // `.trailing` flip under right-to-left layout, while the tap zones,
+        // the cluster and the bloom are all physical-x — an aligned container
+        // would put the wash on the untapped half for RTL hosts. The centre of
+        // the tapped half is exactly `pulseCenterX`.
+        .position(
+            x: Self.pulseCenterX(forWidth: size.width, isForward: isForward),
+            y: size.height / 2
         )
     }
 
@@ -145,7 +156,13 @@ struct DoubleTapSeekOverlayView: View {
         )
         .compatOnChange(of: state.tapID) { _ in
             guard !reduceMotion else { return }
-            pop = 1.07
+            // The jump to 1.07 must not animate, and on iOS 17/macOS 14 this
+            // closure runs inside the tap's own transaction — where the host's
+            // `.animation(_, value: seekOverlay)` has planted a 0.18s ease that
+            // would stretch the jump across it and flatten the pop entirely.
+            var impulse = Transaction()
+            impulse.disablesAnimations = true
+            withTransaction(impulse) { pop = 1.07 }
             withAnimation(PlayerChromeMotion.press) { pop = 1 }
         }
         .accessibilityElement(children: .ignore)
