@@ -61,6 +61,7 @@ struct FullscreenButtonView: View {
         .onDisappear {
             transitionRecoveryTask?.cancel()
             transitionRecoveryTask = nil
+            transitionState.finish()
         }
         #else
         EmptyView()

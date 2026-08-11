@@ -104,13 +104,19 @@ final class UIAuditRegressionTests: XCTestCase {
 
     }
 
-    func testFullscreenTransitionRejectsRapidSecondToggleUntilCompletion() {
+    func testFullscreenTransitionRejectsRapidSecondToggleAndUnlocksAfterCompletionOrTeardown() {
         var state = PlayerKitMacFullscreenTransitionState()
 
         XCTAssertTrue(state.begin())
         XCTAssertFalse(state.begin())
         XCTAssertTrue(state.isInFlight)
 
+        // AppKit did-enter/did-exit completion unlocks the next command.
+        state.finish()
+        XCTAssertFalse(state.isInFlight)
+        XCTAssertTrue(state.begin())
+
+        // A transient view teardown must unlock a preserved @State value too.
         state.finish()
         XCTAssertFalse(state.isInFlight)
         XCTAssertTrue(state.begin())
