@@ -1,6 +1,9 @@
 import CoreGraphics
 import XCTest
 @testable import PlayerKit
+#if os(macOS)
+import AppKit
+#endif
 
 @MainActor
 final class UIAuditRegressionTests: XCTestCase {
@@ -59,6 +62,60 @@ final class UIAuditRegressionTests: XCTestCase {
             )
         )
     }
+
+    #if os(macOS)
+    func testFullscreenWindowOwnershipUsesCapturedStandaloneWindow() {
+        let hostingWindow = NSWindow()
+
+        XCTAssertTrue(
+            PlayerKitMacWindowOwnership.fullscreenTarget(for: hostingWindow) === hostingWindow
+        )
+        XCTAssertNil(PlayerKitMacWindowOwnership.fullscreenTarget(for: nil))
+    }
+
+    func testCapturedSheetOwnershipIgnoresAnUnrelatedKeyWindowForFullscreen() {
+        let parentWindow = NSWindow()
+        let sheetWindow = NSWindow()
+        // This models the unrelated key-window candidate that the old global
+        // lookup selected; ownership resolution now has no global fallback.
+        let unrelatedKeyWindow = NSWindow()
+        parentWindow.beginSheet(sheetWindow)
+        defer {
+            if sheetWindow.sheetParent != nil {
+                parentWindow.endSheet(sheetWindow)
+            }
+        }
+
+        let fullscreenTarget = PlayerKitMacWindowOwnership.fullscreenTarget(for: sheetWindow)
+        XCTAssertTrue(fullscreenTarget === parentWindow)
+        XCTAssertFalse(fullscreenTarget === unrelatedKeyWindow)
+        XCTAssertTrue(
+            PlayerKitMacWindowOwnership.fullscreenNotificationTargets(
+                Notification(name: NSWindow.willEnterFullScreenNotification, object: parentWindow),
+                hostingWindow: sheetWindow
+            )
+        )
+        XCTAssertFalse(
+            PlayerKitMacWindowOwnership.fullscreenNotificationTargets(
+                Notification(name: NSWindow.willEnterFullScreenNotification, object: unrelatedKeyWindow),
+                hostingWindow: sheetWindow
+            )
+        )
+
+    }
+
+    func testFullscreenTransitionRejectsRapidSecondToggleUntilCompletion() {
+        var state = PlayerKitMacFullscreenTransitionState()
+
+        XCTAssertTrue(state.begin())
+        XCTAssertFalse(state.begin())
+        XCTAssertTrue(state.isInFlight)
+
+        state.finish()
+        XCTAssertFalse(state.isInFlight)
+        XCTAssertTrue(state.begin())
+    }
+    #endif
 
     func testMediaTrackPolicyDoesNotHideIndependentQualityControl() {
         let tracksHidden = PlayerPresentationPolicy(

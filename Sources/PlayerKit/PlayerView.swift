@@ -41,6 +41,9 @@ public struct PlayerView: View {
     @State private var loadedInput: LoadIdentity?
     @State private var announcedError: PlayerKitError?
     @State private var announcedErrorWasTerminal = false
+    #if os(macOS)
+    @StateObject private var hostingWindowReference = PlayerKitHostingWindowReference()
+    #endif
     #if os(iOS)
     @StateObject private var thumbnailPreviewController = WebVTTThumbnailPreviewController()
     #endif
@@ -50,28 +53,33 @@ public struct PlayerView: View {
     /// calls `PlayerManager.tearDown()` when its presentation actually exits.
     let automaticallyTearsDownOnDisappear: Bool
     let presentationPolicy: PlayerPresentationPolicy
+    let onDismiss: (() -> Void)?
 
     public init(
         playerItem: PlayerItem? = nil,
         playerManager: PlayerManager = .shared,
         automaticallyTearsDownOnDisappear: Bool = true,
-        presentationPolicy: PlayerPresentationPolicy = .init()
+        presentationPolicy: PlayerPresentationPolicy = .init(),
+        onDismiss: (() -> Void)? = nil
     ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .single(playerItem)
         self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
         self.presentationPolicy = presentationPolicy
+        self.onDismiss = onDismiss
     }
     
     public init(
         playerManager: PlayerManager = .shared,
         automaticallyTearsDownOnDisappear: Bool = true,
-        presentationPolicy: PlayerPresentationPolicy = .init()
+        presentationPolicy: PlayerPresentationPolicy = .init(),
+        onDismiss: (() -> Void)? = nil
     ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .none
         self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
         self.presentationPolicy = presentationPolicy
+        self.onDismiss = onDismiss
     }
     
     public init(
@@ -79,12 +87,14 @@ public struct PlayerView: View {
         currentIndex: Int = 0,
         playerManager: PlayerManager = .shared,
         automaticallyTearsDownOnDisappear: Bool = true,
-        presentationPolicy: PlayerPresentationPolicy = .init()
+        presentationPolicy: PlayerPresentationPolicy = .init(),
+        onDismiss: (() -> Void)? = nil
     ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         loadMode = .episodes(playerItems, currentIndex)
         self.automaticallyTearsDownOnDisappear = automaticallyTearsDownOnDisappear
         self.presentationPolicy = presentationPolicy
+        self.onDismiss = onDismiss
     }
 
     public var body: some View {
@@ -148,6 +158,13 @@ public struct PlayerView: View {
                 NotificationCenter.default.post(name: .PlayerKitDidClose, object: nil)
             }
         }
+        #if os(macOS)
+        .background(
+            PlayerKitHostingWindowReader { window in
+                hostingWindowReference.window = window
+            }
+        )
+        #endif
         #if os(iOS)
         .onReceive(playerManager.$playerItem) { item in
             // Treat every publication as a new owner, even when a signed VTT
@@ -279,13 +296,19 @@ public struct PlayerView: View {
     }
 
     private func closePlayerPresentation() {
+        if let onDismiss {
+            onDismiss()
+            return
+        }
 #if os(macOS)
-        if let keyWindow = NSApp.keyWindow {
-            if let sheetParent = keyWindow.sheetParent {
-                sheetParent.endSheet(keyWindow)
-            } else {
-                keyWindow.performClose(nil)
-            }
+        if hostingWindowReference.window?.sheetParent != nil {
+            // SwiftUI owns the sheet binding. Ending the AppKit sheet behind it
+            // makes SwiftUI immediately recreate the player and reset playback.
+            presentationMode.wrappedValue.dismiss()
+            return
+        }
+        if let hostingWindow = hostingWindowReference.window {
+            hostingWindow.performClose(nil)
             return
         }
 #endif
@@ -296,6 +319,49 @@ public struct PlayerView: View {
         PlayerKitLog.debug("PlayerView", message())
     }
 }
+
+#if os(macOS)
+@MainActor
+final class PlayerKitHostingWindowReference: ObservableObject {
+    weak var window: NSWindow?
+}
+
+@MainActor
+struct PlayerKitHostingWindowReader: NSViewRepresentable {
+    let onWindowChange: @MainActor (NSWindow?) -> Void
+
+    func makeNSView(context _: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            onWindowChange(view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context _: Context) {
+        DispatchQueue.main.async {
+            onWindowChange(nsView.window)
+        }
+    }
+}
+
+@MainActor
+enum PlayerKitMacWindowOwnership {
+    static func fullscreenTarget(for hostingWindow: NSWindow?) -> NSWindow? {
+        hostingWindow?.sheetParent ?? hostingWindow
+    }
+
+    static func fullscreenNotificationTargets(
+        _ notification: Notification,
+        hostingWindow: NSWindow?
+    ) -> Bool {
+        guard let notificationWindow = notification.object as? NSWindow else {
+            return false
+        }
+        return notificationWindow === fullscreenTarget(for: hostingWindow)
+    }
+}
+#endif
 
 extension PlayerView {
     enum LoadMode {
