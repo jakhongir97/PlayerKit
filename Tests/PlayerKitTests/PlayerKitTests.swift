@@ -607,6 +607,31 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(player.playCallCount, 2)
     }
 
+    func testSelectAudioTrackStallDoesNotForcePlaybackWhileReplacementTrackBuffers() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        let originalTrack = TrackInfo(id: "audio-ru", name: "Russian", languageCode: "ru")
+        let replacementTrack = TrackInfo(id: "audio-en", name: "English", languageCode: "en")
+        player.availableAudioTracks = [originalTrack, replacementTrack]
+        player.currentAudioTrack = originalTrack
+        player.bufferOnAudioTrackSelection = true
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.trackManager = TrackManager(player: player)
+        manager.isMediaReady = true
+        manager.refreshTrackInfo()
+
+        manager.play()
+        let playCallCountBeforeSelection = player.playCallCount
+        manager.selectAudioTrack(track: replacementTrack)
+        manager.playerDidStall()
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertEqual(player.currentAudioTrack?.id, replacementTrack.id)
+        XCTAssertTrue(player.isBuffering)
+        XCTAssertEqual(player.playCallCount, playCallCountBeforeSelection)
+    }
+
     func testPlayerManagerSeekReportsFailureWithoutDuration() {
         let manager = PlayerManager.shared
 
@@ -735,6 +760,7 @@ private final class MockPlayer: PlayerProtocol {
     var reportsPlayingDuringStartup = false
     var pauseOnSeek = false
     var pauseOnAudioTrackSelection = false
+    var bufferOnAudioTrackSelection = false
     var ignoredPlayAttemptsAfterSeek = 0
     private var ignoredPlayAttemptsRemaining = 0
 
@@ -782,6 +808,10 @@ private final class MockPlayer: PlayerProtocol {
         currentAudioTrack = availableAudioTracks.first(where: { $0.id == id })
         if pauseOnAudioTrackSelection {
             isPlaying = false
+        }
+        if bufferOnAudioTrackSelection {
+            isPlaying = false
+            isBuffering = true
         }
     }
 

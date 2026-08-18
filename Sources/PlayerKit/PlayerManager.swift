@@ -1343,7 +1343,10 @@ extension PlayerManager {
                 "track_present=true current=\(debugInterval(trackSelectionReferenceTime))"
             )
             playbackResumeProgressReferenceTime = trackSelectionReferenceTime
-            schedulePlaybackResumeIfNeeded(trigger: "audio-track-selection")
+            schedulePlaybackResumeIfNeeded(
+                trigger: "audio-track-selection",
+                onlyWhenBackendPaused: true
+            )
         }
         userInteracted()
     }
@@ -2356,7 +2359,10 @@ extension PlayerManager: PlayerLifecycleReporting {
         isBuffering = currentPlayer?.isBuffering ?? true
     }
 
-    private func schedulePlaybackResumeIfNeeded(trigger: String) {
+    private func schedulePlaybackResumeIfNeeded(
+        trigger: String,
+        onlyWhenBackendPaused: Bool = false
+    ) {
         guard shouldResumePlaybackAfterStall else {
             debugLog("Playback resume skipped because shouldResumePlaybackAfterStall is false. trigger=\(trigger)")
             cancelPendingPlaybackResume()
@@ -2376,13 +2382,9 @@ extension PlayerManager: PlayerLifecycleReporting {
             guard let self else { return }
             defer { self.playbackResumeTask = nil }
 
-            let retryDelays: [UInt64] = [
-                0,
-                150_000_000,
-                350_000_000,
-                750_000_000,
-                1_500_000_000,
-            ]
+            let retryDelays: [UInt64] = onlyWhenBackendPaused
+                ? [150_000_000, 350_000_000, 750_000_000, 1_500_000_000]
+                : [0, 150_000_000, 350_000_000, 750_000_000, 1_500_000_000]
             for delay in retryDelays {
                 if delay > 0 {
                     try? await Task.sleep(nanoseconds: delay)
@@ -2396,6 +2398,14 @@ extension PlayerManager: PlayerLifecycleReporting {
                 ) {
                     self.debugLog("Playback resume completed after progress advanced. trigger=\(trigger)")
                     return
+                }
+
+                // Let a buffering backend own recovery; forcing its rate while
+                // a replacement rendition is underfilled can surface as crackle.
+                // Audio selection also needs no retry when playback never paused.
+                if self.currentPlayer?.isBuffering == true
+                    || (onlyWhenBackendPaused && self.currentPlayer?.isPlaying == true) {
+                    continue
                 }
 
                 self.debugLog("Retrying playback resume. trigger=\(trigger)")
