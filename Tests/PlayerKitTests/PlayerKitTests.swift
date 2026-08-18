@@ -597,8 +597,17 @@ final class PlayerKitTests: XCTestCase {
         manager.refreshTrackInfo()
 
         manager.play()
+        let playCallCountBeforeSelection = player.playCallCount
         manager.selectAudioTrack(track: replacementTrack)
         try? await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertEqual(
+            player.playCallCount,
+            playCallCountBeforeSelection,
+            "A single paused sample is not enough to force playback during a rendition switch."
+        )
+
+        try? await Task.sleep(nanoseconds: 400_000_000)
 
         XCTAssertEqual(player.currentAudioTrack?.id, replacementTrack.id)
         XCTAssertEqual(manager.selectedAudio?.id, replacementTrack.id)
@@ -626,6 +635,37 @@ final class PlayerKitTests: XCTestCase {
         manager.selectAudioTrack(track: replacementTrack)
         manager.playerDidStall()
         try? await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertEqual(player.currentAudioTrack?.id, replacementTrack.id)
+        XCTAssertTrue(player.isBuffering)
+        XCTAssertEqual(player.playCallCount, playCallCountBeforeSelection)
+    }
+
+    func testSelectAudioTrackDoesNotForcePlaybackWhenBufferingSignalArrivesAfterSelection() async {
+        let manager = PlayerManager.shared
+        let player = MockPlayer()
+        let originalTrack = TrackInfo(id: "audio-ru", name: "Russian", languageCode: "ru")
+        let replacementTrack = TrackInfo(id: "audio-en", name: "English", languageCode: "en")
+        player.availableAudioTracks = [originalTrack, replacementTrack]
+        player.currentAudioTrack = originalTrack
+        player.pauseOnAudioTrackSelection = true
+        manager.currentPlayer = player
+        manager.playbackManager = PlaybackManager(player: player, playerManager: manager)
+        manager.trackManager = TrackManager(player: player)
+        manager.isMediaReady = true
+        manager.refreshTrackInfo()
+
+        manager.play()
+        let playCallCountBeforeSelection = player.playCallCount
+        manager.selectAudioTrack(track: replacementTrack)
+
+        // The first retry observes a pause before AVPlayer reports that the new
+        // rendition is buffering. The second observation must honor that late
+        // buffering signal instead of forcing the player's rate.
+        try? await Task.sleep(nanoseconds: 250_000_000)
+        XCTAssertEqual(player.playCallCount, playCallCountBeforeSelection)
+        player.isBuffering = true
+        try? await Task.sleep(nanoseconds: 400_000_000)
 
         XCTAssertEqual(player.currentAudioTrack?.id, replacementTrack.id)
         XCTAssertTrue(player.isBuffering)

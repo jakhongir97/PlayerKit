@@ -2385,6 +2385,7 @@ extension PlayerManager: PlayerLifecycleReporting {
             let retryDelays: [UInt64] = onlyWhenBackendPaused
                 ? [150_000_000, 350_000_000, 750_000_000, 1_500_000_000]
                 : [0, 150_000_000, 350_000_000, 750_000_000, 1_500_000_000]
+            var consecutivePausedReadyObservations = 0
             for delay in retryDelays {
                 if delay > 0 {
                     try? await Task.sleep(nanoseconds: delay)
@@ -2402,10 +2403,23 @@ extension PlayerManager: PlayerLifecycleReporting {
 
                 // Let a buffering backend own recovery; forcing its rate while
                 // a replacement rendition is underfilled can surface as crackle.
-                // Audio selection also needs no retry when playback never paused.
-                if self.currentPlayer?.isBuffering == true
-                    || (onlyWhenBackendPaused && self.currentPlayer?.isPlaying == true) {
+                if self.currentPlayer?.isBuffering == true {
+                    consecutivePausedReadyObservations = 0
                     continue
+                }
+
+                if onlyWhenBackendPaused {
+                    // AVPlayer's buffering signal can lag a rendition switch.
+                    // Require two paused/non-buffering samples before forcing a
+                    // resume, while leaving uninterrupted playback untouched.
+                    guard self.currentPlayer?.isPlaying != true else {
+                        consecutivePausedReadyObservations = 0
+                        continue
+                    }
+                    consecutivePausedReadyObservations += 1
+                    guard consecutivePausedReadyObservations >= 2 else {
+                        continue
+                    }
                 }
 
                 self.debugLog("Retrying playback resume. trigger=\(trigger)")
