@@ -76,6 +76,21 @@ extension PKImage {
 }
 
 extension Image {
+    /// The first SF Symbol of the two the running OS actually ships.
+    ///
+    /// `Image(systemName:)` with a name the OS does not know renders nothing
+    /// and says nothing: the playback-speed trigger was `gauge.with.needle`,
+    /// an SF Symbols 5 glyph, so on iOS 14–16 the options pill carried a blank
+    /// 44pt slot where the control should be.
+    static func systemSymbol(_ preferred: String, fallback: String) -> Image {
+        #if canImport(UIKit)
+        let exists = UIImage(systemName: preferred) != nil
+        #else
+        let exists = NSImage(systemSymbolName: preferred, accessibilityDescription: nil) != nil
+        #endif
+        return Image(systemName: exists ? preferred : fallback)
+    }
+
     static func fromFramework(named name: String, fallbackSystemName: String) -> Image {
         guard let image = PKImage.fromFramework(named: name) else {
             return Image(systemName: fallbackSystemName)

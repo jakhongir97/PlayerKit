@@ -4,6 +4,81 @@ import SwiftUI
 struct TopControlsView: View {
     @Environment(\.sizeCategory) private var sizeCategory
     @ObservedObject var playerManager: PlayerManager
+    /// The content width the bar is laid out in; see ``Arrangement``.
+    let availableWidth: CGFloat
+
+    init(playerManager: PlayerManager, availableWidth: CGFloat = .greatestFiniteMagnitude) {
+        self.playerManager = playerManager
+        self.availableWidth = availableWidth
+    }
+
+    enum Arrangement: Equatable {
+        /// Close, identity and the action cluster share one line.
+        case inline
+        /// Close and the action cluster share the first line; the identity
+        /// gets the whole of a second.
+        case stacked
+    }
+
+    /// The narrowest a title can be and still be read as one.
+    ///
+    /// Below this the inline bar was handing the title ~50pt on an iPhone in
+    /// portrait — five trailing discs plus the close disc leave that much of a
+    /// 370pt content width — and "Веном" rendered as "Вен…". A title that is
+    /// all ellipsis is not a title, so the bar gives it a line of its own.
+    static let minimumInlineTitleWidth: CGFloat = 160
+
+    /// The width `count` trailing controls occupy: every disc sits inside the
+    /// 44pt minimum target, with `spacing` between neighbours.
+    static func trailingClusterWidth(
+        controlCount count: Int,
+        spacing: CGFloat = PlayerChromeMetrics.spacingS
+    ) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return (PlayerChromeMetrics.minimumHitTarget * CGFloat(count))
+            + (spacing * CGFloat(count - 1))
+    }
+
+    /// The gap between trailing discs, tightened before the row can overflow.
+    ///
+    /// A release build's five discs need 252pt at the ordinary 8pt gap, and a
+    /// 320pt iPhone in portrait leaves the cluster 238pt once the close disc
+    /// has its own, so the lock was pushed flush with — or past — the trailing
+    /// edge. At 4pt the same five fit in 236pt. The discs themselves never
+    /// shrink: they are already at the minimum touch target.
+    ///
+    /// A DEBUG build adds the backend menu, and six discs do not fit a 320pt
+    /// surface at any gap. That is a developer affordance on the narrowest
+    /// device there is; it is deliberately not paid for by the shipping row.
+    static func clusterSpacing(availableWidth: CGFloat, trailingControlCount count: Int) -> CGFloat {
+        let budget = availableWidth
+            - PlayerChromeMetrics.minimumHitTarget   // close
+            - PlayerChromeMetrics.spacingM           // close → cluster
+        let relaxed = trailingClusterWidth(controlCount: count, spacing: PlayerChromeMetrics.spacingS)
+        return relaxed <= budget ? PlayerChromeMetrics.spacingS : PlayerChromeMetrics.spacingXS
+    }
+
+    /// The width left for the identity block when everything shares a line.
+    static func inlineTitleWidth(availableWidth: CGFloat, trailingControlCount: Int) -> CGFloat {
+        availableWidth
+            - PlayerChromeMetrics.minimumHitTarget          // close
+            - PlayerChromeMetrics.spacingM                  // close → title
+            - PlayerChromeMetrics.spacingM                  // title → cluster
+            - trailingClusterWidth(
+                controlCount: trailingControlCount,
+                spacing: clusterSpacing(
+                    availableWidth: availableWidth,
+                    trailingControlCount: trailingControlCount
+                )
+            )
+    }
+
+    static func arrangement(availableWidth: CGFloat, trailingControlCount: Int) -> Arrangement {
+        inlineTitleWidth(availableWidth: availableWidth, trailingControlCount: trailingControlCount)
+            >= minimumInlineTitleWidth
+            ? .inline
+            : .stacked
+    }
 
     /// Whether the row's ordinary contents are showing. The lock ignores this —
     /// see ``trailingActions``.
@@ -17,40 +92,81 @@ struct TopControlsView: View {
         playerManager.areControlsVisible
     }
 
+    /// The host's rows are offered inside the options panel; the panel itself
+    /// is always present, because playback information always is.
+    var showsHostActions: Bool {
+        !playerManager.hostActions.presentable.isEmpty
+    }
+
+    /// Two: the options control and the lock.
+    ///
+    /// It used to be six — Cast, AirPlay, information, the debug engine picker,
+    /// the host's overflow and the lock — which is what left the title about
+    /// fifty points to render in on a phone. Everything except the lock is now
+    /// one control; see ``PlayerOptionsMenuView``.
+    var trailingControlCount: Int { 2 }
+
+    var arrangement: Arrangement {
+        Self.arrangement(availableWidth: availableWidth, trailingControlCount: trailingControlCount)
+    }
+
     /// Close on the left, identity in the middle, session actions grouped on
-    /// the right.
+    /// the right — or, where the middle would be squeezed to nothing, the
+    /// identity on a line of its own under the close disc.
     ///
     /// The info button used to float alone against the *left* edge at the
     /// player's vertical midpoint, and the lock against the right one, with
     /// nothing between them but video — two orphans on a line of their own. Both
     /// are session-level actions, so both live with the rest of them.
     var body: some View {
-        HStack(alignment: .top, spacing: PlayerChromeMetrics.spacingM) {
-            CloseButtonView(playerManager: playerManager)
-                .chromeGated(showsChrome)
+        // One tree for both arrangements. The close disc and the trailing
+        // cluster keep their structural identity when the bar re-lays out on
+        // rotation, so an open info popover or menu survives the switch; only
+        // the identity block moves between the first line and its own.
+        VStack(alignment: .leading, spacing: PlayerChromeMetrics.spacingS) {
+            HStack(alignment: .top, spacing: PlayerChromeMetrics.spacingM) {
+                CloseButtonView(playerManager: playerManager)
+                    .chromeGated(showsChrome)
 
-            VStack(alignment: .leading, spacing: 2) {
-                if let item = playerManager.playerItem {
-                    PlayerTitleView(title: item.title, imageURL: item.titleImageURL)
-
-                    if let description = item.description, description != item.title {
-                        Text(description)
-                            .playerChromeFont(.subtitle)
-                            .foregroundColor(.white.opacity(0.75))
-                            .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
-                    }
+                if arrangement == .inline {
+                    identity
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
+                        // Centres the text block against the close button's
+                        // disc rather than hanging it from the very top of the
+                        // bar.
+                        .frame(minHeight: PlayerChromeMetrics.minimumHitTarget, alignment: .center)
+                        .chromeGated(showsChrome)
+                } else {
+                    Spacer(minLength: 0)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
-            // Centres the text block against the close button's disc rather
-            // than hanging it from the very top of the bar.
-            .frame(minHeight: PlayerChromeMetrics.minimumHitTarget, alignment: .center)
-            .chromeGated(showsChrome)
 
-            trailingActions
+                trailingActions
+            }
+
+            if arrangement == .stacked {
+                identity
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .chromeGated(showsChrome)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private var identity: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let item = playerManager.playerItem {
+                PlayerTitleView(title: item.title, imageURL: item.titleImageURL)
+
+                if let description = item.description, description != item.title {
+                    Text(description)
+                        .playerChromeFont(.subtitle)
+                        .foregroundColor(.white.opacity(0.75))
+                        .lineLimit(sizeCategory.isAccessibilityCategory ? 2 : 1)
+                }
+            }
+        }
     }
 
     /// The lock is gated on `areControlsVisible` alone, not on `showsChrome`.
@@ -61,17 +177,11 @@ struct TopControlsView: View {
     /// of the row goes invisible around it while still occupying its space, so
     /// the button the user reaches for is exactly where it was.
     private var trailingActions: some View {
-        HStack(spacing: PlayerChromeMetrics.spacingS) {
-            SharingMenuView(
-                playerManager: playerManager,
-                isAirPlayEnabled: playerManager.canUseAirPlay
-            )
-            .chromeGated(showsChrome)
-
-            InfoButtonView(playerManager: playerManager)
-                .chromeGated(showsChrome)
-
-            SettingsMenu(playerManager: playerManager)
+        HStack(spacing: Self.clusterSpacing(
+            availableWidth: availableWidth,
+            trailingControlCount: trailingControlCount
+        )) {
+            PlayerOptionsMenuView(playerManager: playerManager)
                 .chromeGated(showsChrome)
 
             LockButtonView(playerManager: playerManager)

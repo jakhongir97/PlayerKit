@@ -279,6 +279,14 @@ public class GestureManager: ObservableObject {
         )
     }
 
+    /// The chrome showed or hid. Published so the leaf that draws the resting
+    /// affordance re-evaluates ``showsRestingAffordance``; the surface it sits
+    /// on observes nothing, by design, and used to keep the rails on screen
+    /// long after the chrome they belong to had gone.
+    func chromeVisibilityDidChange() {
+        objectWillChange.send()
+    }
+
     /// Tier 0 is shown only when there is already chrome for it to belong to.
     var showsRestingAffordance: Bool {
         configuration.showsRestingRailAffordance

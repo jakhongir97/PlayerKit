@@ -127,11 +127,26 @@ public class PlayerManager: ObservableObject {
     /// host that has no brand to assert; an app that does gets its accent on
     /// the primary action pill and the played scrubber and nowhere else.
     @Published public var appearance: PlayerAppearance = .default
+    /// Actions the host contributes to the top bar's overflow menu.
+    ///
+    /// Empty — the default — withholds the menu's disc entirely. Set alongside
+    /// the item they apply to and cleared by ``tearDown()``, so a torn-down
+    /// manager does not advertise the previous session's actions to the next
+    /// host that picks it up. See ``PlayerHostAction``.
+    @Published public var hostActions: [PlayerHostAction] = []
     @Published var isSeeking: Bool = false
     @Published var isCasting: Bool = false
     @Published public internal(set) var isPiPActive: Bool = false
     @Published public internal(set) var isCastingAvailable: Bool = false
-    @Published var areControlsVisible: Bool = true
+    @Published var areControlsVisible: Bool = true {
+        didSet {
+            guard oldValue != areControlsVisible else { return }
+            // The resting rail affordance is gated on the chrome being up, but
+            // the gesture surface deliberately observes nothing at touch rate —
+            // so it has to be told when the one thing it is gated on changes.
+            gestureManager.chromeVisibilityDidChange()
+        }
+    }
     @Published var isLocked: Bool = false {
         didSet {
             guard oldValue != isLocked else { return }
@@ -974,6 +989,25 @@ extension PlayerManager {
     public func clearError() {
         isPlaybackErrorTerminal = false
         lastError = nil
+    }
+
+    /// The play/pause control's own action.
+    ///
+    /// Restarts a finished item rather than sending a `play()` the backend will
+    /// ignore: with the ended overlay suppressed by policy — trailers, live,
+    /// the embedded TV transport — a finished item left a frozen frame and a
+    /// dead button with no way back but closing the player.
+    ///
+    /// Deliberately NOT inside ``play()``. That is also the resume path for an
+    /// ended audio-session interruption, a Now Playing command and a queue
+    /// load, and restarting a finished film from zero because a phone call
+    /// ended is not what any of those asked for.
+    public func userDidTogglePlayback() {
+        if isVideoEnded {
+            replay()
+            return
+        }
+        isPlaybackRequested ? pause() : play()
     }
 
     public func play() {
@@ -2263,6 +2297,7 @@ extension PlayerManager {
         emitQoEEvents(qoeEventReducer.exited())
 
         resetPlayer(clearMediaContext: true)
+        hostActions = []
 
         gestureManager.reset()
         gestureManager.restoreSystemBrightness()

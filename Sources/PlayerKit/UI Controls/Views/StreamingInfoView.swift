@@ -12,6 +12,7 @@ struct StreamingInfoView: View {
         _streamingInfo = State(initialValue: .placeholder(using: playerManager.strings))
     }
 
+    /// Rows only: the options panel that hosts them draws the surface.
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             infoRow(playerManager.strings.bitrate, streamingInfo.videoBitrate)
@@ -19,19 +20,10 @@ struct StreamingInfoView: View {
             infoRow(playerManager.strings.frameRate, streamingInfo.frameRate)
             infoRow(playerManager.strings.resolution, streamingInfo.resolution)
         }
-        .padding(12)
-        .glassBackgroundCompat(cornerRadius: 16)
         .onAppear {
             playerManager.userInteracted()
             updateStreamingInfo()
             startTimer()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .PlayerKitControlsHidden)) { notification in
-            if notification.object as? Bool == true {
-                stopTimer()
-            } else {
-                startTimer()
-            }
         }
         .onDisappear { stopTimer() }
     }

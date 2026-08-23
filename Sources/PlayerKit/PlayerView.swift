@@ -116,10 +116,19 @@ public struct PlayerView: View {
             #endif
 
             // The gesture surface: touch host, HUD, affordances and coaching.
-            GestureSurface(manager: playerManager.gestureManager)
-                .zIndex(0)
+            //
+            // Measured here, outside its own full-bleed expansion, because a
+            // view that ignores the safe area cannot read it any more — see
+            // `GestureSurface.safeAreaInsets`.
+            GeometryReader { proxy in
+                GestureSurface(
+                    manager: playerManager.gestureManager,
+                    safeAreaInsets: proxy.safeAreaInsets
+                )
                 .edgesIgnoringSafeArea(.all)
-                .accessibilityHidden(hasBlockingStatus)
+            }
+            .zIndex(0)
+            .accessibilityHidden(hasBlockingStatus)
             
             // Player controls
             playerControls
@@ -128,16 +137,17 @@ public struct PlayerView: View {
                 .accessibilityHidden(hasBlockingStatus)
 
             // Buffering is transport state, not chrome. It must remain visible
-            // after controls auto-hide or while the player is locked.
-            if playerManager.isBuffering && !hasBlockingStatus {
-                VStack {
-                    BufferingIndicatorView(playerManager: playerManager)
-                        .padding(.top, 52)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .allowsHitTesting(false)
-                .zIndex(2)
+            // after controls auto-hide or while the player is locked — and
+            // that is the only time this standalone disc is drawn: while the
+            // chrome is up, the play/pause control shows the spinner inside
+            // its own disc. The standalone one used to hang 52pt from the top
+            // regardless, which put it on the title once the top bar could
+            // stack into two rows.
+            if showsStandaloneBufferingIndicator {
+                BufferingIndicatorView(playerManager: playerManager)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+                    .zIndex(2)
             }
 
             if playerManager.isVideoEnded && effectivePresentationPolicy.showsPlaybackEndedOverlay {
@@ -229,6 +239,14 @@ public struct PlayerView: View {
             loadedInput = nil
         }
         .animation(.easeInOut(duration: 0.3), value: playerManager.areControlsVisible)
+    }
+
+    /// The centred spinner stands in for the transport only when the transport
+    /// is not on screen to carry it.
+    var showsStandaloneBufferingIndicator: Bool {
+        playerManager.isBuffering
+            && !hasBlockingStatus
+            && !(playerManager.areControlsVisible && !playerManager.isLocked)
     }
 
     var hasBlockingStatus: Bool {

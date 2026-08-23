@@ -157,6 +157,19 @@ public extension View {
         }
     }
 
+    /// Keeps a `.popover` a popover in compact size classes.
+    ///
+    /// Before 16.4 the system always adapts to a sheet on iPhone; there is no
+    /// API to decline, so those versions keep the sheet.
+    @ViewBuilder
+    func popoverCompactAdaptationCompat() -> some View {
+        if #available(iOS 16.4, macOS 13.3, *) {
+            self.presentationCompactAdaptation(.popover)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder
     func monospacedDigitsCompat() -> some View {
         if #available(iOS 15.0, macOS 12.0, *) {

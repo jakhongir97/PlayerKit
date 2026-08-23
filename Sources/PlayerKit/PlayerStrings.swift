@@ -75,6 +75,8 @@ public struct PlayerStrings {
     public var minimumQuality = "Minimum"
     public var streamingInformation = "Streaming information"
     public var streamingInformationHint = "Shows bitrate, buffer, frame rate and resolution"
+    public var moreActions = "More"
+    public var moreActionsHint = "Shows more actions for this content"
     public var bitrate = "Bitrate"
     public var buffer = "Buffer"
     public var frameRate = "Frame Rate"

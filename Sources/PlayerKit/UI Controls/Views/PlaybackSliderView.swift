@@ -127,7 +127,7 @@ struct PlaybackSliderView: View {
                     invalidatePendingSeek()
                     sliderValue = playerManager.currentTime
                 }
-                .frame(height: sliderHeight)
+                .frame(minHeight: sliderHeight)
                 .padding(.horizontal, horizontalInset)
                 .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
@@ -154,7 +154,7 @@ struct PlaybackSliderView: View {
             // at 42/50 — four numbers for one row, none of which matched the
             // ~56pt the content actually wanted, so the scrubber's hit area
             // overhung the button bar beneath it.
-            .frame(height: sliderHeight)
+            .frame(minHeight: sliderHeight)
             // Nothing to scrub within: keep the row so the layout does not
             // jump while `duration` resolves, but do not offer a control that
             // cannot move the playhead.

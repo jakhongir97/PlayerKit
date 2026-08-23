@@ -11,13 +11,21 @@ import Foundation
 struct GestureSurface: View {
 
     let manager: GestureManager
+    /// The surface is deliberately full-bleed — a swipe should work over the
+    /// whole picture — which means its own `GeometryReader` reports *zero*
+    /// safe-area insets. `GestureGeometry` already keeps its rails and its pan
+    /// region clear of the insets it is given, so the rails were being drawn
+    /// 32pt from the raw bezel: under the Dynamic Island in landscape and in
+    /// the home-indicator band at the bottom. The host passes the real insets
+    /// measured outside the full-bleed expansion.
+    var safeAreaInsets: EdgeInsets?
     @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         GeometryReader { proxy in
             let surface = SurfaceGeometry(
                 size: proxy.size,
-                insets: proxy.safeAreaInsets,
+                insets: safeAreaInsets ?? proxy.safeAreaInsets,
                 layoutDirection: layoutDirection
             )
             let geometry = manager.resolvedGeometry(for: surface)
@@ -33,10 +41,7 @@ struct GestureSurface: View {
 
                 SeekOverlayHost(manager: manager, size: proxy.size)
 
-                GestureRailAffordanceView(
-                    geometry: geometry,
-                    isVisible: manager.showsRestingAffordance
-                )
+                RestingAffordanceHost(manager: manager, geometry: geometry)
 
                 GestureHUDView(model: manager.hudModel, geometry: geometry)
 
@@ -111,6 +116,26 @@ private struct AccessibleGestureTouchHost: View {
             .gestureAdjustmentAccessibilityActions(manager: manager, geometry: geometry)
             // Never `.accessibilityDirectTouch`: at full-screen size it
             // silences VoiceOver across the whole player, chrome included.
+    }
+}
+
+/// The resting rail affordance.
+///
+/// Its visibility depends on the chrome, the lock and the seek session — none
+/// of which the surface observes. Reading `showsRestingAffordance` from the
+/// surface's body meant it was evaluated once per geometry change and never
+/// again, so the rails stayed up after the chrome auto-hid and after the
+/// player locked. This leaf observes the manager, which republishes on each of
+/// those transitions.
+private struct RestingAffordanceHost: View {
+    @ObservedObject var manager: GestureManager
+    let geometry: GestureGeometry
+
+    var body: some View {
+        GestureRailAffordanceView(
+            geometry: geometry,
+            isVisible: manager.showsRestingAffordance
+        )
     }
 }
 

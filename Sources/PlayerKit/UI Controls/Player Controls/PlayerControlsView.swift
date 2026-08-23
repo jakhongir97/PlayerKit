@@ -33,8 +33,11 @@ struct PlayerControlsView: View {
                     // Presented on visibility alone: the row gates its own
                     // children on `showsChrome` and deliberately keeps the lock
                     // alive past it, since the lock is the way back out.
-                    TopControlsView(playerManager: playerManager)
-                        .presented(playerManager.areControlsVisible)
+                    TopControlsView(
+                        playerManager: playerManager,
+                        availableWidth: contentWidth
+                    )
+                    .presented(playerManager.areControlsVisible)
 
                     Spacer(minLength: PlayerChromeMetrics.spacingL)
 
@@ -97,7 +100,14 @@ struct PlayerControlsView: View {
         )
         .edgesIgnoringSafeArea(.all)
         .allowsHitTesting(false)
-        .opacity(playerManager.areControlsVisible ? 1 : 0)
+        // A locked player shows one disc. Carrying the full edge gradient for
+        // it dimmed the picture as heavily as a full bar of controls would.
+        .opacity(scrimOpacity)
+    }
+
+    private var scrimOpacity: Double {
+        guard playerManager.areControlsVisible else { return 0 }
+        return playerManager.isLocked ? 0.35 : 1
     }
 
     @ViewBuilder

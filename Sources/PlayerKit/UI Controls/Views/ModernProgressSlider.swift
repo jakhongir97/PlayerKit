@@ -98,6 +98,13 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         max(15, 8) + (trackPaddingY * 2)
     }
 
+    /// How far the drag target extends past the padded track on each side to
+    /// reach ``PlayerChromeMetrics/minimumHitTarget``.
+    private var touchTargetOverhang: CGFloat {
+        let interactiveHeight = trackHeight + (trackPaddingY * 2)
+        return max(0, (PlayerChromeMetrics.minimumHitTarget - interactiveHeight) / 2)
+    }
+
     var body: some View {
         VStack(spacing: PlayerChromeMetrics.spacingXS) {
             GeometryReader { bounds in
@@ -120,7 +127,9 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
             .playerChromeFont(.timecode)
             .foregroundColor(.white.opacity((isActive || isHoveringTrack) ? 0.95 : 0.7))
         }
-        .frame(height: containerHeight, alignment: .center)
+        // A minimum, not a clamp: the timecodes below scale with Dynamic Type
+        // and a fixed height cropped them from XXXL upwards.
+        .frame(minHeight: containerHeight, alignment: .center)
         .onAppear {
             syncProgress(with: value)
         }
@@ -181,7 +190,14 @@ struct ModernProgressSlider<T: BinaryFloatingPoint>: View {
         .frame(width: trackWidth, height: trackHeight, alignment: .leading)
         .padding(.horizontal, contentHorizontalInset)
         .padding(.vertical, trackPaddingY)
+        // The track is 5pt of line in 21pt of padded box — less than half the
+        // HIG minimum, on the one control in the player that is dragged rather
+        // than tapped. The overhang grows the *hit* area to 44pt and the
+        // negative padding hands the layout its original height back, so the
+        // scrubber is easier to catch without the row getting taller.
+        .padding(.vertical, touchTargetOverhang)
         .contentShape(Rectangle())
+        .padding(.vertical, -touchTargetOverhang)
         // No tray. The track used to sit on a full-width glass capsule, which
         // is why the timeline read as a grey bar pinned across the bottom of
         // the window rather than as a scrubber: a 5pt line inside a 40pt

@@ -27,8 +27,12 @@ struct PlaybackRecoveryOverlayView: View {
             } else {
                 VStack {
                     card
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
+                        .padding(.horizontal, PlayerChromeMetrics.spacingL)
+                        // Below the top bar, not on top of it. Pinned at 16pt
+                        // this card covered the close and lock discs, so a
+                        // recoverable error took the way out with it.
+                        .padding(.top, PlayerChromeMetrics.minimumHitTarget
+                                 + (PlayerChromeMetrics.spacingL * 2))
                     Spacer()
                 }
             }
@@ -59,9 +63,9 @@ struct PlaybackRecoveryOverlayView: View {
         }
         .padding(20)
         .frame(maxWidth: 520, alignment: .leading)
-        .thinMaterialBackgroundCompat(in: RoundedRectangle(cornerRadius: 20))
+        .thinMaterialBackgroundCompat(in: RoundedRectangle(cornerRadius: PlayerChromeMetrics.cardCornerRadius, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 20)
+            RoundedRectangle(cornerRadius: PlayerChromeMetrics.cardCornerRadius, style: .continuous)
                 .strokeBorder(.white.opacity(0.16), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
@@ -80,7 +84,7 @@ struct PlaybackRecoveryOverlayView: View {
                     Text(playerManager.strings.retry)
                 }
             }
-            .playbackActionButtonStyleCompat(prominent: true)
+            .playbackActionPill(prominent: true, appearance: playerManager.appearance)
             .disabled(playerManager.isRetryingPlayback)
             .accessibilityIdentifier("player.errorRetry")
         }
@@ -96,7 +100,7 @@ struct PlaybackRecoveryOverlayView: View {
                 playerManager.clearError()
             }
         }
-        .playbackActionButtonStyleCompat(prominent: false)
+        .playbackActionPill(prominent: false, appearance: playerManager.appearance)
         .accessibilityIdentifier(
             presentation.blocksPlayback ? "player.errorClose" : "player.errorDismiss"
         )
@@ -138,9 +142,9 @@ struct PlaybackEndedOverlayView: View {
                 }
             }
             .padding(24)
-            .thinMaterialBackgroundCompat(in: RoundedRectangle(cornerRadius: 20))
+            .thinMaterialBackgroundCompat(in: RoundedRectangle(cornerRadius: PlayerChromeMetrics.cardCornerRadius, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: PlayerChromeMetrics.cardCornerRadius, style: .continuous)
                     .strokeBorder(.white.opacity(0.16), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.35), radius: 18, y: 8)
@@ -153,50 +157,46 @@ struct PlaybackEndedOverlayView: View {
     @ViewBuilder
     private var endButtons: some View {
         Button(playerManager.strings.replay, action: playerManager.replay)
-            .playbackActionButtonStyleCompat(prominent: true)
+            .playbackActionPill(prominent: true, appearance: playerManager.appearance)
             .accessibilityIdentifier("player.replay")
 
         Button(playerManager.strings.close) {
             playerManager.shouldDismiss = true
         }
-        .playbackActionButtonStyleCompat(prominent: false)
+        .playbackActionPill(prominent: false, appearance: playerManager.appearance)
         .accessibilityIdentifier("player.endClose")
     }
 }
 
 private extension View {
-    @ViewBuilder
-    func playbackActionButtonStyleCompat(prominent: Bool) -> some View {
-        if #available(iOS 15.0, macOS 12.0, *) {
-            if prominent {
-                self.buttonStyle(.borderedProminent).controlSize(.large)
-            } else {
-                self.buttonStyle(.bordered).controlSize(.large)
-            }
-        } else {
-            self.buttonStyle(PlaybackActionFallbackButtonStyle(prominent: prominent))
-        }
+    /// The overlay actions wear the chrome's own pills.
+    ///
+    /// They used to be `.borderedProminent` / `.bordered`, which paint with
+    /// whatever `tintColor` the host's window carries — iTV's is a bright
+    /// green under a white label, ~1.8:1 — and ignore ``PlayerAppearance``
+    /// entirely, the one styling hook the design gives a host. The prominent
+    /// pill is the same surface as the skip-intro pill; the secondary one is
+    /// the bar surface every other capsule in the chrome sits on.
+    func playbackActionPill(prominent: Bool, appearance: PlayerAppearance) -> some View {
+        buttonStyle(PlaybackActionPillStyle(prominent: prominent, appearance: appearance))
     }
 }
 
-private struct PlaybackActionFallbackButtonStyle: ButtonStyle {
+private struct PlaybackActionPillStyle: ButtonStyle {
     let prominent: Bool
+    let appearance: PlayerAppearance
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.body.weight(.semibold))
-            .foregroundColor(prominent ? .white : .accentColor)
-            .padding(.horizontal, 16)
-            .frame(minHeight: 44)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(prominent ? Color.accentColor : Color.white.opacity(0.12))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.white.opacity(prominent ? 0 : 0.18), lineWidth: 1)
-            )
-            .opacity(configuration.isPressed ? 0.78 : 1)
+            .playerChromeFont(.action)
+            .foregroundColor(prominent ? appearance.accentForeground : .white)
+            .padding(.horizontal, PlayerChromeMetrics.pillHorizontalPadding)
+            .frame(minHeight: PlayerChromeMetrics.barItemHeight)
+            .playerSurfaceShape(.capsule)
+            .playerGlass(.capsule, prominence: prominent ? .prominent : .bar, appearance: appearance)
+            .scaleEffect(configuration.isPressed ? PlayerChromeMotion.pressedScale : 1)
+            .opacity(configuration.isPressed ? 0.9 : 1)
+            .animation(PlayerChromeMotion.press, value: configuration.isPressed)
     }
 }
 

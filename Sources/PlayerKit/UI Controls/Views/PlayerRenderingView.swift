@@ -19,19 +19,15 @@ struct PlayerRenderingView: View {
                     captureProtectionPolicy: playerManager.captureProtectionPolicy
                 )
             } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "play.rectangle")
-                        .font(.largeTitle)
-                        .accessibilityHidden(true)
-                    Text(playerManager.strings.noVideoLoaded)
-                        .font(.headline)
-                    Text(playerManager.strings.chooseVideoToBegin)
-                        .font(.subheadline)
-                        .multilineTextAlignment(.center)
-                }
-                    .foregroundColor(.white)
-                    .padding(24)
-                    .accessibilityElement(children: .combine)
+                // Quiet, not chatty. This used to read "No video loaded —
+                // Choose a video to begin playback", a demo-app empty state
+                // that real users saw for the whole of a URL fetch and after
+                // an entitlement failure. A host that presents a player has
+                // already decided what to play; until it arrives the honest
+                // state is "loading", and the error path has its own card.
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .accessibilityLabel(playerManager.strings.buffering)
                     .accessibilityIdentifier("player.emptyState")
             }
         }

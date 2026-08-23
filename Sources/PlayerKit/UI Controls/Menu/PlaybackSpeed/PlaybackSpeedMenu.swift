@@ -20,7 +20,9 @@ struct PlaybackSpeedMenu: View {
                 }
             }
         } label: {
-            Image(systemName: "gauge.with.needle")
+            // `gauge.with.needle` is iOS 17+; `speedometer` is its name since
+            // SF Symbols 1, so the glyph cannot come up blank on 14–16.
+            Image.systemSymbol("gauge.with.needle", fallback: "speedometer")
                 .playerBarGlyph()
         }
         .hidesMenuIndicatorCompat()
