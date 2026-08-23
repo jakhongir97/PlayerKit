@@ -360,7 +360,10 @@ final class PlayerKitTests: XCTestCase {
         manager.load(playerItem: item)
         manager.playerDidBecomeReady()
 
-        try? await Task.sleep(nanoseconds: 1_400_000_000)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while player.playCallCount < 4, ContinuousClock.now < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
 
         XCTAssertTrue(manager.isPlaying)
         XCTAssertTrue(manager.isPlaybackRequested)
