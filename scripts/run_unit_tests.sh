@@ -76,7 +76,7 @@ case "$destination" in
   platform=macOS*)
     # ponytail: the package has unit tests only; SwiftPM avoids Xcode's flaky
     # headless macOS test host. Use xcodebuild again if a UI-test bundle is added.
-    swift test --parallel
+    swift test
     exit 0
     ;;
 esac
