@@ -360,8 +360,9 @@ final class PlayerKitTests: XCTestCase {
         manager.load(playerItem: item)
         manager.playerDidBecomeReady()
 
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while player.playCallCount < 4, ContinuousClock.now < deadline {
+        let processInfo = ProcessInfo.processInfo
+        let deadline = processInfo.systemUptime + 3
+        while player.playCallCount < 4, processInfo.systemUptime < deadline {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
 
