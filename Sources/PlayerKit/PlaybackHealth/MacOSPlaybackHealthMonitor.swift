@@ -476,11 +476,15 @@ final class MacOSPlaybackHealthMonitor: @unchecked Sendable {
                         // Calling it on macOS 15 aborts with an unrecognized selector;
                         // keep the rest of AVMetrics and omit only this optional field.
                         let segmentDuration: Double?
+                        #if compiler(>=6.2)
                         if #available(macOS 26, *) {
                             segmentDuration = segment.segmentDuration
                         } else {
                             segmentDuration = nil
                         }
+                        #else
+                        segmentDuration = nil
+                        #endif
                         recordMetricRequest(
                             kind: .segment,
                             mediaType: mediaType,

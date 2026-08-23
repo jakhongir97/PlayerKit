@@ -438,11 +438,11 @@ struct PlaybackHealthSeekTelemetry: Equatable, Sendable {
         latestCompletedAt = occurredAt
         latestDidSeekInBuffer = didSeekInBuffer
         switch didSeekInBuffer {
-        case true:
+        case .some(true):
             inBufferCount += 1
-        case false:
+        case .some(false):
             outsideBufferCount += 1
-        case nil:
+        case .none:
             unknownBufferCount += 1
         }
     }
