@@ -72,6 +72,15 @@ if [[ -z "$destination" ]]; then
 fi
 
 echo "Running tests on destination: $destination"
+case "$destination" in
+  platform=macOS*)
+    # ponytail: the package has unit tests only; SwiftPM avoids Xcode's flaky
+    # headless macOS test host. Use xcodebuild again if a UI-test bundle is added.
+    swift test --parallel
+    exit 0
+    ;;
+esac
+
 xcodebuild test \
   -scheme "$SCHEME" \
   -destination "$destination" \
