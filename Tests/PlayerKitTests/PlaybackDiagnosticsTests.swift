@@ -1440,10 +1440,10 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         let deadline = Date().addingTimeInterval(30)
         var snapshot = manager.fetchPlaybackDiagnostics()
         while Date() < deadline {
-            let observedRequests = snapshot.monitor?.observedHLSRequestCount ?? 0
+            let observedSegments = snapshot.monitor?.segmentRequestCount ?? 0
             if snapshot.session.monitorAttached,
                snapshot.playback.isLikelyHLS == true,
-               observedRequests > 0,
+               observedSegments > 0,
                snapshot.network.accessLogEventCount > 0 {
                 break
             }
@@ -1454,7 +1454,7 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         XCTAssertTrue(snapshot.session.monitorAttached)
         XCTAssertEqual(snapshot.session.availability, .activeAVMetrics)
         XCTAssertEqual(snapshot.playback.isLikelyHLS, true)
-        XCTAssertGreaterThan(snapshot.monitor?.observedHLSRequestCount ?? 0, 0)
+        XCTAssertGreaterThan(snapshot.monitor?.segmentRequestCount ?? 0, 0)
         XCTAssertGreaterThan(snapshot.network.accessLogEventCount, 0)
         XCTAssertTrue(snapshot.session.assetIdentifier?.hasPrefix("sha256:") == true)
 

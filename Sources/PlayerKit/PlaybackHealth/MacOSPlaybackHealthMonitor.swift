@@ -471,11 +471,21 @@ final class MacOSPlaybackHealthMonitor: @unchecked Sendable {
                         let resource = segment.mediaResourceRequestEvent
                         let metricError = resource?.errorEvent
                         let mediaType = playbackHealthMediaType(segment.mediaType)
+                        // ponytail: Apple added this getter with macOS 26, but the
+                        // 26.2 SDK omits its property-level availability annotation.
+                        // Calling it on macOS 15 aborts with an unrecognized selector;
+                        // keep the rest of AVMetrics and omit only this optional field.
+                        let segmentDuration: Double?
+                        if #available(macOS 26, *) {
+                            segmentDuration = segment.segmentDuration
+                        } else {
+                            segmentDuration = nil
+                        }
                         recordMetricRequest(
                             kind: .segment,
                             mediaType: mediaType,
                             clientInitiated: false,
-                            segmentDuration: segment.segmentDuration,
+                            segmentDuration: segmentDuration,
                             occurredAt: segment.date,
                             resource: resource
                         )
