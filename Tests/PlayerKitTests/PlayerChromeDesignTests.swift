@@ -158,7 +158,15 @@ final class PlayerChromeDesignTests: XCTestCase {
             url: URL(string: "https://example.com/a.m3u8")!
         )
         let top = TopControlsView(playerManager: manager)
+        #if os(iOS)
+        let controls = PlayerControlsView(
+            playerManager: manager,
+            thumbnailPreviewController: WebVTTThumbnailPreviewController(),
+            presentationPolicy: .init()
+        )
+        #else
         let controls = PlayerControlsView(playerManager: manager, presentationPolicy: .init())
+        #endif
 
         manager.areControlsVisible = true
         manager.isLocked = false

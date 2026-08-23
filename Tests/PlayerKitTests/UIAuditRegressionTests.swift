@@ -178,14 +178,28 @@ final class UIAuditRegressionTests: XCTestCase {
         manager.isLocked = false
 
         manager.playerItem = PlayerItem(title: "Automatic", url: url)
-        XCTAssertTrue(
-            PlayerControlsView(playerManager: manager, presentationPolicy: .init()).showsScrubber
+        #if os(iOS)
+        let automaticControls = PlayerControlsView(
+            playerManager: manager,
+            thumbnailPreviewController: WebVTTThumbnailPreviewController(),
+            presentationPolicy: .init()
         )
+        #else
+        let automaticControls = PlayerControlsView(playerManager: manager, presentationPolicy: .init())
+        #endif
+        XCTAssertTrue(automaticControls.showsScrubber)
 
         manager.playerItem = PlayerItem(title: "Pure live", url: url, timelineMode: .pureLive)
-        XCTAssertFalse(
-            PlayerControlsView(playerManager: manager, presentationPolicy: .init()).showsScrubber
+        #if os(iOS)
+        let liveControls = PlayerControlsView(
+            playerManager: manager,
+            thumbnailPreviewController: WebVTTThumbnailPreviewController(),
+            presentationPolicy: .init()
         )
+        #else
+        let liveControls = PlayerControlsView(playerManager: manager, presentationPolicy: .init())
+        #endif
+        XCTAssertFalse(liveControls.showsScrubber)
     }
 
     func testExplicitLiveModesResolvePresentationAndMarkerPoliciesInternally() {

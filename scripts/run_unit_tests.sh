@@ -36,31 +36,39 @@ pick_destination() {
   return 0
 }
 
-destination=""
+destination="${PLAYERKIT_TEST_DESTINATION:-}"
 
-for preferred in "iPhone 17" "iPhone 16" "iPhone 15" "iPhone 14"; do
-  if destination="$(pick_destination "$preferred")"; then
-    break
-  fi
-done
+if [[ -z "$destination" ]]; then
+  for preferred in "iPhone 17" "iPhone 16" "iPhone 15" "iPhone 14"; do
+    if destination="$(pick_destination "$preferred")"; then
+      break
+    fi
+  done
+fi
 
 if [[ -z "$destination" ]]; then
   line="$(printf '%s\n' "$destinations" | awk '
     $0 ~ /platform:iOS Simulator/ && $0 ~ /name:iPhone/ { print; exit }
   ')"
   if [[ -z "$line" ]]; then
-    echo "error: no iPhone simulator destination found for scheme '$SCHEME'" >&2
-    exit 1
+    line="$(printf '%s\n' "$destinations" | awk '
+      $0 ~ /platform:macOS/ && $0 !~ /variant:/ { print; exit }
+    ')"
+    if [[ -z "$line" ]]; then
+      echo "error: no iPhone simulator or macOS destination found for scheme '$SCHEME'" >&2
+      exit 1
+    fi
+    destination="platform=macOS"
+  else
+    id="$(printf '%s\n' "$line" | sed -n 's/.*id:\([^,}]*\).*/\1/p' | tr -d ' ')"
+
+    if [[ -z "$id" ]]; then
+      echo "error: failed to parse fallback simulator destination" >&2
+      exit 1
+    fi
+
+    destination="platform=iOS Simulator,id=$id"
   fi
-
-  id="$(printf '%s\n' "$line" | sed -n 's/.*id:\([^,}]*\).*/\1/p' | tr -d ' ')"
-
-  if [[ -z "$id" ]]; then
-    echo "error: failed to parse fallback simulator destination" >&2
-    exit 1
-  fi
-
-  destination="platform=iOS Simulator,id=$id"
 fi
 
 echo "Running tests on destination: $destination"
