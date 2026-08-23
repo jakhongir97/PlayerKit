@@ -41,7 +41,7 @@ struct GestureSurface: View {
 
                 SeekOverlayHost(manager: manager, size: proxy.size)
 
-                RestingAffordanceHost(manager: manager, geometry: geometry)
+                RestingAffordanceHost(manager: manager, surface: surface)
 
                 GestureHUDView(model: manager.hudModel, geometry: geometry)
 
@@ -121,19 +121,26 @@ private struct AccessibleGestureTouchHost: View {
 
 /// The resting rail affordance.
 ///
-/// Its visibility depends on the chrome, the lock and the seek session — none
-/// of which the surface observes. Reading `showsRestingAffordance` from the
-/// surface's body meant it was evaluated once per geometry change and never
-/// again, so the rails stayed up after the chrome auto-hid and after the
-/// player locked. This leaf observes the manager, which republishes on each of
-/// those transitions.
+/// Its visibility depends on the chrome, the lock and the seek session, and
+/// its *icons* depend on the capabilities — none of which the surface
+/// observes. Reading either from the surface's body meant they were evaluated
+/// once per geometry change and never again: the rails stayed up after the
+/// chrome auto-hid, and on a fresh launch both sides wore the volume glyph,
+/// because brightness only becomes available once the touch host lands in a
+/// window — after the surface's first render — and nothing repainted. This
+/// leaf observes the manager (which republishes on those transitions and
+/// bumps `capabilitiesGeneration` when the rails' meaning changes) and
+/// resolves the geometry itself, so it always draws current capabilities.
 private struct RestingAffordanceHost: View {
     @ObservedObject var manager: GestureManager
-    let geometry: GestureGeometry
+    let surface: SurfaceGeometry
 
     var body: some View {
+        // Reads capabilitiesGeneration so a capability change re-renders this
+        // leaf even though the resolved geometry is computed, not observed.
+        let _ = manager.capabilitiesGeneration
         GestureRailAffordanceView(
-            geometry: geometry,
+            geometry: manager.resolvedGeometry(for: surface),
             isVisible: manager.showsRestingAffordance
         )
     }

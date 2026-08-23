@@ -1042,3 +1042,64 @@ final class GestureCapabilityFreshnessTests: XCTestCase {
         XCTAssertEqual(manager.currentCapabilities().volume, .unavailable(.disabledByHost))
     }
 }
+
+// MARK: - Rail identity
+
+/// What each rail *is*, and when the answer is allowed to change.
+///
+/// On a fresh launch the brightness control has no window yet — it only gets
+/// one when the touch host lands in the hierarchy, which is after the gesture
+/// surface's first render. `kind(forSide:)` deliberately falls back to volume
+/// for an unavailable side (that is correct on macOS, where both halves drive
+/// volume), so for one render the leading rail honestly resolves to volume.
+/// The bug was that nothing ever repainted: the affordance kept the volume
+/// glyph on both sides for the rest of the session while the drag underneath
+/// drove brightness. The affordance leaf now re-renders off
+/// `capabilitiesGeneration`, so these tests pin the two halves of that chain.
+@MainActor
+final class RailIdentityTests: XCTestCase {
+
+    /// The fallback that produced the double-speaker screenshot.
+    func testLeadingRailFallsBackToVolumeOnlyWhileBrightnessIsUnavailable() {
+        var capabilities = GestureCapabilities()
+        capabilities.volume = .available
+        capabilities.brightness = .unavailable(.notSupportedOnPlatform)
+        let withoutWindow = GestureGeometry(
+            surface: SurfaceGeometry(size: CGSize(width: 800, height: 400)),
+            capabilities: capabilities,
+            railMapping: .brightnessLeading
+        )
+        XCTAssertEqual(withoutWindow.kind(forSide: .leading), .volume,
+                       "No brightness anywhere: the leading rail may fall back")
+        XCTAssertEqual(withoutWindow.kind(forSide: .trailing), .volume)
+
+        capabilities.brightness = .available
+        let withWindow = GestureGeometry(
+            surface: SurfaceGeometry(size: CGSize(width: 800, height: 400)),
+            capabilities: capabilities,
+            railMapping: .brightnessLeading
+        )
+        XCTAssertEqual(withWindow.kind(forSide: .leading), .brightness,
+                       "With brightness available the sides must differ again")
+        XCTAssertEqual(withWindow.kind(forSide: .trailing), .volume)
+    }
+
+    /// The repaint signal: a capability change bumps the published generation
+    /// exactly when the answer changes, so the affordance leaf redraws — and
+    /// stays quiet when nothing changed, so it cannot re-render at touch rate.
+    func testCapabilityRefreshPublishesExactlyOnRealChanges() {
+        let manager = GestureManager()
+        manager.configuration.isEnabled = true
+        manager.refreshCapabilities()
+        let baseline = manager.capabilitiesGeneration
+
+        manager.refreshCapabilities()
+        XCTAssertEqual(manager.capabilitiesGeneration, baseline,
+                       "No change, no publish")
+
+        manager.configuration.isVolumeGestureEnabled.toggle()
+        // configuration.didSet refreshes on its own; assert the bump landed.
+        XCTAssertGreaterThan(manager.capabilitiesGeneration, baseline,
+                             "A real capability change must publish")
+    }
+}

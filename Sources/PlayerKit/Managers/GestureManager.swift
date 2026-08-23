@@ -207,7 +207,10 @@ public class GestureManager: ObservableObject {
         speedHold.multiplier = configuration.speedHoldMultiplier
         coach.policy = configuration.coachPolicy
         geometry.railMapping = configuration.railMapping
-        geometry.capabilities = currentCapabilities()
+        // Through refreshCapabilities(), not a direct write: the refresh is
+        // what bumps capabilitiesGeneration, and a host toggling a gesture
+        // flag has to repaint the rail affordance like any other change.
+        refreshCapabilities()
         updateSystemVolumeMount()
     }
 
@@ -295,10 +298,17 @@ public class GestureManager: ObservableObject {
             && !isDoubleTapSeeking
     }
 
+    /// Bumped whenever ``refreshCapabilities()`` finds the capabilities have
+    /// actually changed. `geometry` itself is deliberately not published — it
+    /// is written at layout rate — so this is the one signal a view can watch
+    /// for "what the rails control has changed".
+    @Published private(set) var capabilitiesGeneration = 0
+
     func refreshCapabilities() {
         let next = currentCapabilities()
         guard geometry.capabilities != next else { return }
         geometry.capabilities = next
+        capabilitiesGeneration &+= 1
     }
 
     /// Invalidates the small observed accessibility leaves when external state
@@ -321,7 +331,13 @@ public class GestureManager: ObservableObject {
         attachedWindow = window
         brightnessControl.window = window
         updateSystemVolumeMount()
-        refreshCapabilities()
+        // Deferred: this is called from `didMoveToWindow`, i.e. mid layout
+        // pass, and refreshing here now publishes (capabilitiesGeneration).
+        // Publishing during a view update is exactly the transaction SwiftUI
+        // forbids; one runloop hop later the rails repaint just the same.
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshCapabilities()
+        }
     }
 
     private func updateSystemVolumeMount() {
