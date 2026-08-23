@@ -984,7 +984,7 @@ extension AVPlayerWrapper: GestureHandlingProtocol {
     }
 }
 
-extension AVPlayerWrapper: @MainActor AVPictureInPictureControllerDelegate {
+extension AVPlayerWrapper: @preconcurrency AVPictureInPictureControllerDelegate {
     public func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
         lifecycleReporter?.playerDidChangePiPState(isActive: true)
     }
