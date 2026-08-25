@@ -17,7 +17,12 @@ public struct PlayerHostAction: Identifiable {
     /// What the row does when chosen.
     public enum Kind {
         /// Runs on the main actor when the row is tapped.
-        case action(@MainActor () -> Void)
+        ///
+        /// `@Sendable` because the menu does not run it inline: it closes the
+        /// popover first and hands the closure to the main queue, which only
+        /// accepts a sendable one. Main-actor isolation still means captures
+        /// need not be sendable themselves.
+        case action(@MainActor @Sendable () -> Void)
         /// Opens a nested menu of these rows. An empty list renders nothing.
         case submenu([PlayerHostAction])
     }
@@ -54,7 +59,7 @@ public struct PlayerHostAction: Identifiable {
         title: String,
         image: Image? = nil,
         isEnabled: Bool = true,
-        handler: @escaping @MainActor () -> Void
+        handler: @escaping @MainActor @Sendable () -> Void
     ) {
         self.init(id: id, title: title, image: image, isEnabled: isEnabled, kind: .action(handler))
     }
@@ -65,7 +70,7 @@ public struct PlayerHostAction: Identifiable {
         title: String,
         systemImage: String,
         isEnabled: Bool = true,
-        handler: @escaping @MainActor () -> Void
+        handler: @escaping @MainActor @Sendable () -> Void
     ) {
         self.init(
             id: id,

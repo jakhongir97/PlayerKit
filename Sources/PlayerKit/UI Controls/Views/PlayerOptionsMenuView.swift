@@ -69,7 +69,7 @@ private struct PlayerOptionsPanel: View {
     /// the popover stranded over the thing it presented, and a stranded panel
     /// also never runs `onDisappear`, so the chrome hold below would never be
     /// released and the bar would stop auto-hiding for the rest of the session.
-    private func dismissThen(_ action: @escaping @MainActor () -> Void) {
+    private func dismissThen(_ action: @escaping @MainActor @Sendable () -> Void) {
         playerManager.userInteracted()
         dismiss()
         DispatchQueue.main.async(execute: action)
