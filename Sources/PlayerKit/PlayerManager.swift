@@ -258,6 +258,7 @@ public class PlayerManager: ObservableObject {
             // Bump *before* the other refreshes so anything they trigger already
             // sees the new generation.
             playerGeneration &+= 1
+            refreshPlaybackQualityAvailability()
             gestureManager.refreshCapabilities()
             gestureManager.refreshAccessibilityState()
             refreshPlaybackWakeLock()
@@ -1283,6 +1284,17 @@ extension PlayerManager {
         guard playbackQualityBitRates.count > 1 else {
             availablePlaybackQualityPresets = []
             playbackQualityPolicy = .automatic
+            return
+        }
+        refreshPlaybackQualityAvailability()
+    }
+
+    private func refreshPlaybackQualityAvailability() {
+        // VLC owns its adaptive selection. Showing AVFoundation presets there
+        // produces a menu whose choices cannot affect playback.
+        guard currentPlayer is AVPlayerWrapper,
+              playbackQualityBitRates.count > 1 else {
+            availablePlaybackQualityPresets = []
             return
         }
 

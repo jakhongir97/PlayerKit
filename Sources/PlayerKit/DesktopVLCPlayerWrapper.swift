@@ -75,6 +75,58 @@ private struct DesktopVLCTrackDescription {
     var next: UnsafeMutablePointer<DesktopVLCTrackDescription>?
 }
 
+// Mirrors libvlc_media_stats_t from VLC 3. Keep the field order in sync with
+// libvlc_media.h; the focused ABI test guards the layout used through dlsym.
+struct DesktopVLCMediaStats {
+    var readBytes: Int32 = 0
+    var inputBitrate: Float = 0
+    var demuxReadBytes: Int32 = 0
+    var demuxBitrate: Float = 0
+    var demuxCorrupted: Int32 = 0
+    var demuxDiscontinuity: Int32 = 0
+    var decodedVideo: Int32 = 0
+    var decodedAudio: Int32 = 0
+    var displayedPictures: Int32 = 0
+    var lostPictures: Int32 = 0
+    var playedAudioBuffers: Int32 = 0
+    var lostAudioBuffers: Int32 = 0
+    var sentPackets: Int32 = 0
+    var sentBytes: Int32 = 0
+    var sendBitrate: Float = 0
+}
+
+struct DesktopVLCStreamingMetrics {
+    var width: UInt32?
+    var height: UInt32?
+    var framesPerSecond: Float?
+    /// VLC 3 reports this as bytes per microsecond, numerically megabytes/sec.
+    var demuxBitrate: Float?
+
+    func streamingInfo(using strings: PlayerStrings) -> StreamingInfo {
+        let frameRate = framesPerSecond.flatMap { value in
+            value.isFinite && value > 0 ? strings.streamingFrameRateValue(Double(value)) : nil
+        } ?? strings.streamingUnknownValue
+        let videoBitrate = demuxBitrate.flatMap { value in
+            value.isFinite && value > 0 ? strings.streamingVideoBitrateValue(Double(value) * 8) : nil
+        } ?? strings.streamingUnknownValue
+        let resolution: String
+        if let width, let height, width > 0, height > 0 {
+            resolution = strings.streamingResolutionValue(Int(width), Int(height))
+        } else {
+            resolution = strings.streamingUnknownValue
+        }
+
+        return StreamingInfo(
+            frameRate: frameRate,
+            videoBitrate: videoBitrate,
+            resolution: resolution,
+            // libvlc 3 exposes its cache fill percentage, not a buffered range
+            // or duration. Reporting zero seconds would invent a measurement.
+            bufferDuration: strings.streamingUnknownValue
+        )
+    }
+}
+
 // Every field is immutable after initialization. Calls operate on libvlc-owned
 // handles, whose API provides its own synchronization; deinit runs only after
 // the singleton is unreachable. This makes sharing the resolved C function
@@ -112,6 +164,10 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
     private typealias LibVLCVideoSetSPU = @convention(c) (VLCMediaPlayerPointer?, Int32) -> Int32
     private typealias LibVLCVideoGetSPUDescription = @convention(c) (VLCMediaPlayerPointer?) -> UnsafeMutableRawPointer?
     private typealias LibVLCTrackDescriptionListRelease = @convention(c) (UnsafeMutableRawPointer?) -> Void
+    private typealias LibVLCVideoGetSize = @convention(c) (VLCMediaPlayerPointer?, UInt32, UnsafeMutablePointer<UInt32>?, UnsafeMutablePointer<UInt32>?) -> Int32
+    private typealias LibVLCMediaPlayerGetFPS = @convention(c) (VLCMediaPlayerPointer?) -> Float
+    private typealias LibVLCMediaPlayerGetMedia = @convention(c) (VLCMediaPlayerPointer?) -> VLCMediaPointer?
+    private typealias LibVLCMediaGetStats = @convention(c) (VLCMediaPointer?, UnsafeMutableRawPointer?) -> Int32
 
     static let shared = DesktopVLCLibrary()
     static var isAvailable: Bool { shared.available }
@@ -148,6 +204,10 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
     private let videoSetSPUFn: LibVLCVideoSetSPU?
     private let videoGetSPUDescriptionFn: LibVLCVideoGetSPUDescription?
     private let releaseTrackDescriptionFn: LibVLCTrackDescriptionListRelease?
+    private let videoGetSizeFn: LibVLCVideoGetSize?
+    private let mediaPlayerGetFPSFn: LibVLCMediaPlayerGetFPS?
+    private let mediaPlayerGetMediaFn: LibVLCMediaPlayerGetMedia?
+    private let mediaGetStatsFn: LibVLCMediaGetStats?
 
     private init() {
         guard DesktopVLCPaths.isInstalled else {
@@ -182,6 +242,10 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
             videoSetSPUFn = nil
             videoGetSPUDescriptionFn = nil
             releaseTrackDescriptionFn = nil
+            videoGetSizeFn = nil
+            mediaPlayerGetFPSFn = nil
+            mediaPlayerGetMediaFn = nil
+            mediaGetStatsFn = nil
             return
         }
 
@@ -232,6 +296,10 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
             videoSetSPUFn = nil
             videoGetSPUDescriptionFn = nil
             releaseTrackDescriptionFn = nil
+            videoGetSizeFn = nil
+            mediaPlayerGetFPSFn = nil
+            mediaPlayerGetMediaFn = nil
+            mediaGetStatsFn = nil
             return
         }
 
@@ -269,6 +337,12 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
         videoSetSPUFn = Self.loadSymbol(vlcHandle, "libvlc_video_set_spu", as: LibVLCVideoSetSPU.self)
         videoGetSPUDescriptionFn = Self.loadSymbol(vlcHandle, "libvlc_video_get_spu_description", as: LibVLCVideoGetSPUDescription.self)
         releaseTrackDescriptionFn = Self.loadSymbol(vlcHandle, "libvlc_track_description_list_release", as: LibVLCTrackDescriptionListRelease.self)
+        // Metrics are optional: an otherwise usable VLC 3 runtime must still
+        // remain available if a vendor build omits a diagnostic symbol.
+        videoGetSizeFn = Self.loadSymbol(vlcHandle, "libvlc_video_get_size", as: LibVLCVideoGetSize.self)
+        mediaPlayerGetFPSFn = Self.loadSymbol(vlcHandle, "libvlc_media_player_get_fps", as: LibVLCMediaPlayerGetFPS.self)
+        mediaPlayerGetMediaFn = Self.loadSymbol(vlcHandle, "libvlc_media_player_get_media", as: LibVLCMediaPlayerGetMedia.self)
+        mediaGetStatsFn = Self.loadSymbol(vlcHandle, "libvlc_media_get_stats", as: LibVLCMediaGetStats.self)
 
         available =
             coreHandle != nil &&
@@ -491,6 +565,47 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
         guard let player, let videoSetSPUFn else { return }
         let id = identifier.flatMap(Int32.init) ?? -1
         _ = videoSetSPUFn(player, id)
+    }
+
+    func streamingMetrics(for player: VLCMediaPlayerPointer?) -> DesktopVLCStreamingMetrics {
+        guard let player else {
+            return DesktopVLCStreamingMetrics()
+        }
+
+        var width: UInt32 = 0
+        var height: UInt32 = 0
+        let hasVideoSize = videoGetSizeFn?(player, 0, &width, &height) == 0
+            && width > 0
+            && height > 0
+
+        let rawFrameRate = mediaPlayerGetFPSFn?(player)
+        let frameRate = rawFrameRate.flatMap { value in
+            value.isFinite && value > 0 ? value : nil
+        }
+
+        var demuxBitrate: Float?
+        if let mediaPlayerGetMediaFn,
+           let mediaGetStatsFn,
+           let media = mediaPlayerGetMediaFn(player) {
+            // libvlc_media_player_get_media retains its result in VLC 3.
+            defer { releaseMediaFn?(media) }
+            var stats = DesktopVLCMediaStats()
+            let hasStats = withUnsafeMutablePointer(to: &stats) { pointer in
+                mediaGetStatsFn(media, UnsafeMutableRawPointer(pointer)) != 0
+            }
+            if hasStats,
+               stats.demuxBitrate.isFinite,
+               stats.demuxBitrate > 0 {
+                demuxBitrate = stats.demuxBitrate
+            }
+        }
+
+        return DesktopVLCStreamingMetrics(
+            width: hasVideoSize ? width : nil,
+            height: hasVideoSize ? height : nil,
+            framesPerSecond: frameRate,
+            demuxBitrate: demuxBitrate
+        )
     }
 
     private func trackInfos(
@@ -811,11 +926,11 @@ extension DesktopVLCPlayerWrapper: GestureHandlingProtocol {
 
 extension DesktopVLCPlayerWrapper: StreamingInfoProtocol {
     public func fetchStreamingInfo() -> StreamingInfo {
-        .placeholder
+        fetchStreamingInfo(using: PlayerStrings())
     }
 
     public func fetchStreamingInfo(using strings: PlayerStrings) -> StreamingInfo {
-        .placeholder(using: strings)
+        runtime.streamingMetrics(for: mediaPlayer).streamingInfo(using: strings)
     }
 }
 

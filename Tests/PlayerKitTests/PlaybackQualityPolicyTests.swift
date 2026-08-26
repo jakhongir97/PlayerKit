@@ -75,6 +75,7 @@ final class PlaybackQualityPolicyTests: XCTestCase {
 
     func testQualityPresetsSanitizeAndMapStandardTiers() {
         let manager = PlayerManager.shared
+        manager.setPlayer(type: .avPlayer)
         manager.configurePlaybackQualityBitRates([
             6_000_000, 1_000_000, 3_000_000, 3_000_000, 0, -1, .nan, .infinity
         ])
@@ -97,6 +98,7 @@ final class PlaybackQualityPolicyTests: XCTestCase {
 
     func testSemanticQualityChoiceRemapsAcrossManifestsAndSingleVariant() {
         let manager = PlayerManager.shared
+        manager.setPlayer(type: .avPlayer)
         manager.configurePlaybackQualityBitRates([1_000_000, 3_000_000, 6_000_000])
         manager.selectPlaybackQualityPreset(.minimum)
         XCTAssertEqual(manager.playbackQualityPolicy.maximumBitRate, 1_000_000)
@@ -113,6 +115,28 @@ final class PlaybackQualityPolicyTests: XCTestCase {
         manager.resetPlaybackQualitySelection()
         XCTAssertEqual(manager.selectedPlaybackQualityPreset, .automatic)
         XCTAssertEqual(manager.playbackQualityPolicy, .automatic)
+    }
+
+    func testQualityPresetsHideOnUnsupportedBackendAndReturnOnAVPlayer() throws {
+        #if os(macOS) && !canImport(VLCKit)
+        let manager = PlayerManager.shared
+        manager.setPlayer(type: .avPlayer)
+        manager.configurePlaybackQualityBitRates([1_000_000, 3_000_000])
+        manager.selectPlaybackQualityPreset(.minimum)
+        XCTAssertEqual(manager.playbackQualityPolicy.maximumBitRate, 1_000_000)
+
+        manager.installPlayerBackend(DesktopVLCPlayerWrapper())
+        XCTAssertTrue(manager.availablePlaybackQualityPresets.isEmpty)
+        // The retained cap remains the semantic choice for a later AVPlayer;
+        // VLC ignores it and keeps its own adaptive selection.
+        XCTAssertEqual(manager.playbackQualityPolicy.maximumBitRate, 1_000_000)
+
+        manager.setPlayer(type: .avPlayer)
+        XCTAssertEqual(manager.availablePlaybackQualityPresets, PlaybackQualityPreset.allCases)
+        XCTAssertEqual(manager.playbackQualityPolicy.maximumBitRate, 1_000_000)
+        #else
+        throw XCTSkip("The dynamic desktop VLC backend is not built on this platform.")
+        #endif
     }
 
     private func fixtureURL(_ name: String) -> URL {

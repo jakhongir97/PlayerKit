@@ -274,6 +274,36 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(StreamingInfo.placeholder.resolution, "Unknown")
         XCTAssertEqual(StreamingInfo.placeholder.bufferDuration, "0 sec")
     }
+
+    func testDesktopVLCStreamingMetricsMatchVLC3LayoutAndFormatting() throws {
+        #if os(macOS) && !canImport(VLCKit)
+        XCTAssertEqual(MemoryLayout<DesktopVLCMediaStats>.size, 60)
+        XCTAssertEqual(MemoryLayout<DesktopVLCMediaStats>.alignment, 4)
+        XCTAssertEqual(MemoryLayout<DesktopVLCMediaStats>.offset(of: \.demuxBitrate), 12)
+
+        let info = DesktopVLCStreamingMetrics(
+            width: 1920,
+            height: 1080,
+            framesPerSecond: 23.976,
+            demuxBitrate: 0.625
+        ).streamingInfo(using: PlayerStrings())
+
+        XCTAssertEqual(info.frameRate, "23.98 fps")
+        XCTAssertEqual(info.videoBitrate, "5.00 Mbps")
+        XCTAssertEqual(info.resolution, "1920x1080")
+        XCTAssertEqual(info.bufferDuration, "Unknown")
+
+        let unavailable = DesktopVLCStreamingMetrics(
+            width: nil,
+            height: nil,
+            framesPerSecond: nil,
+            demuxBitrate: 0
+        ).streamingInfo(using: PlayerStrings())
+        XCTAssertEqual(unavailable.videoBitrate, "Unknown")
+        #else
+        throw XCTSkip("Desktop libVLC wrapper is not the active backend on this platform.")
+        #endif
+    }
     
     func testSafeSubscriptReturnsNilForOutOfBounds() {
         let values = [10, 20, 30]
