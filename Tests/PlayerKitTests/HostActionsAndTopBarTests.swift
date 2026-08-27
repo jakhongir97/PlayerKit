@@ -65,52 +65,23 @@ final class HostActionsAndTopBarTests: XCTestCase {
         )
     }
 
-    func testDirectActionCountIncludesRoutesBackendOptionsAndLock() {
-        XCTAssertEqual(
-            TopControlsView.directTrailingControlCount(
-                hasCast: true,
-                hasAirPlay: true,
-                hasAlternativeEngine: true
-            ),
-            5
-        )
-        XCTAssertEqual(
-            TopControlsView.directTrailingControlCount(
-                hasCast: false,
-                hasAirPlay: true,
-                hasAlternativeEngine: true
-            ),
-            4
-        )
-    }
+    /// AirPlay and backend switching are occasional actions. They stay inside
+    /// More even when a wide desktop surface has room to expose them directly.
+    func testRouteAndBackendActionsAlwaysStayInsideMoreMenu() {
+        let manager = PlayerManager.shared
+        defer { manager.tearDown() }
+        manager.installPlayerBackend(AVPlayerWrapper())
+        manager.isExternalPlaybackEnabled = true
+        XCTAssertTrue(manager.canUseAirPlay, "The regression requires an available AirPlay route")
 
-    /// Route and backend controls remain directly discoverable whenever the
-    /// title can keep its minimum readable width. Only compact surfaces fold
-    /// them into the options panel.
-    func testPrimaryActionsStayDirectWhenTheyFitAndCompactWhenTheyDoNot() {
-        let directControlCount = 5
-
-        XCTAssertEqual(
-            TopControlsView.actionPresentation(
-                availableWidth: phonePortraitContentWidth,
-                directControlCount: directControlCount
-            ),
-            .compact
-        )
-        XCTAssertEqual(
-            TopControlsView.actionPresentation(
-                availableWidth: phoneLandscapeContentWidth,
-                directControlCount: directControlCount
-            ),
-            .direct
-        )
-        XCTAssertEqual(
-            TopControlsView.actionPresentation(
-                availableWidth: 1_000,
-                directControlCount: directControlCount
-            ),
-            .direct
-        )
+        for width in [phonePortraitContentWidth, phoneLandscapeContentWidth, 1_000] {
+            let bar = TopControlsView(playerManager: manager, availableWidth: width)
+            XCTAssertEqual(
+                bar.trailingControlCount,
+                2,
+                "Only More and lock belong in the top bar at \(width)pt"
+            )
+        }
     }
 
     func testPlayerSwitcherIsShownWheneverAnotherBackendExists() {

@@ -20,13 +20,6 @@ struct TopControlsView: View {
         case stacked
     }
 
-    enum ActionPresentation: Equatable {
-        /// Route and backend controls stay one tap away when the title still fits.
-        case direct
-        /// Narrow surfaces keep those actions in the options panel.
-        case compact
-    }
-
     /// The narrowest a title can be and still be read as one.
     ///
     /// Below this the inline bar was handing the title ~50pt on an iPhone in
@@ -54,9 +47,9 @@ struct TopControlsView: View {
     /// edge. At 4pt the same five fit in 236pt. The discs themselves never
     /// shrink: they are already at the minimum touch target.
     ///
-    /// The full five-disc capability cluster fits a 320pt surface only at the
-    /// tighter gap. If another control joins it, ``actionPresentation`` folds
-    /// the capability actions into options before the row is rendered.
+    /// A hypothetical five-disc cluster fits a 320pt surface only at the
+    /// tighter gap. The shipping bar keeps occasional actions inside More,
+    /// but this geometry still protects future top-level controls.
     static func clusterSpacing(availableWidth: CGFloat, trailingControlCount count: Int) -> CGFloat {
         let budget = availableWidth
             - PlayerChromeMetrics.minimumHitTarget   // close
@@ -87,26 +80,6 @@ struct TopControlsView: View {
             : .stacked
     }
 
-    /// Options and lock are always present; capability-specific controls join
-    /// them on surfaces wide enough to keep the title readable.
-    static func directTrailingControlCount(
-        hasCast: Bool,
-        hasAirPlay: Bool,
-        hasAlternativeEngine: Bool
-    ) -> Int {
-        2 + [hasCast, hasAirPlay, hasAlternativeEngine].filter { $0 }.count
-    }
-
-    static func actionPresentation(
-        availableWidth: CGFloat,
-        directControlCount: Int
-    ) -> ActionPresentation {
-        arrangement(
-            availableWidth: availableWidth,
-            trailingControlCount: directControlCount
-        ) == .inline ? .direct : .compact
-    }
-
     static func showsPlayerSwitcher(supportedPlayerCount: Int) -> Bool {
         supportedPlayerCount > 1
     }
@@ -129,40 +102,9 @@ struct TopControlsView: View {
         !playerManager.hostActions.presentable.isEmpty
     }
 
-    private var hasCastControl: Bool {
-        #if canImport(UIKit) && canImport(GoogleCast)
-        true
-        #else
-        false
-        #endif
-    }
-
-    private var hasAlternativeEngine: Bool {
-        Self.showsPlayerSwitcher(supportedPlayerCount: PlayerType.supportedCases.count)
-    }
-
-    var directTrailingControlCount: Int {
-        Self.directTrailingControlCount(
-            hasCast: hasCastControl,
-            hasAirPlay: playerManager.canUseAirPlay,
-            hasAlternativeEngine: hasAlternativeEngine
-        )
-    }
-
-    var actionPresentation: ActionPresentation {
-        Self.actionPresentation(
-            availableWidth: availableWidth,
-            directControlCount: directTrailingControlCount
-        )
-    }
-
-    var showsDirectActions: Bool { actionPresentation == .direct }
-
-    /// Narrow screens pay for only options + lock. Wide screens spend their
-    /// available room on direct Cast, AirPlay and backend controls.
-    var trailingControlCount: Int {
-        showsDirectActions ? directTrailingControlCount : 2
-    }
+    /// Product invariant: route and backend actions live inside More at every
+    /// width. The only top-level trailing controls are More and lock.
+    var trailingControlCount: Int { 2 }
 
     var arrangement: Arrangement {
         Self.arrangement(availableWidth: availableWidth, trailingControlCount: trailingControlCount)
@@ -239,25 +181,7 @@ struct TopControlsView: View {
             availableWidth: availableWidth,
             trailingControlCount: trailingControlCount
         )) {
-            if showsDirectActions {
-                #if canImport(UIKit) && canImport(GoogleCast)
-                CastButton(playerManager: playerManager)
-                    .playerControlIcon(appearance: playerManager.appearance)
-                #endif
-
-                if playerManager.canUseAirPlay {
-                    AirPlayButton(playerManager: playerManager)
-                }
-
-                if hasAlternativeEngine {
-                    PlayerMenu(playerManager: playerManager)
-                }
-            }
-
-            PlayerOptionsMenuView(
-                playerManager: playerManager,
-                includesPrimaryActions: !showsDirectActions
-            )
+            PlayerOptionsMenuView(playerManager: playerManager)
                 .chromeGated(showsChrome)
 
             LockButtonView(playerManager: playerManager)
