@@ -20,6 +20,13 @@ struct TopControlsView: View {
         case stacked
     }
 
+    enum ActionPresentation: Equatable {
+        /// Route and backend controls stay one tap away when the title still fits.
+        case direct
+        /// Narrow surfaces keep those actions in the options panel.
+        case compact
+    }
+
     /// The narrowest a title can be and still be read as one.
     ///
     /// Below this the inline bar was handing the title ~50pt on an iPhone in
@@ -47,9 +54,9 @@ struct TopControlsView: View {
     /// edge. At 4pt the same five fit in 236pt. The discs themselves never
     /// shrink: they are already at the minimum touch target.
     ///
-    /// A DEBUG build adds the backend menu, and six discs do not fit a 320pt
-    /// surface at any gap. That is a developer affordance on the narrowest
-    /// device there is; it is deliberately not paid for by the shipping row.
+    /// The full five-disc capability cluster fits a 320pt surface only at the
+    /// tighter gap. If another control joins it, ``actionPresentation`` folds
+    /// the capability actions into options before the row is rendered.
     static func clusterSpacing(availableWidth: CGFloat, trailingControlCount count: Int) -> CGFloat {
         let budget = availableWidth
             - PlayerChromeMetrics.minimumHitTarget   // close
@@ -80,6 +87,30 @@ struct TopControlsView: View {
             : .stacked
     }
 
+    /// Options and lock are always present; capability-specific controls join
+    /// them on surfaces wide enough to keep the title readable.
+    static func directTrailingControlCount(
+        hasCast: Bool,
+        hasAirPlay: Bool,
+        hasAlternativeEngine: Bool
+    ) -> Int {
+        2 + [hasCast, hasAirPlay, hasAlternativeEngine].filter { $0 }.count
+    }
+
+    static func actionPresentation(
+        availableWidth: CGFloat,
+        directControlCount: Int
+    ) -> ActionPresentation {
+        arrangement(
+            availableWidth: availableWidth,
+            trailingControlCount: directControlCount
+        ) == .inline ? .direct : .compact
+    }
+
+    static func showsPlayerSwitcher(supportedPlayerCount: Int) -> Bool {
+        supportedPlayerCount > 1
+    }
+
     /// Whether the row's ordinary contents are showing. The lock ignores this —
     /// see ``trailingActions``.
     var showsChrome: Bool {
@@ -98,13 +129,40 @@ struct TopControlsView: View {
         !playerManager.hostActions.presentable.isEmpty
     }
 
-    /// Two: the options control and the lock.
-    ///
-    /// It used to be six — Cast, AirPlay, information, the debug engine picker,
-    /// the host's overflow and the lock — which is what left the title about
-    /// fifty points to render in on a phone. Everything except the lock is now
-    /// one control; see ``PlayerOptionsMenuView``.
-    var trailingControlCount: Int { 2 }
+    private var hasCastControl: Bool {
+        #if canImport(UIKit) && canImport(GoogleCast)
+        true
+        #else
+        false
+        #endif
+    }
+
+    private var hasAlternativeEngine: Bool {
+        Self.showsPlayerSwitcher(supportedPlayerCount: PlayerType.supportedCases.count)
+    }
+
+    var directTrailingControlCount: Int {
+        Self.directTrailingControlCount(
+            hasCast: hasCastControl,
+            hasAirPlay: playerManager.canUseAirPlay,
+            hasAlternativeEngine: hasAlternativeEngine
+        )
+    }
+
+    var actionPresentation: ActionPresentation {
+        Self.actionPresentation(
+            availableWidth: availableWidth,
+            directControlCount: directTrailingControlCount
+        )
+    }
+
+    var showsDirectActions: Bool { actionPresentation == .direct }
+
+    /// Narrow screens pay for only options + lock. Wide screens spend their
+    /// available room on direct Cast, AirPlay and backend controls.
+    var trailingControlCount: Int {
+        showsDirectActions ? directTrailingControlCount : 2
+    }
 
     var arrangement: Arrangement {
         Self.arrangement(availableWidth: availableWidth, trailingControlCount: trailingControlCount)
@@ -181,7 +239,25 @@ struct TopControlsView: View {
             availableWidth: availableWidth,
             trailingControlCount: trailingControlCount
         )) {
-            PlayerOptionsMenuView(playerManager: playerManager)
+            if showsDirectActions {
+                #if canImport(UIKit) && canImport(GoogleCast)
+                CastButton(playerManager: playerManager)
+                    .playerControlIcon(appearance: playerManager.appearance)
+                #endif
+
+                if playerManager.canUseAirPlay {
+                    AirPlayButton(playerManager: playerManager)
+                }
+
+                if hasAlternativeEngine {
+                    PlayerMenu(playerManager: playerManager)
+                }
+            }
+
+            PlayerOptionsMenuView(
+                playerManager: playerManager,
+                includesPrimaryActions: !showsDirectActions
+            )
                 .chromeGated(showsChrome)
 
             LockButtonView(playerManager: playerManager)

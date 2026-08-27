@@ -1,23 +1,25 @@
 import SwiftUI
 
-/// Every session-level action behind one disc.
+/// Session-level actions behind one disc.
 ///
-/// The top bar used to carry five of them in a row — Cast, AirPlay, playback
-/// information, the debug engine picker and the host's overflow — plus the
-/// lock. Six controls is more than the bar can hold on a phone: they left the
-/// title about fifty points to render in, and they are all things a viewer
-/// reaches for occasionally rather than during playback. They now live in one
-/// panel behind a single control.
+/// Narrow surfaces keep Cast, AirPlay and backend switching here. Roomy
+/// surfaces expose those controls directly and leave this panel responsible
+/// for playback information and host actions.
 ///
 /// The lock deliberately stays outside it. It is the only way out of a locked
 /// player, so it can never be behind a menu that the lock itself would hide.
 @MainActor
 struct PlayerOptionsMenuView: View {
     @ObservedObject var playerManager: PlayerManager
+    let includesPrimaryActions: Bool
     @State private var isPresented = false
 
-    init(playerManager: PlayerManager = .shared) {
+    init(
+        playerManager: PlayerManager = .shared,
+        includesPrimaryActions: Bool = true
+    ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
+        self.includesPrimaryActions = includesPrimaryActions
     }
 
     var body: some View {
@@ -35,7 +37,10 @@ struct PlayerOptionsMenuView: View {
         // `.top` is the edge of the *panel* the arrow sits on, which is the one
         // that hangs it below a control already against the top of the screen.
         .popover(isPresented: $isPresented, arrowEdge: .top) {
-            PlayerOptionsPanel(playerManager: playerManager) {
+            PlayerOptionsPanel(
+                playerManager: playerManager,
+                includesPrimaryActions: includesPrimaryActions
+            ) {
                 isPresented = false
             }
             .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
@@ -50,15 +55,21 @@ struct PlayerOptionsMenuView: View {
 private struct PlayerOptionsPanel: View {
     @ObservedObject var playerManager: PlayerManager
     @StateObject private var engine: PlayerMenuViewModel
+    let includesPrimaryActions: Bool
     @State private var showsStreamingInfo = false
     @State private var showsEngines = false
     @State private var expandedHostActionID: String?
     /// Closes the popover before an action presents anything of its own.
     private let dismiss: () -> Void
 
-    init(playerManager: PlayerManager, dismiss: @escaping () -> Void) {
+    init(
+        playerManager: PlayerManager,
+        includesPrimaryActions: Bool,
+        dismiss: @escaping () -> Void
+    ) {
         _playerManager = ObservedObject(wrappedValue: playerManager)
         _engine = StateObject(wrappedValue: PlayerMenuViewModel(playerManager: playerManager))
+        self.includesPrimaryActions = includesPrimaryActions
         self.dismiss = dismiss
     }
 
@@ -79,18 +90,17 @@ private struct PlayerOptionsPanel: View {
 
     private var showsCast: Bool {
         #if canImport(UIKit) && canImport(GoogleCast)
-        true
+        includesPrimaryActions
         #else
         false
         #endif
     }
 
     private var showsEngineRow: Bool {
-        #if DEBUG
-        PlayerType.supportedCases.count > 1
-        #else
-        false
-        #endif
+        includesPrimaryActions
+            && TopControlsView.showsPlayerSwitcher(
+                supportedPlayerCount: PlayerType.supportedCases.count
+            )
     }
 
     var body: some View {
@@ -119,7 +129,9 @@ private struct PlayerOptionsPanel: View {
             #if canImport(UIKit) && canImport(GoogleCast)
             // The Cast button used to do this when the bar drew it: it installs
             // the session callbacks that keep the row's state truthful.
-            _ = playerManager.prepareChromecastButton()
+            if showsCast {
+                _ = playerManager.prepareChromecastButton()
+            }
             #endif
         }
         .onDisappear {
@@ -134,11 +146,11 @@ private struct PlayerOptionsPanel: View {
                 castRow
             }
 
-            if playerManager.canUseAirPlay {
+            if includesPrimaryActions && playerManager.canUseAirPlay {
                 airPlayRow
             }
 
-            if showsCast || playerManager.canUseAirPlay {
+            if showsCast || (includesPrimaryActions && playerManager.canUseAirPlay) {
                 separator
             }
 
@@ -241,7 +253,7 @@ private struct PlayerOptionsPanel: View {
         }
     }
 
-    // MARK: Playback engine (DEBUG)
+    // MARK: Playback engine
 
     private var engineRow: some View {
         VStack(alignment: .leading, spacing: 0) {

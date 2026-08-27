@@ -139,7 +139,7 @@ public struct PlayerStrings {
     public var vlcPlaybackEngineName = "VLC Player"
     public var avPlaybackEngineName = "AV Player"
     public var playbackEngineAccessibilityLabel = "Playback engine"
-    public var selectPlaybackEngineHint = "Selects a playback engine for debugging"
+    public var selectPlaybackEngineHint = "Selects a playback engine"
     public var activePlaybackEngineHint = "Shows the active playback engine"
 
     // MARK: Gesture UI and accessibility

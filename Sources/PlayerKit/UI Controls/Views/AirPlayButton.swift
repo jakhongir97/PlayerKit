@@ -72,14 +72,20 @@ struct AirPlayRoutePickerView: NSViewRepresentable {
         routePickerView.setRoutePickerButtonColor(.clear, for: .normalHighlighted)
         routePickerView.setRoutePickerButtonColor(.clear, for: .active)
         routePickerView.setRoutePickerButtonColor(.clear, for: .activeHighlighted)
-        routePickerView.setAccessibilityLabel("AirPlay")
-        routePickerView.setAccessibilityHelp("Opens the AirPlay device picker")
+        configure(routePickerView)
         return routePickerView
     }
 
     func updateNSView(_ nsView: AVRoutePickerView, context: Context) {
-        nsView.setAccessibilityLabel("AirPlay")
-        nsView.setAccessibilityHelp("Opens the AirPlay device picker")
+        configure(nsView)
+    }
+
+    private func configure(_ view: AVRoutePickerView) {
+        view.setAccessibilityElement(true)
+        view.setAccessibilityRole(.button)
+        view.setAccessibilityLabel("AirPlay")
+        view.setAccessibilityHelp("Opens the AirPlay device picker")
+        view.setAccessibilityIdentifier("player.airPlay")
     }
 }
 #else

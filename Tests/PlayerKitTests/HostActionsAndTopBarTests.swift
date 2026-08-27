@@ -38,10 +38,9 @@ final class HostActionsAndTopBarTests: XCTestCase {
         )
     }
 
-    /// The bar carries two controls now — options and lock — so an iPhone in
-    /// portrait has room for the title on the same line again. The stacked
-    /// arrangement stays for the widths that genuinely cannot hold both.
-    func testTwoControlBarKeepsTheTitleInlineOnAPhoneInBothOrientations() {
+    /// The compact bar carries options and lock, so an iPhone in portrait has
+    /// room for the title on the same line.
+    func testCompactBarKeepsTheTitleInlineOnAPhoneInBothOrientations() {
         let shipping = 2
         XCTAssertEqual(
             TopControlsView.arrangement(
@@ -66,9 +65,61 @@ final class HostActionsAndTopBarTests: XCTestCase {
         )
     }
 
-    /// The row the bar used to carry — Cast, AirPlay, info, the debug engine
-    /// picker, the host overflow — is what the stacking rule exists for, and
-    /// it still fires for any host that fills the trailing edge that way.
+    func testDirectActionCountIncludesRoutesBackendOptionsAndLock() {
+        XCTAssertEqual(
+            TopControlsView.directTrailingControlCount(
+                hasCast: true,
+                hasAirPlay: true,
+                hasAlternativeEngine: true
+            ),
+            5
+        )
+        XCTAssertEqual(
+            TopControlsView.directTrailingControlCount(
+                hasCast: false,
+                hasAirPlay: true,
+                hasAlternativeEngine: true
+            ),
+            4
+        )
+    }
+
+    /// Route and backend controls remain directly discoverable whenever the
+    /// title can keep its minimum readable width. Only compact surfaces fold
+    /// them into the options panel.
+    func testPrimaryActionsStayDirectWhenTheyFitAndCompactWhenTheyDoNot() {
+        let directControlCount = 5
+
+        XCTAssertEqual(
+            TopControlsView.actionPresentation(
+                availableWidth: phonePortraitContentWidth,
+                directControlCount: directControlCount
+            ),
+            .compact
+        )
+        XCTAssertEqual(
+            TopControlsView.actionPresentation(
+                availableWidth: phoneLandscapeContentWidth,
+                directControlCount: directControlCount
+            ),
+            .direct
+        )
+        XCTAssertEqual(
+            TopControlsView.actionPresentation(
+                availableWidth: 1_000,
+                directControlCount: directControlCount
+            ),
+            .direct
+        )
+    }
+
+    func testPlayerSwitcherIsShownWheneverAnotherBackendExists() {
+        XCTAssertFalse(TopControlsView.showsPlayerSwitcher(supportedPlayerCount: 1))
+        XCTAssertTrue(TopControlsView.showsPlayerSwitcher(supportedPlayerCount: 2))
+    }
+
+    /// The direct row — Cast, AirPlay, backend, options and lock — is what the
+    /// compact fallback exists for.
     func testTitleGetsItsOwnLineWhenTheTrailingEdgeIsCrowded() {
         let releaseTrailingCount = 5
 
@@ -96,7 +147,7 @@ final class HostActionsAndTopBarTests: XCTestCase {
             ),
             .inline
         )
-        // Debug adds the backend menu; landscape still has room.
+        // Even a future sixth capability control still fits in landscape.
         XCTAssertEqual(
             TopControlsView.arrangement(
                 availableWidth: phoneLandscapeContentWidth,
@@ -144,8 +195,7 @@ final class HostActionsAndTopBarTests: XCTestCase {
     /// touch target.
     func testTrailingClusterTightensItsGapBeforeItCanOverflow() {
         let narrow: CGFloat = 320 - (PlayerChromeMetrics.contentInset(for: 320) * 2)
-        // Cast, AirPlay, info, the host overflow and the lock: what a release
-        // build actually draws. DEBUG adds the backend menu on top of this.
+        // Cast, AirPlay, backend, options and lock: the full direct cluster.
         let releaseCount = 5
 
         XCTAssertGreaterThan(
