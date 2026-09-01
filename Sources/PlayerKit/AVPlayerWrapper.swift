@@ -1371,7 +1371,7 @@ extension AVPlayerWrapper {
     private func beginFallbackPlaybackHealthSeek(
         to targetTime: Double
     ) -> PlaybackHealthFallbackSeekContext? {
-        if #available(macOS 15, *) {
+        if #available(macOS 26, *) {
             return nil
         }
         guard let item = player?.currentItem,

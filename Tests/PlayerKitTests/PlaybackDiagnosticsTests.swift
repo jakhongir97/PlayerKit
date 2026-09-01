@@ -656,7 +656,7 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         XCTAssertEqual(attached.session.sessionID, wrapper.activePlaybackHealthSessionID)
         XCTAssertNotNil(attached.session.startedAt)
         XCTAssertEqual(attached.playback.isLikelyHLS, true)
-        if #available(macOS 15, *) {
+        if #available(macOS 26, *) {
             XCTAssertTrue(
                 attached.session.availability == .startingAVMetrics
                     || attached.session.availability == .activeAVMetrics

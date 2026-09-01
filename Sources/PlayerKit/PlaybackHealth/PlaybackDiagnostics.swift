@@ -1048,7 +1048,7 @@ struct PlaybackDiagnosticsSnapshot: Equatable, Sendable {
                         .coverage,
                         "Reduced HLS attribution",
                         detail,
-                        "Use macOS 15 or newer for typed HLS request metrics."
+                        "Use macOS 26 or newer for typed HLS request metrics."
                     )
                 )
             }

@@ -346,7 +346,7 @@ final class MacOSPlaybackHealthMonitor: @unchecked Sendable {
         eventHandler: @escaping @MainActor (PlaybackHealthEvent) -> Void
     ) {
         let initialStreamState: PlaybackHealthMonitorStreamState
-        if #available(macOS 15, *) {
+        if #available(macOS 26, *) {
             initialStreamState = .starting
         } else {
             initialStreamState = .fallbackObserving
@@ -363,7 +363,10 @@ final class MacOSPlaybackHealthMonitor: @unchecked Sendable {
         self.eventHandler = eventHandler
 
         startErrorLogObservation(for: item)
-        if #available(macOS 15, *) {
+        // ponytail: AVMetrics is optional diagnostics. Keep Sonoma and Sequoia
+        // on AVPlayerItem's stable error-log path after an SDK availability gap
+        // caused an unrecognized-selector abort there; widen only with runtime QA.
+        if #available(macOS 26, *) {
             playbackHealthLogger.info(
                 "monitor attached path=avmetrics asset_present=\(assetIdentifier != nil, privacy: .public)"
             )

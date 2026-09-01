@@ -27,12 +27,10 @@ remain bounded layouts. DRM/FairPlay is not implemented.
 - Xcode 15.3+
 - Swift 5.10
 
-On macOS, AVPlayer is the supported default. The optional VLC backend loads
-libVLC 3.x from `/Applications/VLC.app` only after the entire app validates as
-Apple-backed code signed by VideoLAN (team `75GAHG3SZQ`); incompatible or
-modified installations are rejected. That external-library path is not
-supported for App Sandbox or Hardened Runtime library-validation hosts. Do not
-disable library validation merely to enable VLC—use AVPlayer in those builds.
+On macOS, AVPlayer is the only supported backend. The desktop VLC bridge is not
+offered because loading external libVLC binaries is incompatible with App
+Sandbox and Hardened Runtime library validation. Do not disable those platform
+protections to enable VLC.
 
 ## Installation (Swift Package Manager)
 

@@ -208,13 +208,16 @@ final class PlayerKitTests: XCTestCase {
     }
 
     func testSupportedPlayerTypesMatchCurrentPlatform() {
-        if PlayerType.vlcPlayer.isSupported {
-        XCTAssertEqual(PlayerType.supportedCases, [.vlcPlayer, .avPlayer])
-        XCTAssertTrue(PlayerType.vlcPlayer.isSupported)
-        } else {
+        #if os(macOS)
         XCTAssertEqual(PlayerType.supportedCases, [.avPlayer])
         XCTAssertFalse(PlayerType.vlcPlayer.isSupported)
-        }
+        #elseif canImport(VLCKit)
+        XCTAssertEqual(PlayerType.supportedCases, [.vlcPlayer, .avPlayer])
+        XCTAssertTrue(PlayerType.vlcPlayer.isSupported)
+        #else
+        XCTAssertEqual(PlayerType.supportedCases, [.avPlayer])
+        XCTAssertFalse(PlayerType.vlcPlayer.isSupported)
+        #endif
     }
 
     func testDesktopVLCWrapperCanStartRuntimeUpdatesWithoutLoadedMedia() throws {
@@ -242,10 +245,14 @@ final class PlayerKitTests: XCTestCase {
 
         defaults.set(PlayerType.vlcPlayer.rawValue, forKey: "PlayerKit.SelectedPlayerType")
 
+        #if os(macOS)
+        XCTAssertEqual(defaults.loadPlayerType(), .avPlayer)
+        #else
         XCTAssertEqual(
             defaults.loadPlayerType(),
             PlayerType.vlcPlayer.isSupported ? .vlcPlayer : .avPlayer
         )
+        #endif
     }
     
     func testReportErrorUpdatesStateAndPostsNotification() {
