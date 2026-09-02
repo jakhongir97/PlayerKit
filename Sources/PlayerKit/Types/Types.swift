@@ -46,9 +46,7 @@ public enum PlayerType: String, CaseIterable, Identifiable, Codable {
 
     public static var supportedCases: [PlayerType] {
         #if os(macOS)
-        // ponytail: Desktop VLC's external C ABI is not a release-safe choice for
-        // sandboxed hosts. macOS deliberately has one supported backend.
-        [.avPlayer]
+        desktopVLCAvailability ? [.vlcPlayer, .avPlayer] : [.avPlayer]
         #elseif canImport(VLCKit)
         [.vlcPlayer, .avPlayer]
         #else
@@ -78,6 +76,25 @@ public enum PlayerType: String, CaseIterable, Identifiable, Codable {
         }
     }
 }
+
+#if os(macOS)
+private let desktopVLCAvailability: Bool = {
+    let processInfo = ProcessInfo.processInfo
+    if processInfo.processName == "xctest" {
+        return false
+    }
+    if processInfo.arguments.contains(where: { $0.hasSuffix(".xctest") }) {
+        return false
+    }
+    if Bundle.allBundles.contains(where: { $0.bundlePath.hasSuffix(".xctest") }) {
+        return false
+    }
+    guard processInfo.environment["XCTestConfigurationFilePath"] == nil else {
+        return false
+    }
+    return DesktopVLCPlayerWrapper.isRuntimeAvailable
+}()
+#endif
 
 enum SeekDirection: CustomStringConvertible {
     case forward
