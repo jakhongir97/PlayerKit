@@ -2,6 +2,7 @@ import Foundation
 
 public enum PlayerKitError: Error, Equatable, LocalizedError {
     case mediaLoadFailed(String)
+    case playbackEngineUnavailable(PlayerType)
     case pictureInPictureFailed(String)
     case castSessionUnavailable
     case castURLMissing
@@ -22,7 +23,7 @@ public enum PlayerKitError: Error, Equatable, LocalizedError {
     /// Returns the safe product message from host-supplied player copy.
     public func userFacingDescription(using strings: PlayerStrings) -> String {
         switch self {
-        case .mediaLoadFailed:
+        case .mediaLoadFailed, .playbackEngineUnavailable:
             return strings.mediaLoadFailedDescription
         case .pictureInPictureFailed:
             return strings.pictureInPictureFailedDescription

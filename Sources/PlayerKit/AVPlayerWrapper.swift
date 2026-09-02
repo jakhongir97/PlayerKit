@@ -389,6 +389,11 @@ public class AVPlayerWrapper: NSObject, PlayerProtocol {
     var activePlaybackHealthAssetIdentifier: String? {
         playbackHealthMonitor?.assetIdentifier
     }
+
+    var hasActivePlaybackDiagnosticsLogObservation: Bool {
+        playbackDiagnosticsAccessLogObserver != nil
+            || playbackDiagnosticsErrorLogObserver != nil
+    }
     #endif
     
     public weak var lifecycleReporter: PlayerLifecycleReporting?
@@ -458,7 +463,7 @@ extension AVPlayerWrapper: PlaybackControlProtocol {
     public func stop() {
         guard let player else { return }
         #if os(macOS)
-        stopPlaybackHealthMonitoring()
+        stopPlaybackDiagnosticsSession()
         #endif
         player.cancelCoalescedSeeks()
         player.currentItem?.cancelPendingSeeks()
@@ -660,7 +665,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         playbackHealthMonitoringEnabled: Bool,
         playbackHealthMonitoringEligible: Bool = false
     ) {
-        stopPlaybackHealthMonitoring()
+        stopPlaybackDiagnosticsSession()
         playbackHealthMonitoringEnabledForItem = playbackHealthMonitoringEnabled
         playbackHealthMonitoringEligibleForItem = playbackHealthMonitoringEligible
         let playerItem = urlAsset.map { AVPlayerItem(asset: $0) } ?? AVPlayerItem(url: url)
@@ -680,17 +685,14 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             assetIdentifier: healthAssetIdentifier
         )
         playbackDiagnosticsItemContext = diagnosticsContext
-        startPlaybackHealthMonitoringIfEligible(
-            for: playerItem,
-            context: diagnosticsContext,
-            sourceURL: url
-        )
-
         install(
             playerItem: playerItem,
             sourceURL: url,
             lastPosition: lastPosition
         )
+        if playbackHealthMonitoringEnabled {
+            _ = startPlaybackDiagnosticsSession()
+        }
     }
     #endif
 
@@ -727,12 +729,6 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
         }
         configureRuntimeStateObserverIfNeeded()
         configureTimeControlStatusObserverIfNeeded()
-        #if os(macOS)
-        startPlaybackDiagnosticsLogObservation(for: playerItem)
-        let callbackHealthMonitor = playbackHealthMonitor
-        let callbackHealthSessionID = callbackHealthMonitor?.healthSessionID
-        #endif
-        
         // Observe the player item's status
         playerItemStatusObserver = playerItem.observe(
             \.status,
@@ -749,15 +745,8 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
                 } else if item.status == .failed {
                     let errorCode = (item.error as NSError?)?.code
                     #if os(macOS)
-                    if let callbackHealthMonitor,
-                       playbackHealthCallbackBelongsToCurrentSession(
-                        capturedSessionID: callbackHealthSessionID,
-                        currentSessionID: self.playbackHealthMonitor?.healthSessionID,
-                        capturedItem: item,
-                        currentItem: self.player?.currentItem
-                       ),
-                       self.playbackHealthMonitor === callbackHealthMonitor {
-                        callbackHealthMonitor.recordTerminalPlaybackFailure(
+                    if let playbackHealthMonitor = self.playbackHealthMonitor {
+                        playbackHealthMonitor.recordTerminalPlaybackFailure(
                             error: item.error,
                             item: item
                         )
@@ -780,15 +769,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             MainActor.assumeIsolated {
                 guard let self, self.player?.currentItem === playerItem else { return }
                 #if os(macOS)
-                guard playbackHealthCallbackBelongsToCurrentSession(
-                    capturedSessionID: callbackHealthSessionID,
-                    currentSessionID: self.playbackHealthMonitor?.healthSessionID,
-                    capturedItem: playerItem,
-                    currentItem: self.player?.currentItem
-                ), self.playbackHealthMonitor === callbackHealthMonitor else {
-                    return
-                }
-                callbackHealthMonitor?.recordNaturalPlaybackEnd(for: playerItem)
+                self.playbackHealthMonitor?.recordNaturalPlaybackEnd(for: playerItem)
                 #endif
                 self.debugLog("Playback ended.")
                 self.lifecycleReporter?.playerDidEndPlayback()
@@ -810,17 +791,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             MainActor.assumeIsolated {
                 guard let self, self.player?.currentItem === playerItem else { return }
                 #if os(macOS)
-                guard playbackHealthCallbackBelongsToCurrentSession(
-                    capturedSessionID: callbackHealthSessionID,
-                    currentSessionID: self.playbackHealthMonitor?.healthSessionID,
-                    capturedItem: playerItem,
-                    currentItem: self.player?.currentItem
-                ), self.playbackHealthMonitor === callbackHealthMonitor else {
-                    return
-                }
-                #endif
-                #if os(macOS)
-                callbackHealthMonitor?.recordTerminalPlaybackFailure(
+                self.playbackHealthMonitor?.recordTerminalPlaybackFailure(
                     error: failure.error,
                     item: playerItem
                 )
@@ -845,15 +816,7 @@ extension AVPlayerWrapper: MediaLoadingProtocol {
             MainActor.assumeIsolated {
                 guard let self, self.player?.currentItem === playerItem else { return }
                 #if os(macOS)
-                guard playbackHealthCallbackBelongsToCurrentSession(
-                    capturedSessionID: callbackHealthSessionID,
-                    currentSessionID: self.playbackHealthMonitor?.healthSessionID,
-                    capturedItem: playerItem,
-                    currentItem: self.player?.currentItem
-                ), self.playbackHealthMonitor === callbackHealthMonitor else {
-                    return
-                }
-                callbackHealthMonitor?.recordPlaybackStall(for: playerItem)
+                self.playbackHealthMonitor?.recordPlaybackStall(for: playerItem)
                 #endif
                 self.debugLog("Playback stalled.")
                 self.lifecycleReporter?.playerDidStall()
@@ -1441,21 +1404,26 @@ extension AVPlayerWrapper {
         monitor?.stop()
     }
 
-    /// Starts a new diagnostics identity for a replayable stop→play cycle
-    /// without replacing the retained AVPlayerItem.
-    func restartPlaybackDiagnosticsSession() -> Bool {
+    /// Starts diagnostics for the already-loaded item only after an explicit
+    /// user action. Loading or resuming playback never calls this implicitly.
+    func startPlaybackDiagnosticsSession() -> Bool {
         guard let item = player?.currentItem,
               let previousContext = playbackDiagnosticsItemContext,
-              let sourceURL = currentSourceURL else {
+              let sourceURL = currentSourceURL,
+              playbackHealthMonitoringEligibleForItem,
+              !sourceURL.isFileURL else {
             return false
         }
-        stopPlaybackHealthMonitoring()
+        stopPlaybackDiagnosticsSession()
+        playbackHealthMonitoringEnabledForItem = true
         let context = PlaybackDiagnosticsItemContext(
             sessionID: UUID(),
             startedAt: Date(),
             assetIdentifier: previousContext.assetIdentifier
         )
         playbackDiagnosticsItemContext = context
+        startPlaybackDiagnosticsLogObservation(for: item)
+        refreshPlaybackDiagnosticsTrackCache(for: item)
         startPlaybackHealthMonitoringIfEligible(
             for: item,
             context: context,
@@ -1463,6 +1431,14 @@ extension AVPlayerWrapper {
         )
         configureTimeControlStatusObserverIfNeeded()
         return true
+    }
+
+    func stopPlaybackDiagnosticsSession() {
+        playbackHealthMonitoringEnabledForItem = false
+        stopPlaybackHealthMonitoring()
+        stopPlaybackDiagnosticsLogObservation()
+        playbackDiagnosticsAudioTracks.removeAll(keepingCapacity: true)
+        playbackDiagnosticsSubtitleTracks.removeAll(keepingCapacity: true)
     }
 
     private func startPlaybackHealthMonitoringIfEligible(
@@ -1936,7 +1912,8 @@ extension AVPlayerWrapper {
     }
 
     private func refreshPlaybackDiagnosticsTrackCache(for item: AVPlayerItem) {
-        guard player?.currentItem === item else { return }
+        guard playbackHealthMonitoringEnabledForItem,
+              player?.currentItem === item else { return }
         let currentAudioID = currentAudioTrack?.id
         let currentSubtitleID = currentSubtitleTrack?.id
         playbackDiagnosticsAudioTracks = availableAudioTracks.map {

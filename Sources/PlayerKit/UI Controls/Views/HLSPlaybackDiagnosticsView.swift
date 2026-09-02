@@ -91,6 +91,7 @@ enum PlaybackDiagnosticsFormat {
 }
 
 enum PlaybackDiagnosticsCurrentStatus: Equatable {
+    case notStarted
     case noProblemDetected
     case needsAttention(PlaybackDiagnosticsLevel)
     case waiting
@@ -141,6 +142,8 @@ enum PlaybackDiagnosticsCurrentStatus: Equatable {
 
     var title: String {
         switch self {
+        case .notStarted:
+            return "Monitoring not started"
         case .noProblemDetected:
             return "No problem detected now"
         case let .needsAttention(level):
@@ -172,14 +175,13 @@ public struct HLSPlaybackDiagnosticsView: View {
     @State private var snapshot: PlaybackDiagnosticsSnapshot
     @State private var sampledContentTitle: String
     @State private var selectedIncidentID: UUID?
-    @State private var isLive = true
     @State private var showsTechnicalEvidence = false
     @State private var zoomSeconds: TimeInterval = 300
     @State private var displayTime = Date()
     @State private var feedback: DiagnosticsFeedback?
+    @State private var refreshTask: Task<Void, Never>?
 
     private let keepsPlayerControlsVisible: Bool
-    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     public init(
         playerManager: PlayerManager,
@@ -187,7 +189,7 @@ public struct HLSPlaybackDiagnosticsView: View {
     ) {
         self.playerManager = playerManager
         self.keepsPlayerControlsVisible = keepsPlayerControlsVisible
-        let initialSnapshot = playerManager.fetchPlaybackDiagnostics()
+        let initialSnapshot = PlaybackDiagnosticsSnapshot.unavailable(.monitoringDisabled)
         _snapshot = State(initialValue: initialSnapshot)
         _sampledContentTitle = State(
             initialValue: Self.contentTitle(from: playerManager)
@@ -241,26 +243,26 @@ public struct HLSPlaybackDiagnosticsView: View {
                 playerManager.userInteracting = true
                 playerManager.userInteracted()
             }
-            refresh()
         }
         .onDisappear {
+            stopMonitoring(showsFeedback: false)
             if keepsPlayerControlsVisible {
                 playerManager.userInteracting = false
                 playerManager.userInteracted()
             }
         }
-        .onReceive(timer) { now in
-            guard isLive else { return }
-            displayTime = now
-            refresh()
-        }
         .onReceive(playerManager.$playerItem.dropFirst()) { _ in
-            // Asset/backend changes intentionally reset a paused presentation so
-            // it can never keep showing evidence from the previous session.
             DispatchQueue.main.async {
+                stopRefreshTask()
                 displayTime = Date()
-                refresh()
+                snapshot = .unavailable(.monitoringDisabled)
+                sampledContentTitle = Self.contentTitle(from: playerManager)
+                selectedIncidentID = nil
             }
+        }
+        .onChange(of: playerManager.isPlaybackHealthMonitoringEnabled) { _, enabled in
+            guard !enabled else { return }
+            stopRefreshTask()
         }
     }
 
@@ -298,21 +300,29 @@ public struct HLSPlaybackDiagnosticsView: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
-            Button(action: toggleLive) {
+            Button(action: toggleMonitoring) {
                 Label(
-                    isLive ? "Live" : "Paused",
-                    systemImage: isLive ? "record.circle.fill" : "pause.circle"
+                    playerManager.isPlaybackHealthMonitoringEnabled
+                        ? "Stop Monitoring"
+                        : "Start Monitoring",
+                    systemImage: playerManager.isPlaybackHealthMonitoringEnabled
+                        ? "stop.circle.fill"
+                        : "record.circle"
                 )
                 .labelStyle(.titleAndIcon)
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(
-                    isLive
+                    playerManager.isPlaybackHealthMonitoringEnabled
                         ? PlaybackDiagnosticsTheme.live
                         : PlaybackDiagnosticsTheme.secondary
                 )
             }
-            .help(isLive ? "Pause live display updates" : "Resume live display updates")
-            .accessibilityIdentifier("player.diagnostics.live")
+            .help(
+                playerManager.isPlaybackHealthMonitoringEnabled
+                    ? "Stop playback monitoring"
+                    : "Start playback monitoring"
+            )
+            .accessibilityIdentifier("player.diagnostics.monitoring")
 
             Button(action: captureBookmark) {
                 Image(systemName: "bookmark.badge.plus")
@@ -715,6 +725,10 @@ public struct HLSPlaybackDiagnosticsView: View {
     }
 
     private var currentStatus: PlaybackDiagnosticsCurrentStatus {
+        if !playerManager.isPlaybackHealthMonitoringEnabled,
+           snapshot.storyboard.samples.isEmpty {
+            return .notStarted
+        }
         let automaticLevel = snapshot.storyboard.incidents
             .filter { $0.state == .active }
             .map(\.severity)
@@ -733,6 +747,8 @@ public struct HLSPlaybackDiagnosticsView: View {
 
     private var statusColor: Color {
         switch currentStatus {
+        case .notStarted:
+            return PlaybackDiagnosticsTheme.tertiary
         case .noProblemDetected:
             return PlaybackDiagnosticsTheme.green
         case .needsAttention(.critical), .failed:
@@ -748,6 +764,8 @@ public struct HLSPlaybackDiagnosticsView: View {
 
     private var statusIcon: String {
         switch currentStatus {
+        case .notStarted:
+            return "record.circle"
         case .noProblemDetected:
             return "checkmark.circle.fill"
         case .needsAttention(.critical), .failed:
@@ -767,6 +785,8 @@ public struct HLSPlaybackDiagnosticsView: View {
 
     private var statusDetail: String {
         switch currentStatus {
+        case .notStarted:
+            return "Choose Start Monitoring to collect playback evidence."
         case .noProblemDetected:
             return "No active incident is supported by retained measured evidence."
         case .waiting:
@@ -872,12 +892,55 @@ public struct HLSPlaybackDiagnosticsView: View {
         }
     }
 
-    private func toggleLive() {
-        isLive.toggle()
-        if isLive {
-            displayTime = Date()
-            refresh()
+    private func toggleMonitoring() {
+        if playerManager.isPlaybackHealthMonitoringEnabled {
+            stopMonitoring()
+            return
         }
+
+        guard playerManager.startPlaybackHealthMonitoring() else {
+            showFeedback("Start eligible AVPlayer playback first", succeeded: false)
+            return
+        }
+        displayTime = Date()
+        refresh()
+        startRefreshTask()
+        showFeedback("Playback monitoring started", succeeded: true)
+    }
+
+    private func stopMonitoring(showsFeedback: Bool = true) {
+        stopRefreshTask()
+        guard playerManager.isPlaybackHealthMonitoringEnabled else { return }
+        refresh()
+        playerManager.stopPlaybackHealthMonitoring()
+        if showsFeedback {
+            showFeedback("Playback monitoring stopped", succeeded: true)
+        }
+    }
+
+    private func startRefreshTask() {
+        stopRefreshTask()
+        refreshTask = Task { @MainActor in
+            while !Task.isCancelled,
+                  playerManager.isPlaybackHealthMonitoringEnabled {
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled,
+                      playerManager.isPlaybackHealthMonitoringEnabled else {
+                    return
+                }
+                displayTime = Date()
+                refresh()
+            }
+        }
+    }
+
+    private func stopRefreshTask() {
+        refreshTask?.cancel()
+        refreshTask = nil
     }
 
     private func captureBookmark() {
@@ -886,7 +949,7 @@ public struct HLSPlaybackDiagnosticsView: View {
                 "Moment saved · \(String(bookmark.id.uuidString.prefix(8)))",
                 succeeded: true
             )
-            if isLive {
+            if playerManager.isPlaybackHealthMonitoringEnabled {
                 displayTime = Date()
                 refresh()
             }
@@ -896,7 +959,7 @@ public struct HLSPlaybackDiagnosticsView: View {
     }
 
     private func copyReport() {
-        let report = playerManager.fetchPlaybackDiagnostics().report()
+        let report = snapshot.report()
         NSPasteboard.general.clearContents()
         let copied = NSPasteboard.general.setString(report, forType: .string)
         showFeedback(

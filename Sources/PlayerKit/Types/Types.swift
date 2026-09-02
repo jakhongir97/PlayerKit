@@ -38,7 +38,7 @@ enum PlaybackQualityPreset: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
-public enum PlayerType: String, CaseIterable, Identifiable, Codable {
+public enum PlayerType: String, CaseIterable, Identifiable, Codable, Sendable {
     case vlcPlayer
     case avPlayer
 
@@ -59,8 +59,10 @@ public enum PlayerType: String, CaseIterable, Identifiable, Codable {
     }
 
     static func resolved(_ preferred: PlayerType?) -> PlayerType {
-        guard let preferred, preferred.isSupported else { return .avPlayer }
-        return preferred
+        // ponytail: AVPlayer is always available, so do not load/probe the
+        // optional desktop VLC runtime unless VLC was actually requested.
+        guard preferred == .vlcPlayer else { return .avPlayer }
+        return PlayerType.vlcPlayer.isSupported ? .vlcPlayer : .avPlayer
     }
 
     var title: String {
@@ -92,7 +94,7 @@ private let desktopVLCAvailability: Bool = {
     guard processInfo.environment["XCTestConfigurationFilePath"] == nil else {
         return false
     }
-    return DesktopVLCPlayerWrapper.isRuntimeAvailable
+    return DesktopVLCPlayerWrapper.hasCompatibleInstallation
 }()
 #endif
 

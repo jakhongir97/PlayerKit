@@ -212,7 +212,7 @@ struct PlaybackErrorPresentation: Equatable {
         strings: PlayerStrings = PlayerStrings()
     ) {
         switch error {
-        case .mediaLoadFailed:
+        case .mediaLoadFailed, .playbackEngineUnavailable:
             title = strings.playbackUnavailableTitle
             message = strings.playbackUnavailableMessage
             blocksPlayback = true

@@ -22,11 +22,21 @@ private enum DesktopVLCPaths {
     static let libvlcPath = "\(libDirectory)/libvlc.dylib"
     static let libvlcCorePath = "\(libDirectory)/libvlccore.dylib"
 
-    static var isInstalled: Bool {
+    private static var hasSupportedBundleVersion: Bool {
+        guard let version = Bundle(url: appURL)?
+            .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              let major = version.split(separator: ".").first.flatMap({ Int($0) }) else {
+            return false
+        }
+        return major == 3
+    }
+
+    static var isCompatibleInstallation: Bool {
         let fileManager = FileManager.default
         return fileManager.fileExists(atPath: libvlcPath)
             && fileManager.fileExists(atPath: libvlcCorePath)
             && fileManager.fileExists(atPath: pluginsDirectory)
+            && hasSupportedBundleVersion
             && DesktopVLCCodeSignature.isTrustedBundle(at: appURL)
     }
 }
@@ -210,7 +220,7 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
     private let mediaGetStatsFn: LibVLCMediaGetStats?
 
     private init() {
-        guard DesktopVLCPaths.isInstalled else {
+        guard DesktopVLCPaths.isCompatibleInstallation else {
             available = false
             coreHandle = nil
             vlcHandle = nil
@@ -436,14 +446,20 @@ private final class DesktopVLCLibrary: @unchecked Sendable {
         return player
     }
 
-    func releasePlayer(_ player: VLCMediaPlayerPointer?) {
-        guard player != nil else { return }
+    func destroyPlayer(_ player: VLCMediaPlayerPointer?) {
+        guard let player else { return }
+        // Stop the input and detach AppKit before dropping libVLC's final
+        // reference. This keeps its video-output threads from retaining or
+        // calling the old NSView while a new player is being installed.
+        stopFn?(player)
+        setNSObjectFn?(player, nil)
         releasePlayerFn?(player)
     }
 
-    func play(_ player: VLCMediaPlayerPointer?) {
-        guard player != nil else { return }
-        _ = playFn?(player)
+    @discardableResult
+    func play(_ player: VLCMediaPlayerPointer?) -> Bool {
+        guard let player, let playFn else { return false }
+        return playFn(player) == 0
     }
 
     func pause(_ player: VLCMediaPlayerPointer?) {
@@ -644,7 +660,7 @@ private final class DesktopVLCResources {
 
     deinit {
         pollTimer?.invalidate()
-        runtime.releasePlayer(mediaPlayer)
+        runtime.destroyPlayer(mediaPlayer)
         runtime.releaseInstance(instance)
     }
 }
@@ -674,6 +690,12 @@ public final class DesktopVLCPlayerWrapper: NSObject, PlayerProtocol {
     private var desiredPlaybackRate: Float = 1
     private var desiredMuted = false
 
+    /// A metadata/signature-only check used to populate engine selection UI.
+    /// Loading foreign code is deferred until this backend is actually created.
+    nonisolated static var hasCompatibleInstallation: Bool {
+        DesktopVLCPaths.isCompatibleInstallation
+    }
+
     nonisolated static var isRuntimeAvailable: Bool { DesktopVLCLibrary.isAvailable }
 
     public weak var lifecycleReporter: PlayerLifecycleReporting?
@@ -696,8 +718,16 @@ public final class DesktopVLCPlayerWrapper: NSObject, PlayerProtocol {
     }
 
     private func releasePlayer() {
-        runtime.releasePlayer(mediaPlayer)
+        let player = mediaPlayer
         mediaPlayer = nil
+        runtime.destroyPlayer(player)
+    }
+
+    private func reportUnavailableEngine() {
+        stopPolling()
+        releasePlayer()
+        lifecycleReporter?.playerDidFail(with: .playbackEngineUnavailable(.vlcPlayer))
+        emitRuntimeState()
     }
 
     private func startPolling() {
@@ -784,7 +814,10 @@ extension DesktopVLCPlayerWrapper: PlaybackControlProtocol {
     }
 
     public func play() {
-        runtime.play(mediaPlayer)
+        guard runtime.play(mediaPlayer) else {
+            reportUnavailableEngine()
+            return
+        }
         runtime.setRate(desiredPlaybackRate, for: mediaPlayer)
         runtime.setMuted(desiredMuted, for: mediaPlayer)
         startPolling()
@@ -879,7 +912,7 @@ extension DesktopVLCPlayerWrapper: TrackSelectionProtocol {
 extension DesktopVLCPlayerWrapper: MediaLoadingProtocol {
     public func load(url: URL, lastPosition: Double? = nil) {
         guard DesktopVLCLibrary.isAvailable, ensureInstance() else {
-            lifecycleReporter?.playerDidFail(with: .mediaLoadFailed("Desktop VLC is unavailable"))
+            reportUnavailableEngine()
             return
         }
 
@@ -894,14 +927,17 @@ extension DesktopVLCPlayerWrapper: MediaLoadingProtocol {
 
         mediaPlayer = runtime.makePlayer(instance: instance, url: url, drawable: playerView)
         guard mediaPlayer != nil else {
-            lifecycleReporter?.playerDidFail(with: .mediaLoadFailed("Failed to create desktop VLC player"))
+            reportUnavailableEngine()
             return
         }
 
         runtime.setRate(desiredPlaybackRate, for: mediaPlayer)
         runtime.setMuted(desiredMuted, for: mediaPlayer)
+        guard runtime.play(mediaPlayer) else {
+            reportUnavailableEngine()
+            return
+        }
         startPolling()
-        runtime.play(mediaPlayer)
         emitRuntimeState()
     }
 }

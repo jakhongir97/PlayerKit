@@ -9,12 +9,12 @@ final class PlaybackDiagnosticsTests: XCTestCase {
     override func setUp() {
         super.setUp()
         PlayerManager.shared.resetPlayer()
-        PlayerManager.shared.isPlaybackHealthMonitoringEnabled = false
+        PlayerManager.shared.stopPlaybackHealthMonitoring()
         PlayerManager.shared.onPlaybackHealthEvent = nil
     }
 
     override func tearDown() {
-        PlayerManager.shared.isPlaybackHealthMonitoringEnabled = false
+        PlayerManager.shared.stopPlaybackHealthMonitoring()
         PlayerManager.shared.onPlaybackHealthEvent = nil
         PlayerManager.shared.resetPlayer()
         super.tearDown()
@@ -255,26 +255,35 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         )
     }
 
-    func testStopThenPlayStartsFreshDiagnosticsForTheRetainedItem() {
+    func testPlaybackDoesNotStartDiagnosticsWithoutExplicitOptIn() {
         let manager = PlayerManager.shared
         manager.load(playerItem: PlayerItem(
             title: "Diagnostics replay",
             url: URL(string: "https://example.com/replay.m3u8")!,
-            playbackHealthAssetIdentifier: "diagnostics-replay"
+            playbackHealthAssetIdentifier: "diagnostics-replay",
+            playbackHealthMonitoringEligible: true
         ))
 
+        let wrapper = manager.currentPlayer as? AVPlayerWrapper
+        XCTAssertFalse(manager.isPlaybackHealthMonitoringEnabled)
+        XCTAssertFalse(manager.hasActivePlaybackDiagnosticsItem)
+        XCTAssertNil(wrapper?.activePlaybackHealthSessionID)
+        XCTAssertFalse(wrapper?.hasActivePlaybackDiagnosticsLogObservation == true)
+
+        XCTAssertTrue(manager.startPlaybackHealthMonitoring())
         let sessionID = manager.fetchPlaybackDiagnostics().session.sessionID
         XCTAssertNotNil(sessionID)
         XCTAssertTrue(manager.hasActivePlaybackDiagnosticsItem)
+        XCTAssertNotNil(wrapper?.activePlaybackHealthSessionID)
+        XCTAssertTrue(wrapper?.hasActivePlaybackDiagnosticsLogObservation == true)
 
-        manager.stop()
-        XCTAssertFalse(manager.hasActivePlaybackDiagnosticsItem)
-
+        manager.stopPlaybackHealthMonitoring()
         manager.play()
-        let resumed = manager.fetchPlaybackDiagnostics()
-        XCTAssertTrue(manager.hasActivePlaybackDiagnosticsItem)
-        XCTAssertNotEqual(resumed.session.sessionID, sessionID)
-        XCTAssertNil(resumed.storyboard.endedAt)
+
+        XCTAssertFalse(manager.isPlaybackHealthMonitoringEnabled)
+        XCTAssertFalse(manager.hasActivePlaybackDiagnosticsItem)
+        XCTAssertNil(wrapper?.activePlaybackHealthSessionID)
+        XCTAssertFalse(wrapper?.hasActivePlaybackDiagnosticsLogObservation == true)
     }
 
     func testBufferStateRejectsInvalidTimeAndRangesWithoutInventingHeadroom() {
@@ -591,7 +600,6 @@ final class PlaybackDiagnosticsTests: XCTestCase {
 
     func testPlayerManagerBoundsHistoryWithoutReplacingReporterSink() throws {
         let manager = PlayerManager.shared
-        manager.isPlaybackHealthMonitoringEnabled = true
         manager.setPlayer(type: .avPlayer)
         manager.load(
             playerItem: PlayerItem(
@@ -601,6 +609,7 @@ final class PlaybackDiagnosticsTests: XCTestCase {
                 playbackHealthMonitoringEligible: true
             )
         )
+        XCTAssertTrue(manager.startPlaybackHealthMonitoring())
         var forwardedCount = 0
         manager.onPlaybackHealthEvent = { _ in
             forwardedCount += 1
@@ -1320,16 +1329,16 @@ final class PlaybackDiagnosticsTests: XCTestCase {
 
     func testBookmarksAreBoundedClearedAndResetPerItem() throws {
         let manager = PlayerManager.shared
-        manager.isPlaybackHealthMonitoringEnabled = true
         manager.setPlayer(type: .avPlayer)
         manager.load(
             playerItem: PlayerItem(
                 title: "First",
-                url: FileManager.default.temporaryDirectory
-                    .appendingPathComponent("incident-first.m3u8"),
-                playbackHealthAssetIdentifier: "42"
+                url: URL(string: "https://example.invalid/incident-first.m3u8")!,
+                playbackHealthAssetIdentifier: "42",
+                playbackHealthMonitoringEligible: true
             )
         )
+        XCTAssertTrue(manager.startPlaybackHealthMonitoring())
 
         for _ in 0..<22 {
             XCTAssertNotNil(manager.capturePlaybackDiagnosticsBookmark())
@@ -1345,11 +1354,13 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         manager.load(
             playerItem: PlayerItem(
                 title: "Second",
-                url: FileManager.default.temporaryDirectory
-                    .appendingPathComponent("incident-second.m3u8"),
-                playbackHealthAssetIdentifier: "43"
+                url: URL(string: "https://example.invalid/incident-second.m3u8")!,
+                playbackHealthAssetIdentifier: "43",
+                playbackHealthMonitoringEligible: true
             )
         )
+        XCTAssertFalse(manager.isPlaybackHealthMonitoringEnabled)
+        XCTAssertFalse(manager.hasActivePlaybackDiagnosticsItem)
         XCTAssertTrue(manager.fetchPlaybackDiagnostics().storyboard.bookmarks.isEmpty)
     }
 
@@ -1359,11 +1370,12 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         manager.load(
             playerItem: PlayerItem(
                 title: "Lifecycle",
-                url: FileManager.default.temporaryDirectory
-                    .appendingPathComponent("diagnostics-lifecycle.m3u8"),
-                playbackHealthAssetIdentifier: "44"
+                url: URL(string: "https://example.invalid/diagnostics-lifecycle.m3u8")!,
+                playbackHealthAssetIdentifier: "44",
+                playbackHealthMonitoringEligible: true
             )
         )
+        XCTAssertTrue(manager.startPlaybackHealthMonitoring())
 
         let active = manager.fetchPlaybackDiagnostics()
         let sessionID = try XCTUnwrap(active.session.sessionID)
@@ -1420,7 +1432,6 @@ final class PlaybackDiagnosticsTests: XCTestCase {
         }
 
         let manager = PlayerManager.shared
-        manager.isPlaybackHealthMonitoringEnabled = true
         manager.setPlayer(type: .avPlayer)
         manager.load(
             playerItem: PlayerItem(
@@ -1430,11 +1441,12 @@ final class PlaybackDiagnosticsTests: XCTestCase {
                 playbackHealthMonitoringEligible: true
             )
         )
+        XCTAssertTrue(manager.startPlaybackHealthMonitoring())
         manager.play()
         defer {
             manager.stop()
             manager.resetPlayer()
-            manager.isPlaybackHealthMonitoringEnabled = false
+            manager.stopPlaybackHealthMonitoring()
         }
 
         let deadline = Date().addingTimeInterval(30)

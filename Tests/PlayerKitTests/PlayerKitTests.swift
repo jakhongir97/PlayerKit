@@ -217,6 +217,11 @@ final class PlayerKitTests: XCTestCase {
         }
     }
 
+    func testAVPlayerResolutionDoesNotDependOnOptionalBackendAvailability() {
+        XCTAssertEqual(PlayerType.resolved(nil), .avPlayer)
+        XCTAssertEqual(PlayerType.resolved(.avPlayer), .avPlayer)
+    }
+
     func testDesktopVLCWrapperCanStartRuntimeUpdatesWithoutLoadedMedia() throws {
         #if os(macOS) && !canImport(VLCKit)
         let wrapper = DesktopVLCPlayerWrapper()
@@ -228,6 +233,67 @@ final class PlayerKitTests: XCTestCase {
         XCTAssertEqual(wrapper.duration, 0, accuracy: 0.001)
 
         wrapper.stopRuntimeStateUpdates()
+        #else
+        throw XCTSkip("Desktop libVLC wrapper is not the active backend on this platform.")
+        #endif
+    }
+
+    func testDesktopVLCPlayWithoutMediaReportsTypedEngineFailure() throws {
+        #if os(macOS) && !canImport(VLCKit)
+        let wrapper = DesktopVLCPlayerWrapper()
+        let reporter = MockPlayerLifecycleReporter()
+        var reportedError: PlayerKitError?
+        reporter.onFail = { reportedError = $0 }
+        wrapper.lifecycleReporter = reporter
+
+        wrapper.play()
+
+        XCTAssertEqual(reportedError, .playbackEngineUnavailable(.vlcPlayer))
+        XCTAssertFalse(wrapper.hasLoadedMedia)
+        #else
+        throw XCTSkip("Desktop libVLC wrapper is not the active backend on this platform.")
+        #endif
+    }
+
+    func testOnlyUnavailableActiveVLCFallsBackToAVPlayer() {
+        XCTAssertEqual(
+            PlayerManager.fallbackPlayerType(
+                for: .playbackEngineUnavailable(.vlcPlayer),
+                activePlayerType: .vlcPlayer
+            ),
+            .avPlayer
+        )
+        XCTAssertNil(PlayerManager.fallbackPlayerType(
+            for: .mediaLoadFailed("stream failed"),
+            activePlayerType: .vlcPlayer
+        ))
+        XCTAssertNil(PlayerManager.fallbackPlayerType(
+            for: .playbackEngineUnavailable(.vlcPlayer),
+            activePlayerType: .avPlayer
+        ))
+    }
+
+    func testDesktopVLCReloadAndReleaseDoesNotLeaveTheOldPlayerAlive() async throws {
+        #if os(macOS) && !canImport(VLCKit)
+        guard DesktopVLCPlayerWrapper.isRuntimeAvailable else {
+            throw XCTSkip("A trusted VLC 3 runtime is not installed.")
+        }
+        let firstURL = URL(fileURLWithPath: "/System/Library/Sounds/Ping.aiff")
+        let secondURL = URL(fileURLWithPath: "/System/Library/Sounds/Glass.aiff")
+        guard FileManager.default.fileExists(atPath: firstURL.path),
+              FileManager.default.fileExists(atPath: secondURL.path) else {
+            throw XCTSkip("macOS sound fixtures are unavailable.")
+        }
+
+        let wrapper = DesktopVLCPlayerWrapper()
+        wrapper.setMuted(true)
+        wrapper.load(url: firstURL)
+        XCTAssertTrue(wrapper.hasLoadedMedia)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        wrapper.load(url: secondURL)
+        XCTAssertTrue(wrapper.hasLoadedMedia)
+        wrapper.stop()
         #else
         throw XCTSkip("Desktop libVLC wrapper is not the active backend on this platform.")
         #endif

@@ -813,13 +813,13 @@ final class PlaybackHealthIntegrationTests: XCTestCase {
     override func setUp() {
         super.setUp()
         PlayerManager.shared.resetPlayer()
-        PlayerManager.shared.isPlaybackHealthMonitoringEnabled = false
+        PlayerManager.shared.stopPlaybackHealthMonitoring()
         PlayerManager.shared.onPlaybackHealthEvent = nil
         PlayerManager.shared.setPlayer(type: .avPlayer)
     }
 
     override func tearDown() {
-        PlayerManager.shared.isPlaybackHealthMonitoringEnabled = false
+        PlayerManager.shared.stopPlaybackHealthMonitoring()
         PlayerManager.shared.onPlaybackHealthEvent = nil
         PlayerManager.shared.resetPlayer()
         super.tearDown()
@@ -893,7 +893,6 @@ final class PlaybackHealthIntegrationTests: XCTestCase {
 
     func testPlayerManagerPassesItemIdentityToAVPlayerWrapper() throws {
         let manager = PlayerManager.shared
-        manager.isPlaybackHealthMonitoringEnabled = true
         let item = PlayerItem(
             title: "Movie",
             url: URL(string: "https://example.invalid/movie.m3u8")!,
@@ -902,6 +901,7 @@ final class PlaybackHealthIntegrationTests: XCTestCase {
         )
 
         manager.load(playerItem: item)
+        XCTAssertTrue(manager.startPlaybackHealthMonitoring())
 
         let wrapper = try XCTUnwrap(manager.currentPlayer as? AVPlayerWrapper)
         XCTAssertEqual(wrapper.activePlaybackHealthAssetIdentifier, "42")
@@ -929,8 +929,25 @@ final class PlaybackHealthIntegrationTests: XCTestCase {
     func testPlayerManagerEventCallbackSurvivesPlayerReset() {
         let manager = PlayerManager.shared
         let expectation = expectation(description: "event forwarded")
+        var expectedEvent: PlaybackHealthEvent?
+
+        manager.onPlaybackHealthEvent = { receivedEvent in
+            XCTAssertEqual(receivedEvent, expectedEvent)
+            expectation.fulfill()
+        }
+        manager.resetPlayer()
+        manager.setPlayer(type: .avPlayer)
+        manager.load(playerItem: PlayerItem(
+            title: "Diagnostics",
+            url: URL(string: "https://example.invalid/callback.m3u8")!,
+            playbackHealthAssetIdentifier: "42",
+            playbackHealthMonitoringEligible: true
+        ))
+        XCTAssertTrue(manager.startPlaybackHealthMonitoring())
+
+        let wrapper = manager.currentPlayer as? AVPlayerWrapper
         let event = PlaybackHealthEvent(
-            healthSessionID: UUID(),
+            healthSessionID: wrapper?.activePlaybackHealthSessionID ?? UUID(),
             assetIdentifier: "42",
             signalKind: .mediaSegmentRequestFailure,
             confidence: .high,
@@ -942,15 +959,7 @@ final class PlaybackHealthIntegrationTests: XCTestCase {
             didRecover: false,
             occurredAt: Date()
         )
-
-        manager.onPlaybackHealthEvent = { receivedEvent in
-            XCTAssertEqual(receivedEvent, event)
-            expectation.fulfill()
-        }
-        manager.resetPlayer()
-        manager.setPlayer(type: .avPlayer)
-
-        let wrapper = manager.currentPlayer as? AVPlayerWrapper
+        expectedEvent = event
         wrapper?.onPlaybackHealthEvent?(event)
 
         wait(for: [expectation], timeout: 1)

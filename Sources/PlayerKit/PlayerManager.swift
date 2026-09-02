@@ -40,7 +40,7 @@ public class PlayerManager: ObservableObject {
     private static let liveEdgeTolerance: Double = 2
 
     #if os(macOS)
-    public var isPlaybackHealthMonitoringEnabled = false
+    @Published public private(set) var isPlaybackHealthMonitoringEnabled = false
     public var onPlaybackHealthEvent: ((PlaybackHealthEvent) -> Void)?
     @Published private(set) var recentPlaybackHealthEvents: [PlaybackHealthEvent] = []
     private var playbackDiagnosticsSession = PlaybackDiagnosticsSessionReducer()
@@ -204,7 +204,7 @@ public class PlayerManager: ObservableObject {
                 return
             }
             #if os(macOS)
-            endPlaybackDiagnosticsSampling(reason: "player dismissed")
+            stopPlaybackHealthMonitoring(reason: "player dismissed")
             #endif
             playbackManager?.stop()
             cancelPendingPlaybackResume()
@@ -692,19 +692,20 @@ public class PlayerManager: ObservableObject {
         // session is acquired at first load rather than when `Player` is merely
         // constructed.
         AudioSessionManager.shared.configureAudioSession(for: self)
+        #if os(macOS)
+        stopPlaybackHealthMonitoring(reason: "player item replaced")
+        resetPlaybackDiagnosticsHistory()
+        #endif
         if let avPlayer = currentPlayer as? AVPlayerWrapper {
             #if os(macOS)
-            endPlaybackDiagnosticsSampling(reason: "player item replaced")
-            resetPlaybackDiagnosticsHistory()
             avPlayer.load(
                 url: url,
                 lastPosition: resumePosition,
                 urlAsset: itemContext.urlAsset,
                 playbackHealthAssetIdentifier: itemContext.playbackHealthAssetIdentifier,
-                playbackHealthMonitoringEnabled: isPlaybackHealthMonitoringEnabled,
+                playbackHealthMonitoringEnabled: false,
                 playbackHealthMonitoringEligible: itemContext.playbackHealthMonitoringEligible
             )
-            startPlaybackDiagnosticsSampling()
             #else
             avPlayer.load(
                 url: url,
@@ -1029,15 +1030,6 @@ extension PlayerManager {
         )
         AudioSessionManager.shared.configureAudioSession(for: self)
         performPlaybackResumeAttempt()
-        #if os(macOS)
-        if let avPlayer = currentPlayer as? AVPlayerWrapper,
-           avPlayer.hasLoadedMedia,
-           playbackDiagnosticsSampleCancellable == nil,
-           avPlayer.restartPlaybackDiagnosticsSession() {
-            resetPlaybackDiagnosticsHistory()
-            startPlaybackDiagnosticsSampling()
-        }
-        #endif
         userInteracted()
     }
     
@@ -1062,7 +1054,7 @@ extension PlayerManager {
         )
         cancelPendingPlaybackResume()
         #if os(macOS)
-        endPlaybackDiagnosticsSampling(reason: "playback stopped")
+        stopPlaybackHealthMonitoring(reason: "playback stopped")
         #endif
         playbackManager?.stop()
         isPlaying = false
@@ -1944,6 +1936,39 @@ extension PlayerManager {
     }
 
     #if os(macOS)
+    /// Begins playback diagnostics for the current eligible AVPlayer item.
+    /// Playback loading and the monitor window are intentionally passive until
+    /// this is called by an explicit user action.
+    @discardableResult
+    public func startPlaybackHealthMonitoring() -> Bool {
+        if isPlaybackHealthMonitoringEnabled {
+            return hasActivePlaybackDiagnosticsItem
+        }
+        guard let avPlayer = currentPlayer as? AVPlayerWrapper,
+              avPlayer.hasLoadedMedia else {
+            return false
+        }
+
+        isPlaybackHealthMonitoringEnabled = true
+        guard avPlayer.startPlaybackDiagnosticsSession() else {
+            isPlaybackHealthMonitoringEnabled = false
+            return false
+        }
+        resetPlaybackDiagnosticsHistory()
+        startPlaybackDiagnosticsSampling()
+        return true
+    }
+
+    public func stopPlaybackHealthMonitoring() {
+        stopPlaybackHealthMonitoring(reason: "user stopped")
+    }
+
+    private func stopPlaybackHealthMonitoring(reason: String) {
+        endPlaybackDiagnosticsSampling(reason: reason)
+        (currentPlayer as? AVPlayerWrapper)?.stopPlaybackDiagnosticsSession()
+        isPlaybackHealthMonitoringEnabled = false
+    }
+
     func fetchPlaybackDiagnostics() -> PlaybackDiagnosticsSnapshot {
         if playbackDiagnosticsSampleCancellable == nil,
            let playbackDiagnosticsLastSnapshot {
@@ -1993,6 +2018,7 @@ extension PlayerManager {
     }
 
     private func recordPlaybackHealthEvent(_ event: PlaybackHealthEvent) {
+        guard isPlaybackHealthMonitoringEnabled else { return }
         guard hasActivePlaybackDiagnosticsItem else {
             // Preserve the existing observer contract while keeping stopped
             // sessions immutable; real monitor callbacks are already session-gated.
@@ -2168,7 +2194,7 @@ extension PlayerManager {
         cancelExternalEpisodeNavigation(clearHandler: clearMediaContext)
         gestureManager.reset()
         #if os(macOS)
-        endPlaybackDiagnosticsSampling(reason: "player reset")
+        stopPlaybackHealthMonitoring(reason: "player reset")
         resetPlaybackDiagnosticsHistory()
         #endif
 
@@ -2489,7 +2515,7 @@ extension PlayerManager: PlayerLifecycleReporting {
         shouldResumePlaybackAfterStall = false
         emitQoEEvents(qoeEventReducer.completed())
         #if os(macOS)
-        endPlaybackDiagnosticsSampling(reason: "playback ended")
+        stopPlaybackHealthMonitoring(reason: "playback ended")
         #endif
         videoDidEnd()
     }
@@ -2525,6 +2551,11 @@ extension PlayerManager: PlayerLifecycleReporting {
     }
 
     public func playerDidFail(with error: PlayerKitError) {
+        #if os(macOS)
+        if schedulePlaybackEngineFallbackIfNeeded(for: error) {
+            return
+        }
+        #endif
         cancelPendingPlaybackResume()
         shouldResumePlaybackAfterStall = false
         isPlaying = false
@@ -2533,11 +2564,51 @@ extension PlayerManager: PlayerLifecycleReporting {
         AudioSessionManager.shared.deactivateAudioSession(for: self)
 
         #if os(macOS)
-        endPlaybackDiagnosticsSampling(reason: "playback failed")
+        stopPlaybackHealthMonitoring(reason: "playback failed")
         #endif
         emitQoEEvents(qoeEventReducer.fatalError())
         reportTerminalPlaybackError(error)
     }
+
+    #if os(macOS)
+    static func fallbackPlayerType(
+        for error: PlayerKitError,
+        activePlayerType: PlayerType?
+    ) -> PlayerType? {
+        guard case .playbackEngineUnavailable(.vlcPlayer) = error,
+              activePlayerType == .vlcPlayer else {
+            return nil
+        }
+        return .avPlayer
+    }
+
+    private func schedulePlaybackEngineFallbackIfNeeded(for error: PlayerKitError) -> Bool {
+        guard let fallbackType = Self.fallbackPlayerType(
+            for: error,
+            activePlayerType: activeBuiltInPlayerType
+        ),
+              let failedPlayer = currentPlayer else {
+            return false
+        }
+
+        let failedPlayerID = ObjectIdentifier(failedPlayer)
+        let failedItemGeneration = mediaItemGeneration
+        // libVLC can reject startup synchronously from inside load(). Defer the
+        // backend swap so teardown never re-enters the failing C call stack.
+        Task { @MainActor [weak self] in
+            guard let self,
+                  self.mediaItemGeneration == failedItemGeneration,
+                  self.activeBuiltInPlayerType == .vlcPlayer,
+                  let currentPlayer = self.currentPlayer,
+                  ObjectIdentifier(currentPlayer) == failedPlayerID else {
+                return
+            }
+            self.debugLog("Desktop VLC unavailable. Falling back to AVPlayer.")
+            self.switchPlayer(to: fallbackType)
+        }
+        return true
+    }
+    #endif
 }
 
 extension PlayerManager {
