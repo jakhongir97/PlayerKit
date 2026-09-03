@@ -255,6 +255,7 @@ final class PlayerKitTests: XCTestCase {
         #endif
     }
 
+    #if os(macOS)
     func testOnlyUnavailableActiveVLCFallsBackToAVPlayer() {
         XCTAssertEqual(
             PlayerManager.fallbackPlayerType(
@@ -272,6 +273,7 @@ final class PlayerKitTests: XCTestCase {
             activePlayerType: .avPlayer
         ))
     }
+    #endif
 
     func testDesktopVLCReloadAndReleaseDoesNotLeaveTheOldPlayerAlive() async throws {
         #if os(macOS) && !canImport(VLCKit)
