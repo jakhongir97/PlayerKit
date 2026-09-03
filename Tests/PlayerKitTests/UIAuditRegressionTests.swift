@@ -64,6 +64,30 @@ final class UIAuditRegressionTests: XCTestCase {
     }
 
     #if os(macOS)
+    func testHostingWindowProbeTracksAttachmentsWithoutForgettingTransientDetachment() {
+        let firstWindow = NSWindow()
+        let secondWindow = NSWindow()
+        let reference = PlayerKitHostingWindowReference()
+        var reportedWindows: [NSWindow] = []
+        let probe = PlayerKitHostingWindowProbeView { window in
+            reportedWindows.append(window)
+            reference.window = window
+        }
+
+        firstWindow.contentView?.addSubview(probe)
+        XCTAssertTrue(reportedWindows.last === firstWindow)
+        XCTAssertTrue(reference.window === firstWindow)
+
+        probe.removeFromSuperview()
+        XCTAssertEqual(reportedWindows.count, 1)
+        XCTAssertTrue(reference.window === firstWindow)
+
+        secondWindow.contentView?.addSubview(probe)
+        XCTAssertEqual(reportedWindows.count, 2)
+        XCTAssertTrue(reportedWindows.last === secondWindow)
+        XCTAssertTrue(reference.window === secondWindow)
+    }
+
     func testFullscreenWindowOwnershipUsesCapturedStandaloneWindow() {
         let hostingWindow = NSWindow()
 

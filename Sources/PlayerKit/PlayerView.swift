@@ -346,20 +346,37 @@ final class PlayerKitHostingWindowReference: ObservableObject {
 
 @MainActor
 struct PlayerKitHostingWindowReader: NSViewRepresentable {
-    let onWindowChange: @MainActor (NSWindow?) -> Void
+    let onWindowChange: @MainActor (NSWindow) -> Void
 
-    func makeNSView(context _: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async {
-            onWindowChange(view.window)
-        }
-        return view
+    func makeNSView(context _: Context) -> PlayerKitHostingWindowProbeView {
+        PlayerKitHostingWindowProbeView(onWindowChange: onWindowChange)
     }
 
-    func updateNSView(_ nsView: NSView, context _: Context) {
-        DispatchQueue.main.async {
-            onWindowChange(nsView.window)
-        }
+    func updateNSView(_ nsView: PlayerKitHostingWindowProbeView, context _: Context) {
+        nsView.onWindowChange = onWindowChange
+    }
+}
+
+@MainActor
+final class PlayerKitHostingWindowProbeView: NSView {
+    var onWindowChange: @MainActor (NSWindow) -> Void
+
+    init(onWindowChange: @escaping @MainActor (NSWindow) -> Void) {
+        self.onWindowChange = onWindowChange
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // ponytail: Ignore transient detachment so consumers retain the last
+        // exact weak window until AppKit attaches this probe to a new one.
+        guard let window else { return }
+        onWindowChange(window)
     }
 }
 
