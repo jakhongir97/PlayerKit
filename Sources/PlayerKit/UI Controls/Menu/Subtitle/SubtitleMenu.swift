@@ -14,28 +14,20 @@ struct SubtitleMenu: View {
         Menu {
             Section(header: Text(playerManager.strings.subtitles)) {
                 // "Turn Off Subtitles" option
-                Button(action: {
+                PlayerMenuSelectionItem(
+                    title: playerManager.strings.turnOffSubtitles,
+                    isSelected: viewModel.selectedSubtitle == nil
+                ) {
                     viewModel.selectSubtitle(nil)
-                }) {
-                    HStack {
-                        Text(playerManager.strings.turnOffSubtitles)
-                        if viewModel.selectedSubtitle == nil {
-                            Image(systemName: "checkmark")
-                        }
-                    }
                 }
-                
+
                 // List available subtitle tracks
                 ForEach(viewModel.availableSubtitles) { track in
-                    Button(action: {
+                    PlayerMenuSelectionItem(
+                        title: track.name,
+                        isSelected: viewModel.selectedSubtitle?.id == track.id
+                    ) {
                         viewModel.selectSubtitle(track)
-                    }) {
-                        HStack {
-                            Text(track.name)
-                            if viewModel.selectedSubtitle?.id == track.id {
-                                Image(systemName: "checkmark")
-                            }
-                        }
                     }
                 }
             }

@@ -36,15 +36,11 @@ struct PlaybackSpeedMenu: View {
     }
 
     private func speedOption(_ speed: Float, isNormal: Bool = false) -> some View {
-        Button(action: {
+        PlayerMenuSelectionItem(
+            title: playerManager.strings.playbackSpeedOption(speed, isNormal),
+            isSelected: viewModel.playbackSpeed == speed
+        ) {
             viewModel.setPlaybackSpeed(speed)
-        }) {
-            HStack {
-                Text(playerManager.strings.playbackSpeedOption(speed, isNormal))
-                if viewModel.playbackSpeed == speed {
-                    Image(systemName: "checkmark")
-                }
-            }
         }
     }
 }

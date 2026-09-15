@@ -14,15 +14,11 @@ struct AudioMenu: View {
         Menu {
             Section(header: Text(playerManager.strings.audioTracksTitle)) {
                 ForEach(viewModel.availableAudioTracks) { track in
-                    Button(action: {
+                    PlayerMenuSelectionItem(
+                        title: track.name,
+                        isSelected: viewModel.selectedAudio?.id == track.id
+                    ) {
                         viewModel.selectAudioTrack(track)
-                    }) {
-                        HStack {
-                            Text(track.name)
-                            if viewModel.selectedAudio?.id == track.id {
-                                Image(systemName: "checkmark")
-                            }
-                        }
                     }
                 }
             }

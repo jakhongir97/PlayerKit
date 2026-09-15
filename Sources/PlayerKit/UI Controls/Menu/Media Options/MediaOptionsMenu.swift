@@ -85,15 +85,11 @@ private struct PlaybackQualityMenu: View {
         Menu {
             Section(header: Text(playerManager.strings.playbackQualityTitle)) {
                 ForEach(playerManager.availablePlaybackQualityPresets) { preset in
-                    Button {
+                    PlayerMenuSelectionItem(
+                        title: title(for: preset),
+                        isSelected: playerManager.selectedPlaybackQualityPreset == preset
+                    ) {
                         playerManager.selectPlaybackQualityPreset(preset)
-                    } label: {
-                        HStack {
-                            Text(title(for: preset))
-                            if playerManager.selectedPlaybackQualityPreset == preset {
-                                Image(systemName: "checkmark")
-                            }
-                        }
                     }
                 }
             }

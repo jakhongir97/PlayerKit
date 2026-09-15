@@ -287,6 +287,27 @@ final class UIAuditRegressionTests: XCTestCase {
         assertDeallocated { MediaOptionsMenuViewModel() }
     }
 
+    func testMenuSelectionRowReappliesTheChoiceOnEveryClick() {
+        var selections = 0
+        let unchecked = PlayerMenuSelectionItem.selectionBinding(isSelected: false) {
+            selections += 1
+        }
+        XCTAssertFalse(unchecked.wrappedValue)
+        unchecked.wrappedValue = true
+        XCTAssertEqual(selections, 1)
+
+        // Clicking the row that is already checked asks the toggle to turn
+        // off. For a one-of-many choice that is a re-selection, as the old
+        // Button rows were — it must still run, because the select paths are
+        // what restart the chrome's auto-hide timer.
+        let checked = PlayerMenuSelectionItem.selectionBinding(isSelected: true) {
+            selections += 1
+        }
+        XCTAssertTrue(checked.wrappedValue)
+        checked.wrappedValue = false
+        XCTAssertEqual(selections, 2)
+    }
+
     func testGestureResetCancelsEveryInFlightInteraction() {
         let clock = TestClock()
         let manager = GestureManager(clock: clock)
